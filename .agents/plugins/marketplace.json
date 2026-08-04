@@ -1,0 +1,20 @@
+{
+  "name": "feedback-server",
+  "interface": {
+    "displayName": "Feedback Server"
+  },
+  "plugins": [
+    {
+      "name": "feedback-server",
+      "source": {
+        "source": "local",
+        "path": "./plugins/feedback-server"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

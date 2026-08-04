@@ -1,0 +1,12 @@
+interface:
+  display_name: "Manage FeedbackServer"
+  short_description: "Manage feedback, activity posts, roadmaps, releases, App Store imports, and Bark"
+  default_prompt: "Use $manage-feedback-server to list my apps and summarize unresolved feedback."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "feedback-server"
+      description: "FeedbackServer administrator tools"
+      transport: "stdio"
+policy:
+  allow_implicit_invocation: true

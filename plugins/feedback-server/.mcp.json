@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "feedback-server": {
+      "title": "Feedback Server",
+      "description": "Manage FeedbackServer products and feedback through a local MCP server with risk-based confirmations.",
+      "cwd": ".",
+      "command": "bun",
+      "args": [
+        "./dist/server.mjs"
+      ]
+    }
+  }
+}
