@@ -220,13 +220,54 @@ const defaultConfigurationDependencies: ConfigurationDependencies = {
   logout,
 };
 
+function withPendingTokenRevocations(
+  credentials: StoredCredentials,
+  tokenIds: string[],
+): StoredCredentials {
+  const current = { ...credentials };
+  delete current.pendingRevocationTokenIds;
+  const uniqueTokenIds = [...new Set(tokenIds)].filter((tokenId) => tokenId !== current.tokenId);
+  return uniqueTokenIds.length > 0
+    ? { ...current, pendingRevocationTokenIds: uniqueTokenIds }
+    : current;
+}
+
+function isAlreadyRevoked(error: unknown): boolean {
+  return error instanceof ConfigurationApiError && error.status === 404;
+}
+
+async function revokePendingAgentTokens(
+  credentials: StoredCredentials,
+  baseUrl: string,
+  accessToken: string,
+  dependencies: ConfigurationDependencies,
+): Promise<StoredCredentials> {
+  let current = withPendingTokenRevocations(
+    credentials,
+    credentials.pendingRevocationTokenIds ?? [],
+  );
+  for (const tokenId of current.pendingRevocationTokenIds ?? []) {
+    try {
+      await dependencies.revokeToken(baseUrl, accessToken, tokenId);
+    } catch (error) {
+      if (!isAlreadyRevoked(error)) throw error;
+    }
+    current = withPendingTokenRevocations(
+      current,
+      (current.pendingRevocationTokenIds ?? []).filter((candidate) => candidate !== tokenId),
+    );
+    await dependencies.writeCredentials(current);
+  }
+  return current;
+}
+
 export async function configureAgent(input: {
   baseUrl: string;
   username: string;
   password: string;
 }, dependencies: ConfigurationDependencies = defaultConfigurationDependencies): Promise<StoredCredentials> {
   const baseUrl = normalizeBaseUrl(input.baseUrl);
-  const previous = await dependencies.readCredentials();
+  let previous = await dependencies.readCredentials();
   if (previous && normalizeBaseUrl(previous.baseUrl) !== baseUrl) {
     throw new Error(
       'FeedbackServer Agent is connected to a different server. Run agent:disconnect before changing the endpoint.',
@@ -240,25 +281,36 @@ export async function configureAgent(input: {
   const session = await dependencies.login(baseUrl, input.username, input.password);
   let created: CreatedToken | undefined;
   try {
+    previous = previous
+      ? await revokePendingAgentTokens(previous, baseUrl, session.accessToken, dependencies)
+      : undefined;
     created = await dependencies.createToken(baseUrl, session.accessToken);
-    const credentials: StoredCredentials = {
-      baseUrl,
-      token: created.token,
-      tokenId: created.id,
-      username: input.username,
-      scopes: created.scopes,
-      expiresAt: created.expiresAt,
-    };
+    const credentials = withPendingTokenRevocations(
+      {
+        baseUrl,
+        token: created.token,
+        tokenId: created.id,
+        username: input.username,
+        scopes: created.scopes,
+        expiresAt: created.expiresAt,
+      },
+      [
+        ...(previous?.pendingRevocationTokenIds ?? []),
+        ...(previous?.tokenId ? [previous.tokenId] : []),
+      ],
+    );
     try {
       await dependencies.writeCredentials(credentials);
     } catch (error) {
       await dependencies.revokeToken(baseUrl, session.accessToken, created.id);
       throw error;
     }
-    if (previous?.tokenId && previous.tokenId !== created.id) {
-      await dependencies.revokeToken(baseUrl, session.accessToken, previous.tokenId);
-    }
-    return credentials;
+    return await revokePendingAgentTokens(
+      credentials,
+      baseUrl,
+      session.accessToken,
+      dependencies,
+    );
   } finally {
     try {
       await dependencies.logout(baseUrl, session.refreshToken);
@@ -277,11 +329,12 @@ export async function disconnectAgent(input: {
   password: string;
 }, dependencies: ConfigurationDependencies = defaultConfigurationDependencies): Promise<boolean> {
   if (await dependencies.resumeCredentialCleanup()) return true;
-  const stored = await dependencies.readCredentials();
+  let stored = await dependencies.readCredentials();
   if (!stored) return false;
   const baseUrl = normalizeBaseUrl(stored.baseUrl);
   const session = await dependencies.login(baseUrl, input.username, input.password);
   try {
+    stored = await revokePendingAgentTokens(stored, baseUrl, session.accessToken, dependencies);
     if (stored.tokenId) {
       await dependencies.revokeToken(baseUrl, session.accessToken, stored.tokenId);
     }

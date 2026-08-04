@@ -104,8 +104,69 @@ describe('Agent configuration lifecycle', () => {
       'create',
       'write',
       `revoke:${oldTokenId}`,
+      'write',
       'logout',
     ]);
+  });
+
+  test('retains the previous token ID when its revocation fails', async () => {
+    const events: string[] = [];
+    const writes: StoredCredentials[] = [];
+    const failure = new Error('simulated previous token revocation failure');
+    const error = await capturedError(
+      configureAgent(
+        { baseUrl, username: 'owner', password: 'not-logged' },
+        dependencies(events, {
+          writeCredentials: (credentials) => {
+            events.push('write');
+            writes.push(credentials);
+            return Promise.resolve();
+          },
+          revokeToken: (_url, _accessToken, tokenId) => {
+            events.push(`revoke:${tokenId}`);
+            return tokenId === oldTokenId ? Promise.reject(failure) : Promise.resolve();
+          },
+        }),
+      ),
+    );
+
+    expect(error).toBe(failure);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({
+      tokenId: newTokenId,
+      pendingRevocationTokenIds: [oldTokenId],
+    });
+    expect(events).toEqual([
+      'login',
+      'create',
+      'write',
+      `revoke:${oldTokenId}`,
+      'logout',
+    ]);
+  });
+
+  test('retries a retained token revocation before rotating again', async () => {
+    const events: string[] = [];
+    const retained: StoredCredentials = {
+      ...previous,
+      tokenId: newTokenId,
+      token: newToken,
+      pendingRevocationTokenIds: [oldTokenId],
+    };
+
+    await configureAgent(
+      { baseUrl, username: 'owner', password: 'not-logged' },
+      dependencies(events, {
+        readCredentials: () => Promise.resolve(retained),
+      }),
+    );
+
+    expect(events.slice(0, 3)).toEqual([
+      'login',
+      `revoke:${oldTokenId}`,
+      'write',
+    ]);
+    expect(events.indexOf(`revoke:${oldTokenId}`)).toBeLessThan(events.indexOf('create'));
   });
 
   test('revokes the new token when Keychain persistence fails', async () => {
@@ -173,6 +234,33 @@ describe('Agent configuration lifecycle', () => {
     expect(events).toEqual([
       'login',
       `revoke:${oldTokenId}`,
+      'delete',
+      'logout',
+    ]);
+  });
+
+  test('disconnect retries retained revocations before removing the active token', async () => {
+    const events: string[] = [];
+    const retained: StoredCredentials = {
+      ...previous,
+      tokenId: newTokenId,
+      token: newToken,
+      pendingRevocationTokenIds: [oldTokenId],
+    };
+
+    expect(
+      await disconnectAgent(
+        { username: 'owner', password: 'not-logged' },
+        dependencies(events, {
+          readCredentials: () => Promise.resolve(retained),
+        }),
+      ),
+    ).toBe(true);
+    expect(events).toEqual([
+      'login',
+      `revoke:${oldTokenId}`,
+      'write',
+      `revoke:${newTokenId}`,
       'delete',
       'logout',
     ]);

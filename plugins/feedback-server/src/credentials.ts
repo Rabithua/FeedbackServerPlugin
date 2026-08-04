@@ -17,6 +17,7 @@ const credentialSchema = z.object({
     .max(120)
     .regex(/^fspat_[A-Za-z0-9_-]+$/),
   tokenId: z.uuid().optional(),
+  pendingRevocationTokenIds: z.array(z.uuid()).max(32).optional(),
   username: z.string().min(1).max(80).optional(),
   scopes: z.array(z.string()).optional(),
   expiresAt: z.iso.datetime().optional(),
