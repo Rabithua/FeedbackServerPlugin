@@ -7,8 +7,8 @@ bundle. It uses only FeedbackServer's documented `/v1/api` HTTPS surface.
 The MCP tools manage Products, Feedback conversations, diagnostics, Activity posts, Roadmap items,
 Releases, attachments, Bark delivery, App Store changelog imports, and audit records. Routine writes
 execute directly; protected public, destructive, status, notification, and key-rotation operations
-use exact single-use confirmations. Version 0.5.0 retains the 0.4.0 MCP tool surface and adds no
-authentication-management MCP tools.
+use exact single-use confirmations. Version 0.5.1 retains recoverable PAT cleanup metadata during
+credential rotation and adds no authentication-management MCP tools.
 
 Account and Agent credential workflows run only in a trusted terminal:
 
@@ -36,4 +36,3 @@ bun run check
 
 See the repository [README](../../README.md) for installation, upgrades, account onboarding,
 ownership boundaries, and security behavior.
-

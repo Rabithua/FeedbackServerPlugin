@@ -48,7 +48,7 @@ export class FeedbackServerApiClient {
     }
     const headers = new Headers({
       Accept: 'application/json',
-      'User-Agent': 'FeedbackServer-MCP/0.5.0',
+      'User-Agent': 'FeedbackServer-MCP/0.5.1',
     });
     if (options.authenticated !== false) {
       headers.set('Authorization', `Bearer ${this.credentials.token}`);
