@@ -16,8 +16,10 @@ trusted-terminal commands because PAT-authenticated MCP tools cannot access auth
   chat. These secrets belong only in hidden terminal prompts.
 - To create a shareable invitation, direct an enabled `super_admin` to
   `feedback-server admin invite`. The
-  command copies the one-time token to the macOS clipboard, reports only its prefix and metadata,
-  clears it after sharing when unchanged, and revokes it if clipboard delivery fails.
+  command copies a recipient handoff package to the macOS clipboard, reports only its prefix and
+  metadata, clears it after sharing when unchanged, and revokes it if clipboard delivery fails. The
+  handoff package includes an Agent-ready task prompt, but the invitation token must still be pasted
+  only into the trusted terminal's hidden prompt, not into Agent chat.
 - Use `feedback-server admin invitations` to list non-secret invitation metadata and
   `feedback-server admin invite revoke --id <uuid>` to revoke an unaccepted invitation.
 - The recipient uses `feedback-server admin accept-invite`. It refuses to consume the invitation when Agent

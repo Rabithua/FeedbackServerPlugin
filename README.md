@@ -65,9 +65,15 @@ Existing checkout workflows such as `bun run agent:configure` and
 Only an enabled `super_admin` may create or revoke invitations. Authentication-management routes
 require a short-lived interactive session and are deliberately not exposed as MCP tools.
 
+For a recipient-facing handoff, `admin invite` copies a complete Simplified Chinese handoff package
+that includes the one-time invitation, a safe prompt the recipient can give to Codex or Claude Code,
+and a link to [the onboarding guide](docs/invited-admin-onboarding.zh-Hans.md). The package tells
+the recipient not to paste the invitation token into Agent chat; it belongs only in the hidden
+terminal prompt.
+
 `admin invite` creates a 7-day invitation by default, with `--expires-in-days` accepting 1–30. It
-writes the one-time token to the macOS clipboard through stdin, reports only its ID, prefix, and
-expiry, and clears the token after the sharing handoff when unchanged. A clipboard or handoff
+writes the handoff package to the macOS clipboard through stdin, reports only the invitation ID,
+prefix, and expiry, and clears the package after the sharing handoff when unchanged. A clipboard or handoff
 failure revokes the invitation before logout.
 
 `admin accept-invite` refuses to consume an invitation when another Agent credential is configured.

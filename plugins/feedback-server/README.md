@@ -20,10 +20,12 @@ feedback-server admin accept-invite
 feedback-server admin create-local
 ```
 
-Passwords and invitation tokens use hidden TTY input. Invitation creation uses the macOS clipboard;
-PAT storage uses split macOS Keychain records with the token passed only through stdin. A separate
-Keychain ledger stores only server URL, username, and token ID for recoverable PAT revocation. CI
-and non-macOS MCP processes may use paired `FEEDBACK_SERVER_BASE_URL` and
+Passwords and invitation tokens use hidden TTY input. Invitation creation copies a recipient
+handoff package to the macOS clipboard; the package contains the one-time token, an Agent-ready
+task prompt, and instructions to paste the token only into a hidden terminal prompt. PAT storage
+uses split macOS Keychain records with the token passed only through stdin. A separate Keychain
+ledger stores only server URL, username, and token ID for recoverable PAT revocation. CI and
+non-macOS MCP processes may use paired `FEEDBACK_SERVER_BASE_URL` and
 `FEEDBACK_SERVER_API_TOKEN` environment values.
 
 Development commands:

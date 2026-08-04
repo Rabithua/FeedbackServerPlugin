@@ -4,7 +4,7 @@ import { registerFeedbackServerTools } from './tools.js';
 export function createServer(): McpServer {
   const server = new McpServer({
     name: 'feedback-server',
-    version: '0.6.0',
+    version: '0.6.1',
   });
   registerFeedbackServerTools(server);
   return server;

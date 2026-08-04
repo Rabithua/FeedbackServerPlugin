@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  buildInvitationHandoffMessage,
   createShareableInvitation,
   getInvitations,
   revokeInvitationById,
@@ -21,6 +22,7 @@ const invitation: CreatedInvitation = {
   revokedAt: null,
   createdAt: '2026-08-04T00:00:00.000Z',
 };
+const handoffMessage = buildInvitationHandoffMessage({ baseUrl, invitation });
 
 function dependencies(
   events: string[],
@@ -58,12 +60,15 @@ function dependencies(
     },
     clipboard: {
       write: (value) => {
-        expect(value).toBe(token);
+        expect(value).toBe(handoffMessage);
+        expect(value).toContain(token);
+        expect(value).toContain(`admin accept-invite --url ${baseUrl}`);
+        expect(value).toContain('不要把整段消息直接发给 Agent');
         events.push('copy');
         return Promise.resolve();
       },
       clearIfUnchanged: (value) => {
-        expect(value).toBe(token);
+        expect(value).toBe(handoffMessage);
         events.push('clear');
         return Promise.resolve(true);
       },
