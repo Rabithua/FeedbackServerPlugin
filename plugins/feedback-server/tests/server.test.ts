@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { createServer } from '../src/create-server.js';
+import { productUpdateProtectedEffects } from '../src/tools.js';
 
 const token = `fspat_${'b'.repeat(64)}`;
 const productId = '11111111-1111-4111-8111-111111111111';
@@ -316,7 +317,7 @@ function resultData(result: { structuredContent?: unknown }) {
   return (result.structuredContent as { data: Record<string, unknown> }).data;
 }
 
-describe('MCP server 0.5.1', () => {
+describe('MCP server 0.6.0', () => {
   const originalFetch = globalThis.fetch;
   let client: Client;
   let server: ReturnType<typeof createServer>;
@@ -354,6 +355,32 @@ describe('MCP server 0.5.1', () => {
     expect(serialized).not.toContain('votingEnabled');
     expect(serialized).not.toContain('productIds');
     expect(names).not.toContain('create_admin');
+  });
+
+  test('reports Product protected effects in deterministic order for combined changes', () => {
+    const status = 'Product clients may stop working';
+    const visibility = 'New user feedback will be published by default';
+    const diagnostics = 'Product clients may offer visitors a private diagnostic-log upload option';
+    expect(productUpdateProtectedEffects({
+      statusChanges: true,
+      visibilityChanges: true,
+      diagnosticsChanges: false,
+    })).toEqual([status, visibility]);
+    expect(productUpdateProtectedEffects({
+      statusChanges: true,
+      visibilityChanges: false,
+      diagnosticsChanges: true,
+    })).toEqual([status, diagnostics]);
+    expect(productUpdateProtectedEffects({
+      statusChanges: false,
+      visibilityChanges: true,
+      diagnosticsChanges: true,
+    })).toEqual([visibility, diagnostics]);
+    expect(productUpdateProtectedEffects({
+      statusChanges: true,
+      visibilityChanges: true,
+      diagnosticsChanges: true,
+    })).toEqual([status, visibility, diagnostics]);
   });
 
   test('routes all 54 tools through their documented API contracts', async () => {

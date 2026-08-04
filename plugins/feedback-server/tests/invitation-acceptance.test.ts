@@ -36,6 +36,11 @@ function dependencies(
   events: string[],
   overrides: Partial<InvitationAcceptanceDependencies> = {},
 ): InvitationAcceptanceDependencies {
+  const pendingRevocations: Array<{
+    baseUrl: string;
+    username: string;
+    tokenId: string;
+  }> = [];
   return {
     isMacOS: () => true,
     readCredentials: () => {
@@ -85,6 +90,21 @@ function dependencies(
       events.push(`logout:${refreshToken}`);
       return Promise.resolve();
     },
+    readPendingRevocations: () => {
+      events.push('read-pending');
+      return Promise.resolve([...pendingRevocations]);
+    },
+    addPendingRevocation: (entry) => {
+      events.push(`add-pending:${entry.tokenId}`);
+      pendingRevocations.push(entry);
+      return Promise.resolve();
+    },
+    removePendingRevocation: (entry) => {
+      events.push(`remove-pending:${entry.tokenId}`);
+      const index = pendingRevocations.findIndex((candidate) => candidate.tokenId === entry.tokenId);
+      if (index >= 0) pendingRevocations.splice(index, 1);
+      return Promise.resolve();
+    },
     ...overrides,
   };
 }
@@ -125,8 +145,11 @@ describe('invitation acceptance and Agent configuration', () => {
       'accept',
       'verify-login',
       'list-products',
+      'read-pending',
       'create-token',
+      'add-pending:22222222-2222-4222-8222-222222222222',
       'write-credentials',
+      'remove-pending:22222222-2222-4222-8222-222222222222',
       'logout:verified-refresh',
       'logout:accepted-refresh',
     ]);
@@ -217,12 +240,33 @@ describe('invitation acceptance and Agent configuration', () => {
       'accept',
       'verify-login',
       'list-products',
+      'read-pending',
       'create-token',
+      'add-pending:22222222-2222-4222-8222-222222222222',
       'write-credentials',
       'revoke-token:22222222-2222-4222-8222-222222222222',
+      'remove-pending:22222222-2222-4222-8222-222222222222',
       'logout:verified-refresh',
       'logout:accepted-refresh',
     ]);
+  });
+
+  test('surfaces recoverable token identification when Keychain and revocation both fail', async () => {
+    const events: string[] = [];
+    const tokenId = '22222222-2222-4222-8222-222222222222';
+    const error = await capturedError(
+      acceptInvitationAndConfigure(
+        input,
+        dependencies(events, {
+          writeCredentials: () => Promise.reject(new Error('Keychain unavailable')),
+          revokeToken: () => Promise.reject(new Error('revocation unavailable')),
+        }),
+      ),
+    );
+    expect(error).toBeInstanceOf(CommittedInvitationAcceptanceError);
+    expect((error as Error).message).toContain(tokenId);
+    expect((error as Error).message).toContain('feedback-server agent revoke-token');
+    expect(events).not.toContain(`remove-pending:${tokenId}`);
   });
 
   test('does not create a PAT if tenant isolation verification fails', async () => {

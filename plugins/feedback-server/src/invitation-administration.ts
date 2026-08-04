@@ -71,8 +71,9 @@ export async function createShareableInvitation(
   );
   let invitation: CreatedInvitation | undefined;
   let copied = false;
+  let handoffCommitted = false;
   let clipboardCleared = false;
-  let operationError: unknown;
+  const errors: unknown[] = [];
 
   try {
     requireSuperAdmin(session);
@@ -81,40 +82,35 @@ export async function createShareableInvitation(
       session.accessToken,
       input.expiresInDays,
     );
-    try {
-      await dependencies.clipboard.write(invitation.token);
-      copied = true;
-    } catch (clipboardError) {
+    await dependencies.clipboard.write(invitation.token);
+    copied = true;
+    await onCopied(invitation);
+    handoffCommitted = true;
+  } catch (error) {
+    errors.push(error);
+    if (invitation && !handoffCommitted) {
       try {
         await dependencies.revokeInvitation(baseUrl, session.accessToken, invitation.id);
       } catch (revocationError) {
-        throw new AggregateError(
-          [clipboardError, revocationError],
-          'Invitation clipboard delivery and rollback both failed',
-        );
+        errors.push(revocationError);
       }
-      throw clipboardError;
     }
-    await onCopied(invitation);
-  } catch (error) {
-    operationError = error;
   }
 
-  const cleanupErrors: unknown[] = [];
   if (copied && invitation) {
     try {
       clipboardCleared = await dependencies.clipboard.clearIfUnchanged(invitation.token);
     } catch (error) {
-      cleanupErrors.push(error);
+      errors.push(error);
     }
   }
-  await logoutWithWarning(baseUrl, session.refreshToken, dependencies.logout);
+  try {
+    await dependencies.logout(baseUrl, session.refreshToken);
+  } catch (error) {
+    errors.push(error);
+  }
 
-  if (operationError !== undefined || cleanupErrors.length > 0) {
-    const errors = [
-      ...(operationError === undefined ? [] : [operationError]),
-      ...cleanupErrors,
-    ];
+  if (errors.length > 0) {
     throw errors.length === 1
       ? errors[0] instanceof Error
         ? errors[0]
@@ -165,4 +161,3 @@ export async function revokeInvitationById(
     await logoutWithWarning(baseUrl, session.refreshToken, dependencies.logout);
   }
 }
-

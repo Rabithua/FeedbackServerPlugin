@@ -132,6 +132,20 @@ interface ToolContext {
 
 type ObjectSchema = z.ZodObject<z.ZodRawShape>;
 
+export function productUpdateProtectedEffects(input: {
+  statusChanges: boolean;
+  visibilityChanges: boolean;
+  diagnosticsChanges: boolean;
+}): string[] {
+  return [
+    ...(input.statusChanges ? ['Product clients may stop working'] : []),
+    ...(input.visibilityChanges ? ['New user feedback will be published by default'] : []),
+    ...(input.diagnosticsChanges
+      ? ['Product clients may offer visitors a private diagnostic-log upload option']
+      : []),
+  ];
+}
+
 type RegisterToolBridge = (
   name: string,
   config: {
@@ -517,6 +531,11 @@ export function registerFeedbackServerTools(
             }
           : { precondition: current.precondition };
       }
+      const effects = productUpdateProtectedEffects({
+        statusChanges,
+        visibilityChanges,
+        diagnosticsChanges,
+      });
       return {
         precondition: current.precondition,
         preview: {
@@ -528,11 +547,8 @@ export function registerFeedbackServerTools(
           requestedDefaultFeedbackVisibility: defaultFeedbackVisibility,
           currentDiagnosticsEnabled: current.product.diagnosticsEnabled,
           requestedDiagnosticsEnabled: diagnosticsEnabled,
-          effect: visibilityChanges
-            ? 'New user feedback will be published by default'
-            : diagnosticsChanges
-              ? 'Product clients may offer visitors a private diagnostic-log upload option'
-              : 'Product clients may stop working',
+          effect: effects.join('; '),
+          effects,
         },
       };
     },

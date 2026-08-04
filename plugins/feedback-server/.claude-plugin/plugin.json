@@ -1,0 +1,22 @@
+{
+  "name": "feedback-server",
+  "version": "0.6.0",
+  "description": "Manage FeedbackServer products, feedback, activity, roadmaps, releases, attachments, Bark, and audit records through MCP.",
+  "author": {
+    "name": "Rabithua",
+    "url": "https://github.com/Rabithua"
+  },
+  "homepage": "https://github.com/Rabithua/FeedbackServerPlugin",
+  "repository": "https://github.com/Rabithua/FeedbackServerPlugin",
+  "license": "MIT",
+  "keywords": [
+    "feedback",
+    "roadmap",
+    "changelog",
+    "mcp"
+  ],
+  "skills": [
+    "./skills/manage-feedback-server"
+  ],
+  "mcpServers": "./.mcp.claude.json"
+}

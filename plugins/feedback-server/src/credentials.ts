@@ -6,6 +6,7 @@ export const KEYCHAIN_SERVICE = 'dev.rote.feedback-server.mcp';
 export const KEYCHAIN_ACCOUNT = 'default';
 export const KEYCHAIN_TOKEN_SERVICE = `${KEYCHAIN_SERVICE}.token`;
 export const KEYCHAIN_METADATA_SERVICE = `${KEYCHAIN_SERVICE}.metadata`;
+export const KEYCHAIN_PENDING_REVOCATIONS_SERVICE = `${KEYCHAIN_SERVICE}.pending-revocations`;
 export const SECURITY_EXECUTABLE = '/usr/bin/security';
 
 const credentialSchema = z.object({
@@ -27,8 +28,18 @@ const credentialMetadataSchema = credentialSchema
   .omit({ token: true })
   .extend({ version: z.literal(1) });
 const keychainRecordIdSchema = z.uuid();
+const pendingTokenRevocationSchema = z.object({
+  baseUrl: z.url(),
+  username: z.string().min(1).max(80),
+  tokenId: z.uuid(),
+});
+const pendingTokenRevocationLedgerSchema = z.object({
+  version: z.literal(1),
+  entries: z.array(pendingTokenRevocationSchema).max(64),
+});
 
 export type StoredCredentials = z.infer<typeof credentialSchema>;
+export type PendingTokenRevocation = z.infer<typeof pendingTokenRevocationSchema>;
 export type SecurityCommandResult = {
   exitCode: number;
   stdout: string;
@@ -41,6 +52,15 @@ export type SecurityCommandRunner = (
 
 export function normalizeBaseUrl(value: string): string {
   const url = new URL(value.trim());
+  if (url.username || url.password) {
+    throw new Error('FeedbackServer URL must not include user information');
+  }
+  const isLoopbackHttp =
+    url.protocol === 'http:'
+    && (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]');
+  if (url.protocol !== 'https:' && !isLoopbackHttp) {
+    throw new Error('FeedbackServer URL must use HTTPS; HTTP is allowed only for localhost development');
+  }
   url.hash = '';
   url.search = '';
   url.pathname = url.pathname.replace(/\/+$/, '');
@@ -135,6 +155,26 @@ function keychainDeleteArguments(service: string, account: string): string[] {
   return ['delete-generic-password', '-a', account, '-s', service];
 }
 
+export function keychainPendingRevocationsWriteArguments(
+  entries: PendingTokenRevocation[],
+): string[] {
+  const value = JSON.stringify(
+    pendingTokenRevocationLedgerSchema.parse({ version: 1, entries }),
+  );
+  return [
+    'add-generic-password',
+    '-U',
+    '-a',
+    KEYCHAIN_ACCOUNT,
+    '-s',
+    KEYCHAIN_PENDING_REVOCATIONS_SERVICE,
+    '-l',
+    'FeedbackServer pending PAT revocations',
+    '-X',
+    hexadecimalValue(value),
+  ];
+}
+
 function isMissingKeychainItem(result: SecurityCommandResult): boolean {
   return result.exitCode === 44 || result.stderr.includes('could not be found');
 }
@@ -197,6 +237,99 @@ export async function readKeychainCredentials(
 ): Promise<StoredCredentials | undefined> {
   if (process.platform !== 'darwin') return undefined;
   return readKeychainCredentialRecord(runner);
+}
+
+export async function readKeychainPendingTokenRevocations(
+  runner: SecurityCommandRunner,
+): Promise<PendingTokenRevocation[]> {
+  const value = await readKeychainValue(
+    KEYCHAIN_PENDING_REVOCATIONS_SERVICE,
+    KEYCHAIN_ACCOUNT,
+    runner,
+  );
+  if (!value) return [];
+  const ledger = pendingTokenRevocationLedgerSchema.parse(JSON.parse(value));
+  return ledger.entries.map((entry) => ({
+    ...entry,
+    baseUrl: normalizeBaseUrl(entry.baseUrl),
+  }));
+}
+
+export async function writeKeychainPendingTokenRevocations(
+  entries: PendingTokenRevocation[],
+  runner: SecurityCommandRunner,
+): Promise<void> {
+  const normalized = pendingTokenRevocationLedgerSchema.parse({
+    version: 1,
+    entries: entries.map((entry) => ({
+      ...entry,
+      baseUrl: normalizeBaseUrl(entry.baseUrl),
+    })),
+  }).entries;
+  if (normalized.length === 0) {
+    if (!(await deleteKeychainItem(
+      KEYCHAIN_PENDING_REVOCATIONS_SERVICE,
+      KEYCHAIN_ACCOUNT,
+      runner,
+    ))) {
+      throw new Error('Unable to clear pending FeedbackServer PAT revocations from Keychain');
+    }
+    return;
+  }
+  const result = await runner(keychainPendingRevocationsWriteArguments(normalized));
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `Unable to store pending FeedbackServer PAT revocations in Keychain: ${result.stderr.trim()}`,
+    );
+  }
+}
+
+export async function readPendingTokenRevocations(
+  runner: SecurityCommandRunner = runSecurity,
+): Promise<PendingTokenRevocation[]> {
+  if (process.platform !== 'darwin') return [];
+  return readKeychainPendingTokenRevocations(runner);
+}
+
+export async function addPendingTokenRevocation(
+  entry: PendingTokenRevocation,
+  runner: SecurityCommandRunner = runSecurity,
+): Promise<void> {
+  if (process.platform !== 'darwin') {
+    throw new Error('macOS Keychain is unavailable on this platform');
+  }
+  const parsed = pendingTokenRevocationSchema.parse({
+    ...entry,
+    baseUrl: normalizeBaseUrl(entry.baseUrl),
+  });
+  const current = await readKeychainPendingTokenRevocations(runner);
+  const entries = current.filter((candidate) => !(
+    candidate.baseUrl === parsed.baseUrl
+    && candidate.username === parsed.username
+    && candidate.tokenId === parsed.tokenId
+  ));
+  entries.push(parsed);
+  await writeKeychainPendingTokenRevocations(entries, runner);
+}
+
+export async function removePendingTokenRevocation(
+  entry: PendingTokenRevocation,
+  runner: SecurityCommandRunner = runSecurity,
+): Promise<void> {
+  if (process.platform !== 'darwin') return;
+  const parsed = pendingTokenRevocationSchema.parse({
+    ...entry,
+    baseUrl: normalizeBaseUrl(entry.baseUrl),
+  });
+  const current = await readKeychainPendingTokenRevocations(runner);
+  await writeKeychainPendingTokenRevocations(
+    current.filter((candidate) => !(
+      candidate.baseUrl === parsed.baseUrl
+      && candidate.username === parsed.username
+      && candidate.tokenId === parsed.tokenId
+    )),
+    runner,
+  );
 }
 
 export async function writeKeychainCredentialRecord(
@@ -320,7 +453,7 @@ export async function loadCredentials(
   const stored = await readKeychainCredentials();
   if (!stored) {
     throw new Error(
-      'FeedbackServer Agent is not configured. Run bun run agent:configure in the FeedbackServer-Codex repository.',
+      'FeedbackServer Agent is not configured. Run feedback-server agent configure in a trusted terminal.',
     );
   }
   return {

@@ -1,88 +1,98 @@
-# FeedbackServer Codex
+# FeedbackServer Plugin
 
-FeedbackServer Codex is the public Codex plugin and marketplace for administering a compatible
-FeedbackServer instance. The plugin talks only to the documented HTTPS API; it contains no server
-source, deployment configuration, database access, or administrator secrets.
+FeedbackServer Plugin is the public multi-agent distribution for administering a compatible
+FeedbackServer instance. One audited TypeScript implementation provides a shared MCP server,
+management Skill, and trusted-terminal account CLI for Codex and Claude Code. The repository
+contains no FeedbackServer source, deployment configuration, database access, or credentials.
 
-## Install
-
-The easiest setup keeps a local checkout so its trusted-terminal account commands are available:
+## Install for Codex
 
 ```bash
-git clone https://github.com/Rabithua/FeedbackServer-Codex.git
-cd FeedbackServer-Codex
-bun install --cwd=plugins/feedback-server --frozen-lockfile
-codex plugin marketplace add .
+codex plugin marketplace add Rabithua/FeedbackServerPlugin --ref main
 codex plugin add feedback-server@feedback-server
 ```
 
-Existing administrators configure a personal Agent connection with:
+Start a new Codex task after installation. To update, run
+`codex plugin marketplace upgrade feedback-server`, reinstall
+`feedback-server@feedback-server`, and start another task.
+
+## Install for Claude Code
 
 ```bash
-bun run agent:configure
+claude plugin marketplace add Rabithua/FeedbackServerPlugin
+claude plugin install feedback-server@feedback-server --scope user
 ```
 
-Invited administrators instead run:
+Restart or reload Claude Code after installation. The plugin starts its MCP server from the cached
+bundle through `${CLAUDE_PLUGIN_ROOT}` and exposes the same `manage-feedback-server` Skill.
+
+Cursor and OpenCode can use the same standalone MCP bundle. See
+[Generic MCP clients](docs/generic-mcp.md) for checked configuration templates.
+
+## Configure an Agent account
+
+The distributable CLI runs from the committed bundle and does not require `node_modules`:
 
 ```bash
-bun run admin:accept-invite
+git clone https://github.com/Rabithua/FeedbackServerPlugin.git
+cd FeedbackServerPlugin
+plugins/feedback-server/bin/feedback-server agent configure
 ```
 
-Both commands hide passwords and bearer secrets. Agent PATs are created with a 365-day lifetime,
-stored in macOS Keychain, and never printed. Start a new Codex task after installation so the MCP
-tools and management Skill are loaded.
+The CLI hides passwords, invitation tokens, and PATs. On macOS it stores credentials under the
+existing Keychain service `dev.rote.feedback-server.mcp`, so Codex and Claude Code reuse the same
+account without copying or rotating its PAT. Non-macOS MCP processes must receive both
+`FEEDBACK_SERVER_BASE_URL` and `FEEDBACK_SERVER_API_TOKEN` from a secure process environment.
 
-For an install without a checkout, add the Git marketplace directly:
+Supported commands:
 
-```bash
-codex plugin marketplace add Rabithua/FeedbackServer-Codex --ref main
-codex plugin add feedback-server@feedback-server
+```text
+feedback-server agent configure
+feedback-server agent disconnect
+feedback-server agent revoke-token --id <uuid>
+feedback-server admin invite
+feedback-server admin invitations
+feedback-server admin invite revoke --id <uuid>
+feedback-server admin accept-invite
+feedback-server admin create-local
 ```
 
-Trusted-terminal account commands still require a checkout. Update a Git marketplace with
-`codex plugin marketplace upgrade feedback-server`, reinstall the plugin, and start a new task.
+Existing checkout workflows such as `bun run agent:configure` and
+`bun run admin:invite:revoke --id <uuid>` remain available as compatibility aliases.
 
 ## Invite administrators
 
 Only an enabled `super_admin` may create or revoke invitations. Authentication-management routes
-require a short-lived interactive session and deliberately are not exposed as MCP tools.
+require a short-lived interactive session and are deliberately not exposed as MCP tools.
 
-```bash
-bun run admin:invite                         # create a 7-day invitation
-bun run admin:invite --expires-in-days 1    # choose 1–30 days
-bun run admin:invitations                    # list status and non-secret prefixes
-bun run admin:invite:revoke --id <uuid>     # revoke an unaccepted invitation
-bun run admin:create-local                   # create and accept locally without exposing a token
-```
+`admin invite` creates a 7-day invitation by default, with `--expires-in-days` accepting 1–30. It
+writes the one-time token to the macOS clipboard through stdin, reports only its ID, prefix, and
+expiry, and clears the token after the sharing handoff when unchanged. A clipboard or handoff
+failure revokes the invitation before logout.
 
-`admin:invite` writes the one-time token to the macOS clipboard through stdin, never stdout,
-arguments, or disk. Share it through a trusted channel and press Return to clear it if the
-clipboard still contains the same token. If clipboard delivery fails, the command revokes the new
-invitation. Every temporary administrator session is logged out.
+`admin accept-invite` refuses to consume an invitation when another Agent credential is configured.
+It creates an ordinary administrator, verifies the account owns no Products, creates a 365-day PAT,
+stores it atomically, and logs out every temporary session. If account creation committed but local
+configuration failed, do not reuse the invitation: run `feedback-server agent configure` with the
+new account. Any PAT whose compensating revocation also failed is recorded by non-secret ID in a
+separate Keychain ledger and can be removed with the reported `agent revoke-token` command.
 
-`admin:accept-invite` requires macOS Keychain and refuses to consume an invitation while another
-Agent credential is configured. It creates the account, verifies the account is an ordinary
-administrator with no Products, creates a personal PAT, stores it atomically, and logs out temporary
-sessions. A committed account whose Agent setup fails must use `agent:configure`; the invitation
-must not be reused.
+Each administrator owns an independent tenant. New administrators start with no Products and
+cannot access another owner's Product.
 
-## Ownership and privacy
+## Security and development
 
-Each administrator owns an independent tenant. A new account starts with no Products, and neither
-an ordinary administrator nor a `super_admin` can access another owner's Products. The plugin does
-not provide Product sharing or ownership transfer.
-
-The MCP process reads macOS Keychain by default. CI and non-macOS environments may provide both
-`FEEDBACK_SERVER_BASE_URL` and `FEEDBACK_SERVER_API_TOKEN` through a secure process environment.
-Never commit either value or send a PAT, password, or invitation token through a Codex chat.
-
-## Development
+Remote endpoints must use HTTPS. Plain HTTP is accepted only for exact loopback hosts
+`localhost`, `127.0.0.1`, and `[::1]`. Secrets are never accepted as command arguments or written to
+logs, bundles, repository files, or pending-revocation metadata.
 
 ```bash
 bun install --cwd=plugins/feedback-server --frozen-lockfile
 bun run check
 bun run validate
+bun run scan
+claude plugin validate --strict .
 ```
 
-The committed `plugins/feedback-server/dist/server.mjs` bundle is deterministic and must match the
-TypeScript source. FeedbackServer Codex is licensed under the [MIT License](LICENSE).
+Both `dist/server.mjs` and `dist/cli.mjs` are deterministic committed bundles. FeedbackServer
+Plugin is licensed under the [MIT License](LICENSE).

@@ -7,23 +7,25 @@ description: Manage FeedbackServer apps (Products), private/public Feedback, pri
 
 Use the `feedback-server` MCP tools as the only Product and Feedback management interface. Do not
 fall back to direct SQL, production shell access, or undocumented HTTP calls. Administrator
-invitations and Agent credential setup are the sole exception: they use the repository's documented
+invitations and Agent credential setup are the sole exception: they use the plugin's documented
 trusted-terminal commands because PAT-authenticated MCP tools cannot access authentication routes.
 
 ## Manage administrator onboarding
 
 - Never ask a user to paste an administrator password, invitation token, refresh token, or PAT into
   chat. These secrets belong only in hidden terminal prompts.
-- To create a shareable invitation, direct an enabled `super_admin` to `bun run admin:invite`. The
+- To create a shareable invitation, direct an enabled `super_admin` to
+  `feedback-server admin invite`. The
   command copies the one-time token to the macOS clipboard, reports only its prefix and metadata,
   clears it after sharing when unchanged, and revokes it if clipboard delivery fails.
-- Use `bun run admin:invitations` to list non-secret invitation metadata and
-  `bun run admin:invite:revoke --id <uuid>` to revoke an unaccepted invitation.
-- The recipient uses `bun run admin:accept-invite`. It refuses to consume the invitation when Agent
+- Use `feedback-server admin invitations` to list non-secret invitation metadata and
+  `feedback-server admin invite revoke --id <uuid>` to revoke an unaccepted invitation.
+- The recipient uses `feedback-server admin accept-invite`. It refuses to consume the invitation when Agent
   credentials already exist, verifies the new tenant is empty, and configures a personal PAT in
   macOS Keychain. If account creation committed but configuration failed, use
-  `bun run agent:configure`; do not retry the invitation.
-- Use `bun run admin:create-local` when the super administrator should create both sides locally
+  `feedback-server agent configure`; do not retry the invitation. If PAT rollback also failed, use
+  the reported `feedback-server agent revoke-token --id <uuid>` recovery command.
+- Use `feedback-server admin create-local` when the super administrator should create both sides locally
   without exposing an invitation token.
 - Installing the plugin and accepting an invitation are separate. New administrators own no
   Products and cannot access or receive another administrator's Product.

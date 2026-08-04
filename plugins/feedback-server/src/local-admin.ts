@@ -22,7 +22,7 @@ class LocalAdminVerificationError extends Error {}
 export class CommittedAdminCreationError extends Error {
   public constructor(cause: unknown) {
     super(
-      'Administrator creation committed, but login and Product isolation verification did not complete after three attempts; verify the account manually instead of retrying the same username',
+      'Administrator creation committed, but verification or temporary-session cleanup did not complete; the account exists, so verify it manually instead of retrying the same username',
       { cause },
     );
     this.name = 'CommittedAdminCreationError';
@@ -182,6 +182,11 @@ export async function createLocalAdmin(
   }
 
   if (operationError !== undefined || cleanupErrors.length > 0) {
+    if (result && operationError === undefined) {
+      throw new CommittedAdminCreationError(
+        new AggregateError(cleanupErrors, 'Committed administrator creation cleanup failed'),
+      );
+    }
     if (operationError instanceof CommittedAdminCreationError) {
       if (cleanupErrors.length === 0) throw operationError;
       throw new CommittedAdminCreationError(

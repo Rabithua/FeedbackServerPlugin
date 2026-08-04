@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "feedback-server": {
+      "type": "local",
+      "command": [
+        "bun",
+        "/ABSOLUTE/PATH/FeedbackServerPlugin/plugins/feedback-server/dist/server.mjs"
+      ],
+      "enabled": true
+    }
+  }
+}

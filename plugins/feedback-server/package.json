@@ -1,22 +1,27 @@
 {
-  "name": "@feedback-server/codex-plugin",
-  "version": "0.5.1",
+  "name": "@feedback-server/agent-plugin",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "bun build ./src/server.ts --target=bun --format=esm --minify --outfile=./dist/server.mjs && bun run ./scripts/normalize-build.ts",
+    "build": "bun build ./src/server.ts --target=bun --format=esm --minify --outfile=./dist/server.mjs && bun build ./src/cli.ts --target=bun --format=esm --minify --outfile=./dist/cli.mjs && bun run ./scripts/normalize-build.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src scripts tests --max-warnings=0",
     "test": "bun test --timeout 10000",
+    "test:stdio": "bun run ./scripts/stdio-smoke.ts",
     "test:contract": "bun run ./scripts/contract-test.ts",
-    "check": "bun run typecheck && bun run lint && bun run test && bun run build",
-    "admin:create-local": "bun run ./src/create-local-admin.ts",
-    "admin:invite": "bun run ./src/create-invitation.ts",
-    "admin:invitations": "bun run ./src/list-invitations.ts",
-    "admin:invite:revoke": "bun run ./src/revoke-invitation.ts",
-    "admin:accept-invite": "bun run ./src/accept-invitation.ts",
-    "configure": "bun run ./src/configure.ts",
-    "disconnect": "bun run ./src/disconnect.ts"
+    "check": "bun run typecheck && bun run lint && bun run test && bun run build && bun run test:stdio",
+    "admin:create-local": "bun run ./bin/feedback-server admin create-local",
+    "admin:invite": "bun run ./bin/feedback-server admin invite",
+    "admin:invitations": "bun run ./bin/feedback-server admin invitations",
+    "admin:invite:revoke": "bun run ./bin/feedback-server admin invite revoke",
+    "admin:accept-invite": "bun run ./bin/feedback-server admin accept-invite",
+    "configure": "bun run ./bin/feedback-server agent configure",
+    "disconnect": "bun run ./bin/feedback-server agent disconnect",
+    "agent:revoke-token": "bun run ./bin/feedback-server agent revoke-token"
+  },
+  "bin": {
+    "feedback-server": "./bin/feedback-server"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
