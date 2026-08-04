@@ -151,13 +151,13 @@ async function runAdminInvite(options: string[]): Promise<void> {
         `Invitation ${invitation.id} (${invitation.tokenPrefix}…) expires ${invitation.expiresAt}.`,
       );
       await promptText(
-        'The one-time invitation is in your clipboard. Share it through a trusted channel, then press Return to clear it',
+        'The recipient handoff package is in your clipboard. Share it through a trusted channel, then press Return to clear it',
       );
     },
   );
   console.error(
     result.clipboardCleared
-      ? 'Invitation created; the unchanged invitation token was cleared from the clipboard.'
+      ? 'Invitation created; the unchanged handoff package was cleared from the clipboard.'
       : 'Invitation created; the clipboard had already changed and was left untouched.',
   );
 }
