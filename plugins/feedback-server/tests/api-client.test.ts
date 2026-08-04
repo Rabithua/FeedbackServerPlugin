@@ -5,6 +5,7 @@ import {
 } from '../src/api-client.js';
 import {
   KEYCHAIN_METADATA_SERVICE,
+  KEYCHAIN_PENDING_REVOCATIONS_SERVICE,
   KEYCHAIN_SERVICE,
   KEYCHAIN_TOKEN_SERVICE,
   SECURITY_EXECUTABLE,
@@ -12,7 +13,9 @@ import {
   loadCredentials,
   normalizeBaseUrl,
   readKeychainCredentialRecord,
+  readKeychainPendingTokenRevocations,
   resumeKeychainCredentialRecordCleanup,
+  writeKeychainPendingTokenRevocations,
   writeKeychainCredentialRecord,
   type SecurityCommandRunner,
 } from '../src/credentials.js';
@@ -50,6 +53,48 @@ describe('credentials and API client', () => {
       baseUrl: 'https://feedback.example.com/v1/api',
       token,
     });
+  });
+
+  test('requires HTTPS except for exact loopback development hosts', () => {
+    expect(normalizeBaseUrl('http://localhost:3000')).toBe('http://localhost:3000/v1/api');
+    expect(normalizeBaseUrl('http://127.0.0.1:3000/api')).toBe(
+      'http://127.0.0.1:3000/api/v1/api',
+    );
+    expect(normalizeBaseUrl('http://[::1]:3000')).toBe('http://[::1]:3000/v1/api');
+    expect(() => normalizeBaseUrl('http://feedback.example.com')).toThrow('must use HTTPS');
+    expect(() => normalizeBaseUrl('http://localhost.example.com')).toThrow('must use HTTPS');
+    expect(() => normalizeBaseUrl('ftp://localhost')).toThrow('must use HTTPS');
+    const userInformationUrl = `https://${['user', 'password'].join(':')}@feedback.example.com`;
+    expect(() => normalizeBaseUrl(userInformationUrl)).toThrow(
+      'must not include user information',
+    );
+  });
+
+  test('stores only non-secret pending revocation metadata in a separate Keychain item', async () => {
+    const entries = [{
+      baseUrl: 'https://feedback.example.com/v1/api',
+      username: 'owner',
+      tokenId: '11111111-1111-4111-8111-111111111111',
+    }];
+    let stored = '';
+    const runner: SecurityCommandRunner = (args) => {
+      if (args[0] === 'find-generic-password') {
+        return Promise.resolve({
+          exitCode: stored ? 0 : 44,
+          stdout: stored,
+          stderr: stored ? '' : 'The specified item could not be found.',
+        });
+      }
+      expect(args).toContain(KEYCHAIN_PENDING_REVOCATIONS_SERVICE);
+      const encoded = args[args.indexOf('-X') + 1];
+      stored = Buffer.from(encoded!, 'hex').toString('utf8');
+      return Promise.resolve({ exitCode: 0, stdout: '', stderr: '' });
+    };
+
+    await writeKeychainPendingTokenRevocations(entries, runner);
+    expect(stored).not.toContain('fspat_');
+    expect(stored).not.toContain('password');
+    expect(await readKeychainPendingTokenRevocations(runner)).toEqual(entries);
   });
 
   test('keeps the PAT out of Keychain process arguments and command output', async () => {

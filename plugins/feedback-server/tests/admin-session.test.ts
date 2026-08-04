@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import {
   AGENT_SCOPES,
   HiddenPasswordInput,
+  PendingTokenRecoveryError,
   configureAgent,
   disconnectAgent,
+  revokeAgentTokenById,
   type ConfigurationDependencies,
 } from '../src/admin-session.js';
 import type { StoredCredentials } from '../src/credentials.js';
@@ -25,6 +27,11 @@ function dependencies(
   events: string[],
   overrides: Partial<ConfigurationDependencies> = {},
 ): ConfigurationDependencies {
+  const pendingRevocations: Array<{
+    baseUrl: string;
+    username: string;
+    tokenId: string;
+  }> = [];
   return {
     readCredentials: () => Promise.resolve(previous),
     resumeCredentialCleanup: () => Promise.resolve(false),
@@ -59,6 +66,20 @@ function dependencies(
     },
     logout: () => {
       events.push('logout');
+      return Promise.resolve();
+    },
+    readPendingRevocations: () => Promise.resolve([...pendingRevocations]),
+    addPendingRevocation: (entry) => {
+      events.push(`pending:add:${entry.tokenId}`);
+      if (!pendingRevocations.some((candidate) => candidate.tokenId === entry.tokenId)) {
+        pendingRevocations.push(entry);
+      }
+      return Promise.resolve();
+    },
+    removePendingRevocation: (entry) => {
+      events.push(`pending:remove:${entry.tokenId}`);
+      const index = pendingRevocations.findIndex((candidate) => candidate.tokenId === entry.tokenId);
+      if (index >= 0) pendingRevocations.splice(index, 1);
       return Promise.resolve();
     },
     ...overrides,
@@ -102,9 +123,12 @@ describe('Agent configuration lifecycle', () => {
     expect(events).toEqual([
       'login',
       'create',
+      `pending:add:${newTokenId}`,
+      `pending:add:${oldTokenId}`,
       'write',
+      `pending:remove:${newTokenId}`,
       `revoke:${oldTokenId}`,
-      'write',
+      `pending:remove:${oldTokenId}`,
       'logout',
     ]);
   });
@@ -132,14 +156,15 @@ describe('Agent configuration lifecycle', () => {
 
     expect(error).toBe(failure);
     expect(writes).toHaveLength(1);
-    expect(writes[0]).toMatchObject({
-      tokenId: newTokenId,
-      pendingRevocationTokenIds: [oldTokenId],
-    });
+    expect(writes[0]).toMatchObject({ tokenId: newTokenId });
+    expect(writes[0]?.pendingRevocationTokenIds).toBeUndefined();
     expect(events).toEqual([
       'login',
       'create',
+      `pending:add:${newTokenId}`,
+      `pending:add:${oldTokenId}`,
       'write',
+      `pending:remove:${newTokenId}`,
       `revoke:${oldTokenId}`,
       'logout',
     ]);
@@ -161,10 +186,11 @@ describe('Agent configuration lifecycle', () => {
       }),
     );
 
-    expect(events.slice(0, 3)).toEqual([
+    expect(events.slice(0, 4)).toEqual([
       'login',
+      `pending:add:${oldTokenId}`,
       `revoke:${oldTokenId}`,
-      'write',
+      `pending:remove:${oldTokenId}`,
     ]);
     expect(events.indexOf(`revoke:${oldTokenId}`)).toBeLessThan(events.indexOf('create'));
   });
@@ -187,10 +213,40 @@ describe('Agent configuration lifecycle', () => {
     expect(events).toEqual([
       'login',
       'create',
+      `pending:add:${newTokenId}`,
+      `pending:add:${oldTokenId}`,
       'write',
       `revoke:${newTokenId}`,
+      `pending:remove:${newTokenId}`,
+      `pending:remove:${oldTokenId}`,
       'logout',
     ]);
+  });
+
+  test('retains the new token ID when persistence and compensating revocation both fail', async () => {
+    const events: string[] = [];
+    const error = await capturedError(
+      configureAgent(
+        { baseUrl, username: 'owner', password: 'not-logged' },
+        dependencies(events, {
+          writeCredentials: () => {
+            events.push('write');
+            return Promise.reject(new Error('Keychain unavailable'));
+          },
+          revokeToken: (_url, _accessToken, tokenId) => {
+            events.push(`revoke:${tokenId}`);
+            return tokenId === newTokenId
+              ? Promise.reject(new Error('revocation unavailable'))
+              : Promise.resolve();
+          },
+        }),
+      ),
+    );
+
+    expect(error).toBeInstanceOf(PendingTokenRecoveryError);
+    expect((error as Error).message).toContain(newTokenId);
+    expect((error as Error).message).toContain('feedback-server agent revoke-token');
+    expect(events).not.toContain(`pending:remove:${newTokenId}`);
   });
 
   test('requires disconnect before switching servers so no old token is orphaned', async () => {
@@ -206,7 +262,7 @@ describe('Agent configuration lifecycle', () => {
       ),
     );
     expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toContain('agent:disconnect');
+    expect((error as Error).message).toContain('agent disconnect');
     expect(events).toEqual([]);
   });
 
@@ -219,7 +275,7 @@ describe('Agent configuration lifecycle', () => {
       ),
     );
     expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toContain('agent:disconnect');
+    expect((error as Error).message).toContain('agent disconnect');
     expect(events).toEqual([]);
   });
 
@@ -258,10 +314,25 @@ describe('Agent configuration lifecycle', () => {
     ).toBe(true);
     expect(events).toEqual([
       'login',
+      `pending:add:${oldTokenId}`,
       `revoke:${oldTokenId}`,
-      'write',
+      `pending:remove:${oldTokenId}`,
       `revoke:${newTokenId}`,
       'delete',
+      'logout',
+    ]);
+  });
+
+  test('explicitly revokes a recoverable token ID and clears its ledger entry', async () => {
+    const events: string[] = [];
+    await revokeAgentTokenById(
+      { baseUrl, username: 'owner', password: 'not-logged', tokenId: newTokenId },
+      dependencies(events),
+    );
+    expect(events).toEqual([
+      'login',
+      `revoke:${newTokenId}`,
+      `pending:remove:${newTokenId}`,
       'logout',
     ]);
   });

@@ -66,6 +66,9 @@ const acceptanceDependencies: InvitationAcceptanceDependencies = {
   createToken: createAgentToken,
   revokeToken: revokeAgentToken,
   logout,
+  readPendingRevocations: () => Promise.resolve([]),
+  addPendingRevocation: () => Promise.resolve(),
+  removePendingRevocation: () => Promise.resolve(),
 };
 const suffix = crypto.randomUUID().slice(0, 8);
 const username = `contract-${suffix}`;

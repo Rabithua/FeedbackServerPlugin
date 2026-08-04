@@ -1,0 +1,30 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "feedback-server",
+  "description": "FeedbackServer plugins for coding agents",
+  "owner": {
+    "name": "Rabithua"
+  },
+  "plugins": [
+    {
+      "name": "feedback-server",
+      "source": "./plugins/feedback-server",
+      "description": "Manage FeedbackServer from Claude Code through a local MCP server and shared management Skill.",
+      "version": "0.6.0",
+      "author": {
+        "name": "Rabithua"
+      },
+      "homepage": "https://github.com/Rabithua/FeedbackServerPlugin",
+      "repository": "https://github.com/Rabithua/FeedbackServerPlugin",
+      "license": "MIT",
+      "keywords": [
+        "feedback",
+        "roadmap",
+        "changelog",
+        "mcp"
+      ],
+      "category": "productivity",
+      "strict": true
+    }
+  ]
+}

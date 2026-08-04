@@ -2,11 +2,15 @@ import { hostname } from 'node:os';
 import { createInterface } from 'node:readline/promises';
 import { StringDecoder } from 'node:string_decoder';
 import {
+  addPendingTokenRevocation,
   deleteKeychainCredentials,
   normalizeBaseUrl,
+  readPendingTokenRevocations,
   readKeychainCredentials,
+  removePendingTokenRevocation,
   resumeKeychainCredentialCleanup,
   writeKeychainCredentials,
+  type PendingTokenRevocation,
   type StoredCredentials,
 } from './credentials.js';
 
@@ -63,6 +67,9 @@ export interface ConfigurationDependencies {
   createToken: typeof createAgentToken;
   revokeToken: typeof revokeAgentToken;
   logout: typeof logout;
+  readPendingRevocations: () => Promise<PendingTokenRevocation[]>;
+  addPendingRevocation: (entry: PendingTokenRevocation) => Promise<void>;
+  removePendingRevocation: (entry: PendingTokenRevocation) => Promise<void>;
 }
 
 export class ConfigurationApiError extends Error {
@@ -72,6 +79,19 @@ export class ConfigurationApiError extends Error {
     message: string,
   ) {
     super(message);
+  }
+}
+
+export class PendingTokenRecoveryError extends Error {
+  public constructor(
+    public readonly tokenId: string,
+    cause: unknown,
+  ) {
+    super(
+      `A FeedbackServer PAT may still be active. Run feedback-server agent revoke-token --id ${tokenId} in a trusted terminal.`,
+      { cause },
+    );
+    this.name = 'PendingTokenRecoveryError';
   }
 }
 
@@ -184,7 +204,7 @@ export async function createAgentToken(
     method: 'POST',
     bearer: accessToken,
     body: {
-      name: `Codex MCP ${hostname()}`.slice(0, 160),
+      name: `FeedbackServer Agent ${hostname()}`.slice(0, 160),
       scopes: AGENT_SCOPES,
       expiresInDays: 365,
     },
@@ -218,47 +238,98 @@ const defaultConfigurationDependencies: ConfigurationDependencies = {
   createToken: createAgentToken,
   revokeToken: revokeAgentToken,
   logout,
+  readPendingRevocations: readPendingTokenRevocations,
+  addPendingRevocation: addPendingTokenRevocation,
+  removePendingRevocation: removePendingTokenRevocation,
 };
-
-function withPendingTokenRevocations(
-  credentials: StoredCredentials,
-  tokenIds: string[],
-): StoredCredentials {
-  const current = { ...credentials };
-  delete current.pendingRevocationTokenIds;
-  const uniqueTokenIds = [...new Set(tokenIds)].filter((tokenId) => tokenId !== current.tokenId);
-  return uniqueTokenIds.length > 0
-    ? { ...current, pendingRevocationTokenIds: uniqueTokenIds }
-    : current;
-}
 
 function isAlreadyRevoked(error: unknown): boolean {
   return error instanceof ConfigurationApiError && error.status === 404;
 }
 
-async function revokePendingAgentTokens(
-  credentials: StoredCredentials,
+function pendingRevocation(
+  baseUrl: string,
+  username: string,
+  tokenId: string,
+): PendingTokenRevocation {
+  return { baseUrl, username, tokenId };
+}
+
+async function revokeOrAcceptMissing(
   baseUrl: string,
   accessToken: string,
+  tokenId: string,
   dependencies: ConfigurationDependencies,
-): Promise<StoredCredentials> {
-  let current = withPendingTokenRevocations(
-    credentials,
-    credentials.pendingRevocationTokenIds ?? [],
-  );
-  for (const tokenId of current.pendingRevocationTokenIds ?? []) {
-    try {
-      await dependencies.revokeToken(baseUrl, accessToken, tokenId);
-    } catch (error) {
-      if (!isAlreadyRevoked(error)) throw error;
-    }
-    current = withPendingTokenRevocations(
-      current,
-      (current.pendingRevocationTokenIds ?? []).filter((candidate) => candidate !== tokenId),
-    );
-    await dependencies.writeCredentials(current);
+): Promise<void> {
+  try {
+    await dependencies.revokeToken(baseUrl, accessToken, tokenId);
+  } catch (error) {
+    if (!isAlreadyRevoked(error)) throw error;
   }
-  return current;
+}
+
+async function revokePendingAgentTokens(
+  credentials: StoredCredentials | undefined,
+  baseUrl: string,
+  username: string,
+  accessToken: string,
+  dependencies: ConfigurationDependencies,
+): Promise<void> {
+  for (const tokenId of credentials?.pendingRevocationTokenIds ?? []) {
+    await dependencies.addPendingRevocation(pendingRevocation(baseUrl, username, tokenId));
+  }
+  const entries = await dependencies.readPendingRevocations();
+  for (const entry of entries) {
+    if (normalizeBaseUrl(entry.baseUrl) !== baseUrl || entry.username !== username) continue;
+    if (entry.tokenId !== credentials?.tokenId) {
+      await revokeOrAcceptMissing(baseUrl, accessToken, entry.tokenId, dependencies);
+    }
+    await dependencies.removePendingRevocation(entry);
+  }
+}
+
+async function compensateUncommittedToken(
+  originalError: unknown,
+  createdEntry: PendingTokenRevocation,
+  previousEntry: PendingTokenRevocation | undefined,
+  accessToken: string,
+  dependencies: ConfigurationDependencies,
+): Promise<never> {
+  const errors = [originalError];
+  let revoked = false;
+  try {
+    await revokeOrAcceptMissing(
+      createdEntry.baseUrl,
+      accessToken,
+      createdEntry.tokenId,
+      dependencies,
+    );
+    revoked = true;
+  } catch (error) {
+    errors.push(error);
+  }
+  if (revoked) {
+    try {
+      await dependencies.removePendingRevocation(createdEntry);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (previousEntry) {
+    try {
+      await dependencies.removePendingRevocation(previousEntry);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (!revoked) {
+    throw new PendingTokenRecoveryError(
+      createdEntry.tokenId,
+      new AggregateError(errors, 'PAT persistence and compensating revocation failed'),
+    );
+  }
+  if (errors.length === 1) throw originalError;
+  throw new AggregateError(errors, 'PAT persistence failed and cleanup was incomplete');
 }
 
 export async function configureAgent(input: {
@@ -267,50 +338,70 @@ export async function configureAgent(input: {
   password: string;
 }, dependencies: ConfigurationDependencies = defaultConfigurationDependencies): Promise<StoredCredentials> {
   const baseUrl = normalizeBaseUrl(input.baseUrl);
-  let previous = await dependencies.readCredentials();
+  const previous = await dependencies.readCredentials();
   if (previous && normalizeBaseUrl(previous.baseUrl) !== baseUrl) {
     throw new Error(
-      'FeedbackServer Agent is connected to a different server. Run agent:disconnect before changing the endpoint.',
+      'FeedbackServer Agent is connected to a different server. Run feedback-server agent disconnect before changing the endpoint.',
     );
   }
   if (previous?.username && previous.username !== input.username) {
     throw new Error(
-      'FeedbackServer Agent is connected to a different administrator. Run agent:disconnect before changing accounts.',
+      'FeedbackServer Agent is connected to a different administrator. Run feedback-server agent disconnect before changing accounts.',
     );
   }
   const session = await dependencies.login(baseUrl, input.username, input.password);
-  let created: CreatedToken | undefined;
   try {
-    previous = previous
-      ? await revokePendingAgentTokens(previous, baseUrl, session.accessToken, dependencies)
-      : undefined;
-    created = await dependencies.createToken(baseUrl, session.accessToken);
-    const credentials = withPendingTokenRevocations(
-      {
-        baseUrl,
-        token: created.token,
-        tokenId: created.id,
-        username: input.username,
-        scopes: created.scopes,
-        expiresAt: created.expiresAt,
-      },
-      [
-        ...(previous?.pendingRevocationTokenIds ?? []),
-        ...(previous?.tokenId ? [previous.tokenId] : []),
-      ],
-    );
-    try {
-      await dependencies.writeCredentials(credentials);
-    } catch (error) {
-      await dependencies.revokeToken(baseUrl, session.accessToken, created.id);
-      throw error;
-    }
-    return await revokePendingAgentTokens(
-      credentials,
+    await revokePendingAgentTokens(
+      previous,
       baseUrl,
+      input.username,
       session.accessToken,
       dependencies,
     );
+    const created = await dependencies.createToken(baseUrl, session.accessToken);
+    const createdEntry = pendingRevocation(baseUrl, input.username, created.id);
+    const previousEntry = previous?.tokenId
+      ? pendingRevocation(baseUrl, input.username, previous.tokenId)
+      : undefined;
+    try {
+      await dependencies.addPendingRevocation(createdEntry);
+      if (previousEntry) await dependencies.addPendingRevocation(previousEntry);
+    } catch (error) {
+      return await compensateUncommittedToken(
+        error,
+        createdEntry,
+        previousEntry,
+        session.accessToken,
+        dependencies,
+      );
+    }
+    const credentials: StoredCredentials = {
+      baseUrl,
+      token: created.token,
+      tokenId: created.id,
+      username: input.username,
+      scopes: created.scopes,
+      expiresAt: created.expiresAt,
+    };
+    try {
+      await dependencies.writeCredentials(credentials);
+    } catch (error) {
+      return await compensateUncommittedToken(
+        error,
+        createdEntry,
+        previousEntry,
+        session.accessToken,
+        dependencies,
+      );
+    }
+    await revokePendingAgentTokens(
+      credentials,
+      baseUrl,
+      input.username,
+      session.accessToken,
+      dependencies,
+    );
+    return credentials;
   } finally {
     try {
       await dependencies.logout(baseUrl, session.refreshToken);
@@ -329,17 +420,48 @@ export async function disconnectAgent(input: {
   password: string;
 }, dependencies: ConfigurationDependencies = defaultConfigurationDependencies): Promise<boolean> {
   if (await dependencies.resumeCredentialCleanup()) return true;
-  let stored = await dependencies.readCredentials();
+  const stored = await dependencies.readCredentials();
   if (!stored) return false;
   const baseUrl = normalizeBaseUrl(stored.baseUrl);
   const session = await dependencies.login(baseUrl, input.username, input.password);
   try {
-    stored = await revokePendingAgentTokens(stored, baseUrl, session.accessToken, dependencies);
+    await revokePendingAgentTokens(
+      stored,
+      baseUrl,
+      input.username,
+      session.accessToken,
+      dependencies,
+    );
     if (stored.tokenId) {
-      await dependencies.revokeToken(baseUrl, session.accessToken, stored.tokenId);
+      await revokeOrAcceptMissing(baseUrl, session.accessToken, stored.tokenId, dependencies);
     }
     await dependencies.deleteCredentials();
     return true;
+  } finally {
+    try {
+      await dependencies.logout(baseUrl, session.refreshToken);
+    } catch (error) {
+      console.error(
+        `Warning: unable to revoke the temporary refresh session: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
+    }
+  }
+}
+
+export async function revokeAgentTokenById(input: {
+  baseUrl: string;
+  username: string;
+  password: string;
+  tokenId: string;
+}, dependencies: ConfigurationDependencies = defaultConfigurationDependencies): Promise<void> {
+  const baseUrl = normalizeBaseUrl(input.baseUrl);
+  const session = await dependencies.login(baseUrl, input.username, input.password);
+  const entry = pendingRevocation(baseUrl, input.username, input.tokenId);
+  try {
+    await revokeOrAcceptMissing(baseUrl, session.accessToken, input.tokenId, dependencies);
+    await dependencies.removePendingRevocation(entry);
   } finally {
     try {
       await dependencies.logout(baseUrl, session.refreshToken);

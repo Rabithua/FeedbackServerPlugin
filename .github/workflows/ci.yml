@@ -18,7 +18,9 @@ jobs:
         with:
           bun-version: 1.3.4
       - run: bun install --cwd=plugins/feedback-server --frozen-lockfile
+      - run: npm install --global @anthropic-ai/claude-code@2.1.221
       - run: bun run check
       - run: bun run validate
+      - run: claude plugin validate --strict .
       - run: bun run scan
-      - run: git diff --exit-code -- plugins/feedback-server/dist/server.mjs
+      - run: git diff --exit-code -- plugins/feedback-server/dist/server.mjs plugins/feedback-server/dist/cli.mjs

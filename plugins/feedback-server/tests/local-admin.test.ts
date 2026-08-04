@@ -322,4 +322,30 @@ describe('local administrator creation', () => {
     ]);
     expect(events).not.toContain('revoke:invitation-id');
   });
+
+  test('reports committed creation when only temporary-session cleanup fails', async () => {
+    const events: string[] = [];
+    const error = await capturedError(
+      createLocalAdmin(
+        input,
+        dependencies(events, {
+          logout: (_url, refreshToken) => {
+            events.push(`logout:${refreshToken}`);
+            return refreshToken === 'owner-refresh'
+              ? Promise.reject(new Error('logout unavailable'))
+              : Promise.resolve();
+          },
+        }),
+      ),
+    );
+
+    expect(error).toBeInstanceOf(CommittedAdminCreationError);
+    expect((error as Error).message).toContain('account exists');
+    expect(events).toContain('list-products');
+    expect(events.slice(-3)).toEqual([
+      'logout:new-admin-refresh',
+      'logout:accepted-refresh',
+      'logout:owner-refresh',
+    ]);
+  });
 });

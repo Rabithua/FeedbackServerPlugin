@@ -1,5 +1,6 @@
 import {
   ConfigurationApiError,
+  PendingTokenRecoveryError,
   createAgentToken,
   login,
   logout,
@@ -8,9 +9,13 @@ import {
   type LoginResponse,
 } from './admin-session.js';
 import {
+  addPendingTokenRevocation,
   normalizeBaseUrl,
+  readPendingTokenRevocations,
   readKeychainCredentials,
+  removePendingTokenRevocation,
   writeKeychainCredentials,
+  type PendingTokenRevocation,
   type StoredCredentials,
 } from './credentials.js';
 import {
@@ -21,15 +26,16 @@ import {
 
 export class AgentAlreadyConfiguredError extends Error {
   public constructor() {
-    super('FeedbackServer Agent is already configured. Run agent:disconnect before accepting an invitation.');
+    super('FeedbackServer Agent is already configured. Run feedback-server agent disconnect before accepting an invitation.');
     this.name = 'AgentAlreadyConfiguredError';
   }
 }
 
 export class CommittedInvitationAcceptanceError extends Error {
   public constructor(cause: unknown) {
+    const recovery = cause instanceof PendingTokenRecoveryError ? ` ${cause.message}` : '';
     super(
-      'The administrator account was created, but Agent configuration did not finish. Do not reuse the invitation; run agent:configure with the new account instead.',
+      `The administrator account was created, but Agent configuration did not finish. Do not reuse the invitation; run feedback-server agent configure with the new account instead.${recovery}`,
       { cause },
     );
     this.name = 'CommittedInvitationAcceptanceError';
@@ -59,6 +65,9 @@ export interface InvitationAcceptanceDependencies {
   ) => Promise<CreatedToken>;
   revokeToken: typeof revokeAgentToken;
   logout: typeof logout;
+  readPendingRevocations: () => Promise<PendingTokenRevocation[]>;
+  addPendingRevocation: (entry: PendingTokenRevocation) => Promise<void>;
+  removePendingRevocation: (entry: PendingTokenRevocation) => Promise<void>;
 }
 
 const defaultDependencies: InvitationAcceptanceDependencies = {
@@ -71,6 +80,9 @@ const defaultDependencies: InvitationAcceptanceDependencies = {
   createToken: createAgentToken,
   revokeToken: revokeAgentToken,
   logout,
+  readPendingRevocations: readPendingTokenRevocations,
+  addPendingRevocation: addPendingTokenRevocation,
+  removePendingRevocation: removePendingTokenRevocation,
 };
 
 function verifyIdentity(session: LoginResponse | AcceptedInvitation, username: string): void {
@@ -99,6 +111,64 @@ async function logoutSessions(
 
 function isIndeterminateAcceptanceFailure(error: unknown): boolean {
   return !(error instanceof ConfigurationApiError) || error.status >= 500;
+}
+
+function isAlreadyRevoked(error: unknown): boolean {
+  return error instanceof ConfigurationApiError && error.status === 404;
+}
+
+async function revokeOrAcceptMissing(
+  baseUrl: string,
+  accessToken: string,
+  tokenId: string,
+  dependencies: InvitationAcceptanceDependencies,
+): Promise<void> {
+  try {
+    await dependencies.revokeToken(baseUrl, accessToken, tokenId);
+  } catch (error) {
+    if (!isAlreadyRevoked(error)) throw error;
+  }
+}
+
+async function retryPendingRevocations(
+  baseUrl: string,
+  username: string,
+  accessToken: string,
+  dependencies: InvitationAcceptanceDependencies,
+): Promise<void> {
+  for (const entry of await dependencies.readPendingRevocations()) {
+    if (normalizeBaseUrl(entry.baseUrl) !== baseUrl || entry.username !== username) continue;
+    await revokeOrAcceptMissing(baseUrl, accessToken, entry.tokenId, dependencies);
+    await dependencies.removePendingRevocation(entry);
+  }
+}
+
+async function compensateUnstoredToken(
+  originalError: unknown,
+  entry: PendingTokenRevocation,
+  accessToken: string,
+  dependencies: InvitationAcceptanceDependencies,
+): Promise<never> {
+  try {
+    await revokeOrAcceptMissing(entry.baseUrl, accessToken, entry.tokenId, dependencies);
+  } catch (revocationError) {
+    throw new PendingTokenRecoveryError(
+      entry.tokenId,
+      new AggregateError(
+        [originalError, revocationError],
+        'PAT persistence and compensating revocation failed',
+      ),
+    );
+  }
+  try {
+    await dependencies.removePendingRevocation(entry);
+  } catch (cleanupError) {
+    throw new AggregateError(
+      [originalError, cleanupError],
+      'PAT persistence failed and pending-revocation cleanup was incomplete',
+    );
+  }
+  throw originalError;
 }
 
 export async function acceptInvitationAndConfigure(
@@ -144,7 +214,24 @@ export async function acceptInvitationAndConfigure(
       throw new Error('The new administrator unexpectedly owns Products');
     }
 
+    await retryPendingRevocations(
+      baseUrl,
+      input.username,
+      verified.accessToken,
+      dependencies,
+    );
+
     const created = await dependencies.createToken(baseUrl, verified.accessToken);
+    const pendingEntry: PendingTokenRevocation = {
+      baseUrl,
+      username: input.username,
+      tokenId: created.id,
+    };
+    try {
+      await dependencies.addPendingRevocation(pendingEntry);
+    } catch (error) {
+      await compensateUnstoredToken(error, pendingEntry, verified.accessToken, dependencies);
+    }
     const credentials: StoredCredentials = {
       baseUrl,
       token: created.token,
@@ -156,16 +243,9 @@ export async function acceptInvitationAndConfigure(
     try {
       await dependencies.writeCredentials(credentials);
     } catch (error) {
-      try {
-        await dependencies.revokeToken(baseUrl, verified.accessToken, created.id);
-      } catch (revocationError) {
-        throw new AggregateError(
-          [error, revocationError],
-          'Keychain persistence and new PAT revocation both failed',
-        );
-      }
-      throw error;
+      await compensateUnstoredToken(error, pendingEntry, verified.accessToken, dependencies);
     }
+    await dependencies.removePendingRevocation(pendingEntry);
     return credentials;
   } catch (error) {
     throw new CommittedInvitationAcceptanceError(error);
@@ -173,4 +253,3 @@ export async function acceptInvitationAndConfigure(
     await logoutSessions(baseUrl, refreshTokens, dependencies.logout);
   }
 }
-

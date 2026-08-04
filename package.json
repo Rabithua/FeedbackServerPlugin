@@ -1,6 +1,6 @@
 {
-  "name": "feedback-server-codex-marketplace",
-  "version": "0.5.1",
+  "name": "feedback-server-plugin-marketplace",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,6 +9,7 @@
     "scan": "bun run ./scripts/check-sensitive-content.ts",
     "agent:configure": "bun --cwd=plugins/feedback-server run configure",
     "agent:disconnect": "bun --cwd=plugins/feedback-server run disconnect",
+    "agent:revoke-token": "bun --cwd=plugins/feedback-server run agent:revoke-token",
     "admin:create-local": "bun --cwd=plugins/feedback-server run admin:create-local",
     "admin:invite": "bun --cwd=plugins/feedback-server run admin:invite",
     "admin:invitations": "bun --cwd=plugins/feedback-server run admin:invitations",

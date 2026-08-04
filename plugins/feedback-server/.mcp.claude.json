@@ -1,0 +1,8 @@
+{
+  "feedback-server": {
+    "command": "bun",
+    "args": [
+      "${CLAUDE_PLUGIN_ROOT}/dist/server.mjs"
+    ]
+  }
+}

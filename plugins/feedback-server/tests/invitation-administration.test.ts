@@ -131,7 +131,7 @@ describe('administrator invitation lifecycle', () => {
     ]);
   });
 
-  test('does not revoke an invitation after clipboard delivery', async () => {
+  test('revokes an invitation when the sharing handoff aborts', async () => {
     const events: string[] = [];
     const error = await capturedError(
       createShareableInvitation(
@@ -142,7 +142,34 @@ describe('administrator invitation lifecycle', () => {
     );
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain('cancelled after sharing');
-    expect(events).toEqual(['login', 'create:7', 'copy', 'clear', 'logout']);
+    expect(events).toEqual([
+      'login',
+      'create:7',
+      'copy',
+      `revoke:${invitation.id}`,
+      'clear',
+      'logout',
+    ]);
+  });
+
+  test('aggregates handoff rollback, clipboard cleanup, and logout failures', async () => {
+    const events: string[] = [];
+    const error = await capturedError(
+      createShareableInvitation(
+        input,
+        () => Promise.reject(new Error('handoff closed')),
+        dependencies(events, {
+          revokeInvitation: () => Promise.reject(new Error('rollback unavailable')),
+          clipboard: {
+            write: () => Promise.resolve(),
+            clearIfUnchanged: () => Promise.reject(new Error('clipboard cleanup unavailable')),
+          },
+          logout: () => Promise.reject(new Error('logout unavailable')),
+        }),
+      ),
+    );
+    expect(error).toBeInstanceOf(AggregateError);
+    expect((error as AggregateError).errors).toHaveLength(4);
   });
 
   test('lists metadata and revokes by id through temporary sessions', async () => {
