@@ -1,0 +1,9 @@
+node_modules/
+dist/
+!plugins/feedback-server/dist/
+!plugins/feedback-server/dist/server.mjs
+coverage/
+*.log
+.DS_Store
+test-results/
+
