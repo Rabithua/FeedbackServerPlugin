@@ -59,7 +59,9 @@ export function buildInvitationHandoffMessage(input: {
 }): string {
   return `FeedbackServer 管理员邀请
 
-你收到的是一个一次性管理员邀请码。请不要把整段消息直接发给 Agent；只复制下面“给 Codex 或 Claude Code 的任务文本”那一段。邀请码不要发到 Agent 聊天、工单、代码仓库、截图或共享文档里，只在终端隐藏输入提示里粘贴它。
+你收到的是一个一次性管理员邀请码。它有时效限制，只能使用一次。你可以把这整段消息直接发给 Codex 或 Claude Code，让 Agent 帮你完成接入。
+
+请不要把你的管理员密码或之后生成的 PAT 发到聊天、工单、代码仓库、截图或共享文档里；密码仍然只应该输入到终端的隐藏提示里。
 
 服务地址：
 ${input.baseUrl}
@@ -78,17 +80,50 @@ ${input.invitation.expiresAt}
 请帮我完成 FeedbackServer 受邀管理员接入。
 
 要求：
-1. 不要让我把邀请码、密码、PAT 或任何 token 发到聊天里。
+1. 可以读取本消息里的服务地址和邀请码，但不要让我把管理员密码或 PAT 发到聊天里。
 2. 如果当前是 Codex，先运行 codex plugin marketplace add Rabithua/FeedbackServerPlugin --ref main，然后运行 codex plugin add feedback-server@feedback-server。
 3. 如果当前是 Claude Code，先运行 claude plugin marketplace add Rabithua/FeedbackServerPlugin，然后运行 claude plugin install feedback-server@feedback-server --scope user。
-4. 克隆 https://github.com/Rabithua/FeedbackServerPlugin.git，然后运行 plugins/feedback-server/bin/feedback-server admin accept-invite --url ${input.baseUrl}
-5. 运行命令时让我在终端输入用户名和显示名，并通过隐藏输入填写一次性邀请码和密码；邀请码只由我粘贴进隐藏终端提示。
-6. 成功后打开或提醒我打开新的 Agent 会话，检查 FeedbackServer connection_status，并列出我的 Products。
-7. 如果 Product 列表为空，告诉我这是正常的；新管理员默认没有 Product，也不能访问邀请人的 Product。
+4. 克隆 https://github.com/Rabithua/FeedbackServerPlugin.git。
+5. 询问我要使用的管理员用户名和显示名。
+6. 运行 plugins/feedback-server/bin/feedback-server admin accept-invite --url ${input.baseUrl} --token ${input.invitation.token} --username USERNAME_FROM_USER --display-name "DISPLAY_NAME_FROM_USER"
+7. 运行命令时只让我通过终端隐藏输入填写新管理员密码和确认密码。
+8. 成功后打开或提醒我打开新的 Agent 会话，检查 FeedbackServer connection_status，并列出我的 Products。
+9. 如果 Product 列表为空，告诉我这是正常的；新管理员默认没有 Product，也不能访问邀请人的 Product。
 
 完整说明：
 https://github.com/Rabithua/FeedbackServerPlugin/blob/main/docs/invited-admin-onboarding.zh-Hans.md
 `;
+}
+
+export async function createInvitationHandoffMessage(
+  input: {
+    baseUrl: string;
+    superAdminUsername: string;
+    superAdminPassword: string;
+    expiresInDays: number;
+  },
+  dependencies: InvitationAdministrationDependencies = defaultDependencies,
+): Promise<{ invitation: CreatedInvitation; handoffMessage: string }> {
+  const baseUrl = normalizeBaseUrl(input.baseUrl);
+  const session = await dependencies.login(
+    baseUrl,
+    input.superAdminUsername,
+    input.superAdminPassword,
+  );
+  try {
+    requireSuperAdmin(session);
+    const invitation = await dependencies.createInvitation(
+      baseUrl,
+      session.accessToken,
+      input.expiresInDays,
+    );
+    return {
+      invitation,
+      handoffMessage: buildInvitationHandoffMessage({ baseUrl, invitation }),
+    };
+  } finally {
+    await logoutWithWarning(baseUrl, session.refreshToken, dependencies.logout);
+  }
 }
 
 export async function createShareableInvitation(

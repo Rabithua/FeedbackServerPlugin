@@ -7,9 +7,10 @@ import {
 } from './admin-session.js';
 import { parseCliOptions, parseIntegerOption } from './cli-arguments.js';
 import { reportCliFailure } from './cli-reporting.js';
-import { DEFAULT_BASE_URL } from './credentials.js';
+import { DEFAULT_BASE_URL, readKeychainCredentials } from './credentials.js';
 import { acceptInvitationAndConfigure } from './invitation-acceptance.js';
 import {
+  createInvitationHandoffMessage,
   createShareableInvitation,
   getInvitations,
   revokeInvitationById,
@@ -31,16 +32,26 @@ export interface ParsedFeedbackServerCliCommand {
   options: string[];
 }
 
-const usage = [
+export const usage = [
   'feedback-server agent configure [--url URL] [--username USERNAME]',
   'feedback-server agent disconnect [--username USERNAME]',
   'feedback-server agent revoke-token --id UUID [--url URL] [--username USERNAME]',
-  'feedback-server admin invite [--url URL] [--username USERNAME] [--expires-in-days DAYS]',
+  [
+    'feedback-server admin invite [--url URL] [--username USERNAME]',
+    '[--expires-in-days DAYS] [--delivery stdout|clipboard]',
+  ].join(' '),
   'feedback-server admin invitations [--url URL] [--username USERNAME]',
   'feedback-server admin invite revoke --id UUID [--url URL] [--username USERNAME]',
-  'feedback-server admin accept-invite [--url URL] [--username USERNAME] [--display-name NAME]',
+  [
+    'feedback-server admin accept-invite [--url URL] [--username USERNAME]',
+    '[--display-name NAME] [--token INVITATION_TOKEN]',
+  ].join(' '),
   'feedback-server admin create-local [--url URL] [--username USERNAME]',
 ].join('\n');
+
+export function isHelpRequest(argv: string[]): boolean {
+  return argv.length === 0 || argv.includes('--help') || argv.includes('-h');
+}
 
 export function parseFeedbackServerCliCommand(argv: string[]): ParsedFeedbackServerCliCommand {
   const [group, action, nestedAction, ...remaining] = argv;
@@ -85,8 +96,15 @@ async function urlAndUsername(
     '--username',
     ...extraAllowedOptions,
   ]);
-  const baseUrl = options.get('--url') ?? (await promptText('FeedbackServer URL', DEFAULT_BASE_URL));
-  const username = options.get('--username') ?? (await promptText(usernameLabel));
+  const configured = options.has('--url') && options.has('--username')
+    ? undefined
+    : await readKeychainCredentials().catch(() => undefined);
+  const baseUrl = options.get('--url')
+    ?? configured?.baseUrl
+    ?? (await promptText('FeedbackServer URL', DEFAULT_BASE_URL));
+  const username = options.get('--username')
+    ?? configured?.username
+    ?? (await promptText(usernameLabel));
   if (!username) throw new Error(`${usernameLabel} is required`);
   return { baseUrl, username, options };
 }
@@ -135,10 +153,29 @@ async function runAdminInvite(options: string[]): Promise<void> {
   const input = await urlAndUsername(
     options,
     'Super administrator username',
-    ['--expires-in-days'],
+    ['--expires-in-days', '--delivery'],
   );
   const expiresInDays = parseIntegerOption(input.options, '--expires-in-days', 7, 1, 30);
+  const delivery = input.options.get('--delivery') ?? 'stdout';
+  if (delivery !== 'stdout' && delivery !== 'clipboard') {
+    throw new Error('--delivery must be stdout or clipboard');
+  }
   const superAdminPassword = await promptPassword('Super administrator password');
+  if (delivery === 'stdout') {
+    const result = await createInvitationHandoffMessage({
+      baseUrl: input.baseUrl,
+      superAdminUsername: input.username,
+      superAdminPassword,
+      expiresInDays,
+    });
+    console.error(
+      `Invitation ${result.invitation.id} (${result.invitation.tokenPrefix}…) expires ${
+        result.invitation.expiresAt
+      }.`,
+    );
+    process.stdout.write(`\`\`\`text\n${result.handoffMessage.trimEnd()}\n\`\`\`\n`);
+    return;
+  }
   const result = await createShareableInvitation(
     {
       baseUrl: input.baseUrl,
@@ -200,9 +237,9 @@ async function runAdminAcceptInvite(options: string[]): Promise<void> {
   const input = await urlAndUsername(
     options,
     'Administrator username',
-    ['--display-name'],
+    ['--display-name', '--token'],
   );
-  const token = await promptPassword('One-time invitation token');
+  const token = input.options.get('--token') ?? await promptPassword('One-time invitation token');
   const displayName = input.options.get('--display-name')
     ?? (await promptText('Administrator display name'));
   if (!displayName) throw new Error('Administrator display name is required');
@@ -248,6 +285,10 @@ async function runAdminCreateLocal(options: string[]): Promise<void> {
 }
 
 export async function runFeedbackServerCli(argv: string[]): Promise<void> {
+  if (isHelpRequest(argv)) {
+    process.stdout.write(`${usage}\n`);
+    return;
+  }
   const parsed = parseFeedbackServerCliCommand(argv);
   switch (parsed.command) {
     case 'agent configure': return runAgentConfigure(parsed.options);

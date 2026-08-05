@@ -12,19 +12,22 @@ trusted-terminal commands because PAT-authenticated MCP tools cannot access auth
 
 ## Manage administrator onboarding
 
-- Never ask a user to paste an administrator password, invitation token, refresh token, or PAT into
-  chat. These secrets belong only in hidden terminal prompts.
-- To create a shareable invitation, direct an enabled `super_admin` to
-  `feedback-server admin invite`. The
-  command copies a recipient handoff package to the macOS clipboard, reports only its prefix and
-  metadata, clears it after sharing when unchanged, and revokes it if clipboard delivery fails. The
-  handoff package includes an Agent-ready task prompt, but the invitation token must still be pasted
-  only into the trusted terminal's hidden prompt, not into Agent chat.
+- Never ask a user to paste an administrator password, refresh token, or PAT into chat. These
+  secrets belong only in hidden terminal prompts. Time-limited invitation tokens may appear in the
+  invite handoff text because they are single-use onboarding credentials.
+- To create a shareable invitation for the current user, run this plugin's CLI directly; do not scan
+  the workspace, read source files, or use `command -v` first. Resolve the plugin root from this
+  Skill location and run `../../bin/feedback-server admin invite` from there, or the equivalent
+  absolute cached plugin path. The command infers URL and username from the existing Keychain Agent
+  credentials when possible, asks only for the super administrator password, then prints a complete
+  Markdown handoff package to stdout. Return that package to the user as a code block. Use
+  `--delivery clipboard` only when the user explicitly asks for clipboard delivery.
 - Use `feedback-server admin invitations` to list non-secret invitation metadata and
   `feedback-server admin invite revoke --id <uuid>` to revoke an unaccepted invitation.
 - The recipient uses `feedback-server admin accept-invite`. It refuses to consume the invitation when Agent
-  credentials already exist, verifies the new tenant is empty, and configures a personal PAT in
-  macOS Keychain. If account creation committed but configuration failed, use
+  credentials already exist, accepts a time-limited `--token` argument from the handoff package,
+  verifies the new tenant is empty, and configures a personal PAT in macOS Keychain. If account
+  creation committed but configuration failed, use
   `feedback-server agent configure`; do not retry the invitation. If PAT rollback also failed, use
   the reported `feedback-server agent revoke-token --id <uuid>` recovery command.
 - Use `feedback-server admin create-local` when the super administrator should create both sides locally

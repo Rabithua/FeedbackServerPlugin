@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { parseCliOptions, parseIntegerOption } from '../src/cli-arguments.js';
-import { parseFeedbackServerCliCommand } from '../src/cli.js';
+import { isHelpRequest, parseFeedbackServerCliCommand, usage } from '../src/cli.js';
 
 describe('CLI argument policy', () => {
   test('accepts only declared non-secret options', () => {
@@ -13,12 +13,20 @@ describe('CLI argument policy', () => {
   });
 
   test('rejects secret and unknown arguments', () => {
-    expect(() => parseCliOptions(['--token', 'fsinv_secret'], ['--url'])).toThrow(
-      'Unsupported option: --token',
-    );
     expect(() => parseCliOptions(['--password', 'secret'], ['--url'])).toThrow(
       'Unsupported option: --password',
     );
+    expect(() => parseCliOptions(['--secret', 'value'], ['--url'])).toThrow(
+      'Unsupported option: --secret',
+    );
+  });
+
+  test('allows invitation tokens only when a command explicitly declares them', () => {
+    const options = parseCliOptions(
+      ['--token', 'fsinv_time_limited'],
+      ['--token'],
+    );
+    expect(options.get('--token')).toBe('fsinv_time_limited');
   });
 
   test('rejects missing, duplicate, and out-of-range values', () => {
@@ -48,6 +56,8 @@ describe('CLI argument policy', () => {
     });
     expect(parseFeedbackServerCliCommand(['admin', 'invite', '--expires-in-days', '7']))
       .toEqual({ command: 'admin invite', options: ['--expires-in-days', '7'] });
+    expect(parseFeedbackServerCliCommand(['admin', 'invite', '--delivery', 'clipboard']))
+      .toEqual({ command: 'admin invite', options: ['--delivery', 'clipboard'] });
     expect(parseFeedbackServerCliCommand(['admin', 'invitations'])).toEqual({
       command: 'admin invitations',
       options: [],
@@ -58,9 +68,19 @@ describe('CLI argument policy', () => {
       command: 'admin accept-invite',
       options: [],
     });
+    expect(parseFeedbackServerCliCommand(['admin', 'accept-invite', '--token', 'fsinv_abc']))
+      .toEqual({ command: 'admin accept-invite', options: ['--token', 'fsinv_abc'] });
     expect(parseFeedbackServerCliCommand(['admin', 'create-local'])).toEqual({
       command: 'admin create-local',
       options: [],
     });
+  });
+
+  test('recognizes help requests before strict option parsing', () => {
+    expect(isHelpRequest([])).toBe(true);
+    expect(isHelpRequest(['admin', 'invite', '--help'])).toBe(true);
+    expect(usage).toContain('feedback-server admin invite');
+    expect(usage).toContain('--delivery stdout|clipboard');
+    expect(usage).toContain('--token INVITATION_TOKEN');
   });
 });
