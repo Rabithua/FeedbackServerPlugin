@@ -39,9 +39,11 @@ cd FeedbackServerPlugin
 plugins/feedback-server/bin/feedback-server agent configure
 ```
 
-The CLI hides passwords, invitation tokens, and PATs. On macOS it stores credentials under the
-existing Keychain service `dev.rote.feedback-server.mcp`, so Codex and Claude Code reuse the same
-account without copying or rotating its PAT. Non-macOS MCP processes must receive both
+The CLI hides passwords and PATs. Time-limited invitation tokens can be printed in onboarding
+handoffs and passed to `accept-invite --token` for Agent-driven setup. On macOS it stores
+credentials under the existing Keychain service `dev.rote.feedback-server.mcp`, so Codex and
+Claude Code reuse the same account without copying or rotating its PAT. Non-macOS MCP processes
+must receive both
 `FEEDBACK_SERVER_BASE_URL` and `FEEDBACK_SERVER_API_TOKEN` from a secure process environment.
 
 Supported commands:
@@ -65,23 +67,24 @@ Existing checkout workflows such as `bun run agent:configure` and
 Only an enabled `super_admin` may create or revoke invitations. Authentication-management routes
 require a short-lived interactive session and are deliberately not exposed as MCP tools.
 
-For a recipient-facing handoff, `admin invite` copies a complete Simplified Chinese handoff package
-that includes the one-time invitation, a safe prompt the recipient can give to Codex or Claude Code,
-and a link to [the onboarding guide](docs/invited-admin-onboarding.zh-Hans.md). The package tells
-the recipient not to paste the invitation token into Agent chat; it belongs only in the hidden
-terminal prompt.
+For a recipient-facing handoff, `admin invite` prints a complete Simplified Chinese Markdown
+package that includes the one-time invitation, a prompt the recipient can give directly to Codex or
+Claude Code, and a link to [the onboarding guide](docs/invited-admin-onboarding.zh-Hans.md).
+Invitation tokens are time-limited and single-use; administrator passwords, PATs, and refresh
+tokens still belong only in hidden terminal prompts.
 
 `admin invite` creates a 7-day invitation by default, with `--expires-in-days` accepting 1–30. It
-writes the handoff package to the macOS clipboard through stdin, reports only the invitation ID,
-prefix, and expiry, and clears the package after the sharing handoff when unchanged. A clipboard or handoff
-failure revokes the invitation before logout.
+infers `--url` and `--username` from the existing Keychain Agent configuration when possible, then
+prints the handoff package to stdout so an Agent can paste it back as a chat code block. The old
+clipboard handoff is still available with `--delivery clipboard`.
 
 `admin accept-invite` refuses to consume an invitation when another Agent credential is configured.
-It creates an ordinary administrator, verifies the account owns no Products, creates a 365-day PAT,
-stores it atomically, and logs out every temporary session. If account creation committed but local
-configuration failed, do not reuse the invitation: run `feedback-server agent configure` with the
-new account. Any PAT whose compensating revocation also failed is recorded by non-secret ID in a
-separate Keychain ledger and can be removed with the reported `agent revoke-token` command.
+It accepts a time-limited `--token` argument for Agent-driven onboarding, creates an ordinary
+administrator, verifies the account owns no Products, creates a 365-day PAT, stores it atomically,
+and logs out every temporary session. If account creation committed but local configuration failed,
+do not reuse the invitation: run `feedback-server agent configure` with the new account. Any PAT
+whose compensating revocation also failed is recorded by non-secret ID in a separate Keychain ledger
+and can be removed with the reported `agent revoke-token` command.
 
 Each administrator owns an independent tenant. New administrators start with no Products and
 cannot access another owner's Product.
@@ -89,8 +92,9 @@ cannot access another owner's Product.
 ## Security and development
 
 Remote endpoints must use HTTPS. Plain HTTP is accepted only for exact loopback hosts
-`localhost`, `127.0.0.1`, and `[::1]`. Secrets are never accepted as command arguments or written to
-logs, bundles, repository files, or pending-revocation metadata.
+`localhost`, `127.0.0.1`, and `[::1]`. Long-lived secrets are never accepted as command arguments
+or written to logs, bundles, repository files, or pending-revocation metadata. Time-limited
+single-use invitation tokens may appear in onboarding handoff text and `accept-invite --token`.
 
 ```bash
 bun install --cwd=plugins/feedback-server --frozen-lockfile

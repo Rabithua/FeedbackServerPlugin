@@ -1,8 +1,8 @@
 # FeedbackServer 受邀管理员接入指南
 
-你收到的是一个一次性管理员邀请码。它只能使用一次，并且会过期。请不要把邀请码、密码或之后生成的 Token 发到聊天机器人、工单、代码仓库、截图或共享文档里。
+你收到的是一个一次性管理员邀请码。它只能使用一次，并且会过期。你可以把邀请人发来的整段接入消息交给 Codex 或 Claude Code 处理。
 
-如果邀请人发给你的是一整段接入消息，请只把其中“给 Codex 或 Claude Code 的任务文本”发给 Agent。邀请码本身只在终端隐藏输入提示里粘贴。
+请不要把你的管理员密码或之后生成的 PAT 发到聊天机器人、工单、代码仓库、截图或共享文档里。密码仍然只应该输入到终端的隐藏提示里。
 
 ## 你会获得什么权限
 
@@ -48,18 +48,20 @@ git clone https://github.com/Rabithua/FeedbackServerPlugin.git
 cd FeedbackServerPlugin
 ```
 
-运行接受邀请命令。把下面的 `YOUR_USERNAME` 和 `Your Display Name` 换成你想使用的管理员用户名和显示名：
+如果邀请人发给你的是完整接入消息，最简单的方式是把整段消息发给 Codex 或 Claude Code，让 Agent 安装插件并运行接受邀请命令。邀请码可以由 Agent 从接入消息里读取；密码仍然只在隐藏提示里输入。
+
+如果你想手动执行，把下面的 `YOUR_INVITATION_TOKEN`、`YOUR_USERNAME` 和 `Your Display Name` 换成邀请消息里的邀请码，以及你想使用的管理员用户名和显示名：
 
 ```bash
 plugins/feedback-server/bin/feedback-server admin accept-invite \
   --url https://feedbackserver.rote.ink/v1/api \
+  --token YOUR_INVITATION_TOKEN \
   --username YOUR_USERNAME \
   --display-name "Your Display Name"
 ```
 
 命令会依次隐藏输入：
 
-- 一次性邀请码
 - 你的新管理员密码
 - 再输入一次密码确认
 
@@ -72,7 +74,7 @@ plugins/feedback-server/bin/feedback-server admin accept-invite \
 - 把 Agent 凭据写入 macOS Keychain
 - 注销临时登录会话
 
-不要把邀请码作为命令行参数传入。命令会在隐藏输入里读取邀请码。
+如果你不想让邀请码出现在命令里，也可以省略 `--token`，命令会改为从隐藏输入读取一次性邀请码。
 
 ## 3. 验证连接
 

@@ -9,12 +9,15 @@ import {
   KEYCHAIN_SERVICE,
   KEYCHAIN_TOKEN_SERVICE,
   SECURITY_EXECUTABLE,
+  SECURITY_EXECUTABLE_FALLBACK,
+  SECURITY_SHELL_EXECUTABLE,
   deleteKeychainCredentialRecord,
   loadCredentials,
   normalizeBaseUrl,
   readKeychainCredentialRecord,
   readKeychainPendingTokenRevocations,
   resumeKeychainCredentialRecordCleanup,
+  securityCommandCandidates,
   writeKeychainPendingTokenRevocations,
   writeKeychainCredentialRecord,
   type SecurityCommandRunner,
@@ -25,6 +28,40 @@ const token = `fspat_${'a'.repeat(64)}`;
 describe('credentials and API client', () => {
   test('uses the absolute macOS Keychain executable in restricted MCP environments', () => {
     expect(SECURITY_EXECUTABLE).toBe('/usr/bin/security');
+  });
+
+  test('keeps PATH and shell Keychain fallbacks for sandboxed MCP runtimes', () => {
+    const candidates = securityCommandCandidates(
+      ['find-generic-password', '-s', KEYCHAIN_SERVICE],
+      { FEEDBACK_SERVER_SECURITY_EXECUTABLE: '/custom/security' },
+    );
+    expect(candidates).toContainEqual([
+      '/custom/security',
+      'find-generic-password',
+      '-s',
+      KEYCHAIN_SERVICE,
+    ]);
+    expect(candidates).toContainEqual([
+      SECURITY_EXECUTABLE,
+      'find-generic-password',
+      '-s',
+      KEYCHAIN_SERVICE,
+    ]);
+    expect(candidates).toContainEqual([
+      SECURITY_EXECUTABLE_FALLBACK,
+      'find-generic-password',
+      '-s',
+      KEYCHAIN_SERVICE,
+    ]);
+    expect(candidates.at(-1)).toEqual([
+      SECURITY_SHELL_EXECUTABLE,
+      '-lc',
+      'exec security "$@"',
+      'security',
+      'find-generic-password',
+      '-s',
+      KEYCHAIN_SERVICE,
+    ]);
   });
 
   test('normalizes API roots and requires paired environment credentials', async () => {

@@ -8,6 +8,8 @@ export const KEYCHAIN_TOKEN_SERVICE = `${KEYCHAIN_SERVICE}.token`;
 export const KEYCHAIN_METADATA_SERVICE = `${KEYCHAIN_SERVICE}.metadata`;
 export const KEYCHAIN_PENDING_REVOCATIONS_SERVICE = `${KEYCHAIN_SERVICE}.pending-revocations`;
 export const SECURITY_EXECUTABLE = '/usr/bin/security';
+export const SECURITY_EXECUTABLE_FALLBACK = 'security';
+export const SECURITY_SHELL_EXECUTABLE = '/bin/sh';
 
 const credentialSchema = z.object({
   baseUrl: z.url(),
@@ -74,8 +76,51 @@ async function runSecurity(
   args: string[],
   input?: string,
 ): Promise<SecurityCommandResult> {
+  const launchErrors: string[] = [];
+
+  for (const command of securityCommandCandidates(args)) {
+    try {
+      return await runSecurityCommand(command, input);
+    } catch (error) {
+      if (!isExecutableMissingError(error)) throw error;
+      launchErrors.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  throw new Error(
+    `Unable to start macOS Keychain command. Tried security executable fallbacks: ${
+      launchErrors.join('; ')
+    }`,
+  );
+}
+
+export function securityCommandCandidates(
+  args: string[],
+  environment: NodeJS.ProcessEnv = process.env,
+): string[][] {
+  const directCommands = [
+    [environment.FEEDBACK_SERVER_SECURITY_EXECUTABLE, ...args],
+    [SECURITY_EXECUTABLE, ...args],
+    [SECURITY_EXECUTABLE_FALLBACK, ...args],
+  ].filter((command): command is string[] => Boolean(command[0]));
+  return [
+    ...directCommands,
+    [SECURITY_SHELL_EXECUTABLE, '-lc', 'exec security "$@"', 'security', ...args],
+  ];
+}
+
+function isExecutableMissingError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = (error as NodeJS.ErrnoException).code;
+  return code === 'ENOENT' || error.message.includes('ENOENT');
+}
+
+async function runSecurityCommand(
+  command: string[],
+  input?: string,
+): Promise<SecurityCommandResult> {
   const subprocess = Bun.spawn({
-    cmd: [SECURITY_EXECUTABLE, ...args],
+    cmd: command,
     stdin: input === undefined ? 'ignore' : 'pipe',
     stdout: 'pipe',
     stderr: 'pipe',

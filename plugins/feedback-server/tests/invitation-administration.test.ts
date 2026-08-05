@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   buildInvitationHandoffMessage,
+  createInvitationHandoffMessage,
   createShareableInvitation,
   getInvitations,
   revokeInvitationById,
@@ -63,7 +64,8 @@ function dependencies(
         expect(value).toBe(handoffMessage);
         expect(value).toContain(token);
         expect(value).toContain(`admin accept-invite --url ${baseUrl}`);
-        expect(value).toContain('不要把整段消息直接发给 Agent');
+        expect(value).toContain('可以把这整段消息直接发给 Codex 或 Claude Code');
+        expect(value).toContain(`--token ${token}`);
         events.push('copy');
         return Promise.resolve();
       },
@@ -94,6 +96,17 @@ async function capturedError(operation: Promise<unknown>): Promise<unknown> {
 }
 
 describe('administrator invitation lifecycle', () => {
+  test('creates a chat-ready handoff without clipboard delivery or rollback ceremony', async () => {
+    const events: string[] = [];
+    const result = await createInvitationHandoffMessage(input, dependencies(events));
+    expect(result.invitation).toEqual(invitation);
+    expect(result.handoffMessage).toBe(handoffMessage);
+    expect(result.handoffMessage).toContain(token);
+    expect(result.handoffMessage).toContain('可以把这整段消息直接发给 Codex 或 Claude Code');
+    expect(result.handoffMessage).toContain(`--token ${token}`);
+    expect(events).toEqual(['login', 'create:7', 'logout']);
+  });
+
   test('copies once, waits for sharing, clears if unchanged, and logs out', async () => {
     const events: string[] = [];
     const result = await createShareableInvitation(
