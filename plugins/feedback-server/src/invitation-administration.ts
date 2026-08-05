@@ -61,7 +61,7 @@ export function buildInvitationHandoffMessage(input: {
 
 你收到的是一个一次性管理员邀请码。它有时效限制，只能使用一次。你可以把这整段消息直接发给 Codex 或 Claude Code，让 Agent 帮你完成接入。
 
-请不要把你的管理员密码或之后生成的 PAT 发到聊天、工单、代码仓库、截图或共享文档里；密码仍然只应该输入到终端的隐藏提示里。
+请不要把你的管理员密码或之后生成的 PAT 发到聊天、工单、代码仓库、截图或共享文档里；密码仍然只应该输入到 CLI 的隐藏输入里。
 
 服务地址：
 ${input.baseUrl}
@@ -86,7 +86,7 @@ ${input.invitation.expiresAt}
 4. 克隆 https://github.com/Rabithua/FeedbackServerPlugin.git。
 5. 询问我要使用的管理员用户名和显示名。
 6. 运行 plugins/feedback-server/bin/feedback-server admin accept-invite --url ${input.baseUrl} --token ${input.invitation.token} --username USERNAME_FROM_USER --display-name "DISPLAY_NAME_FROM_USER"
-7. 运行命令时只让我通过终端隐藏输入填写新管理员密码和确认密码。
+7. 运行命令时只让我通过 CLI 隐藏输入填写新管理员密码和确认密码。
 8. 成功后打开或提醒我打开新的 Agent 会话，检查 FeedbackServer connection_status，并列出我的 Products。
 9. 如果 Product 列表为空，告诉我这是正常的；新管理员默认没有 Product，也不能访问邀请人的 Product。
 

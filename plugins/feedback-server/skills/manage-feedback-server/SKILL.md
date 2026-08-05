@@ -8,20 +8,25 @@ description: Manage FeedbackServer apps (Products), private/public Feedback, pri
 Use the `feedback-server` MCP tools as the only Product and Feedback management interface. Do not
 fall back to direct SQL, production shell access, or undocumented HTTP calls. Administrator
 invitations and Agent credential setup are the sole exception: they use the plugin's documented
-trusted-terminal commands because PAT-authenticated MCP tools cannot access authentication routes.
+Keychain-backed CLI commands because PAT-authenticated MCP tools cannot access authentication
+routes.
 
 ## Manage administrator onboarding
 
-- Never ask a user to paste an administrator password, refresh token, or PAT into chat. These
-  secrets belong only in hidden terminal prompts. Time-limited invitation tokens may appear in the
-  invite handoff text because they are single-use onboarding credentials.
+- Never ask a user to paste an administrator password, refresh token, or PAT into chat. Invitation
+  management must use the super administrator password already saved in macOS Keychain. Do not open
+  Terminal, spawn a private PTY, use a GUI password dialog, or wait for password input in chat.
+  Time-limited invitation tokens may appear in the invite handoff text because they are single-use
+  onboarding credentials.
 - To create a shareable invitation for the current user, run this plugin's CLI directly; do not scan
   the workspace, read source files, or use `command -v` first. Resolve the plugin root from this
   Skill location and run `../../bin/feedback-server admin invite` from there, or the equivalent
   absolute cached plugin path. The command infers URL and username from the existing Keychain Agent
-  credentials when possible, asks only for the super administrator password, then prints a complete
-  Markdown handoff package to stdout. Return that package to the user as a code block. Use
-  `--delivery clipboard` only when the user explicitly asks for clipboard delivery.
+  credentials when possible, reads the super administrator password from macOS Keychain, and prints
+  a complete Markdown handoff package to stdout. Return that package to the user as a code block.
+  If the password is missing from Keychain, stop and report the missing service/account from the CLI
+  error instead of switching to another input path. Use `--delivery clipboard` only when the user
+  explicitly asks for clipboard delivery.
 - Use `feedback-server admin invitations` to list non-secret invitation metadata and
   `feedback-server admin invite revoke --id <uuid>` to revoke an unaccepted invitation.
 - The recipient uses `feedback-server admin accept-invite`. It refuses to consume the invitation when Agent

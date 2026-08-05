@@ -5,6 +5,7 @@ import {
   promptText,
   revokeAgentTokenById,
 } from './admin-session.js';
+import { withAdministratorPassword } from './admin-password.js';
 import { parseCliOptions, parseIntegerOption } from './cli-arguments.js';
 import { reportCliFailure } from './cli-reporting.js';
 import { DEFAULT_BASE_URL, readKeychainCredentials } from './credentials.js';
@@ -160,14 +161,17 @@ async function runAdminInvite(options: string[]): Promise<void> {
   if (delivery !== 'stdout' && delivery !== 'clipboard') {
     throw new Error('--delivery must be stdout or clipboard');
   }
-  const superAdminPassword = await promptPassword('Super administrator password');
   if (delivery === 'stdout') {
-    const result = await createInvitationHandoffMessage({
-      baseUrl: input.baseUrl,
-      superAdminUsername: input.username,
-      superAdminPassword,
-      expiresInDays,
-    });
+    const result = await withAdministratorPassword(
+      input,
+      (superAdminPassword) =>
+        createInvitationHandoffMessage({
+          baseUrl: input.baseUrl,
+          superAdminUsername: input.username,
+          superAdminPassword,
+          expiresInDays,
+        }),
+    );
     console.error(
       `Invitation ${result.invitation.id} (${result.invitation.tokenPrefix}…) expires ${
         result.invitation.expiresAt
@@ -176,21 +180,25 @@ async function runAdminInvite(options: string[]): Promise<void> {
     process.stdout.write(`\`\`\`text\n${result.handoffMessage.trimEnd()}\n\`\`\`\n`);
     return;
   }
-  const result = await createShareableInvitation(
-    {
-      baseUrl: input.baseUrl,
-      superAdminUsername: input.username,
-      superAdminPassword,
-      expiresInDays,
-    },
-    async (invitation) => {
-      console.error(
-        `Invitation ${invitation.id} (${invitation.tokenPrefix}…) expires ${invitation.expiresAt}.`,
-      );
-      await promptText(
-        'The recipient handoff package is in your clipboard. Share it through a trusted channel, then press Return to clear it',
-      );
-    },
+  const result = await withAdministratorPassword(
+    input,
+    (superAdminPassword) =>
+      createShareableInvitation(
+        {
+          baseUrl: input.baseUrl,
+          superAdminUsername: input.username,
+          superAdminPassword,
+          expiresInDays,
+        },
+        async (invitation) => {
+          console.error(
+            `Invitation ${invitation.id} (${invitation.tokenPrefix}…) expires ${invitation.expiresAt}.`,
+          );
+          await promptText(
+            'The recipient handoff package is in your clipboard. Share it through a trusted channel, then press Return to clear it',
+          );
+        },
+      ),
   );
   console.error(
     result.clipboardCleared
@@ -201,12 +209,15 @@ async function runAdminInvite(options: string[]): Promise<void> {
 
 async function runAdminInvitations(options: string[]): Promise<void> {
   const input = await urlAndUsername(options, 'Super administrator username');
-  const superAdminPassword = await promptPassword('Super administrator password');
-  const invitations = await getInvitations({
-    baseUrl: input.baseUrl,
-    superAdminUsername: input.username,
-    superAdminPassword,
-  });
+  const invitations = await withAdministratorPassword(
+    input,
+    (superAdminPassword) =>
+      getInvitations({
+        baseUrl: input.baseUrl,
+        superAdminUsername: input.username,
+        superAdminPassword,
+      }),
+  );
   if (invitations.length === 0) {
     console.error('No administrator invitations found.');
     return;
@@ -223,13 +234,16 @@ async function runAdminInviteRevoke(options: string[]): Promise<void> {
   const input = await urlAndUsername(options, 'Super administrator username', ['--id']);
   const invitationId = input.options.get('--id');
   if (!invitationId) throw new Error('--id is required');
-  const superAdminPassword = await promptPassword('Super administrator password');
-  await revokeInvitationById({
-    baseUrl: input.baseUrl,
-    superAdminUsername: input.username,
-    superAdminPassword,
-    invitationId,
-  });
+  await withAdministratorPassword(
+    input,
+    (superAdminPassword) =>
+      revokeInvitationById({
+        baseUrl: input.baseUrl,
+        superAdminUsername: input.username,
+        superAdminPassword,
+        invitationId,
+      }),
+  );
   console.error(`Invitation ${invitationId} revoked.`);
 }
 
@@ -263,7 +277,6 @@ async function runAdminAcceptInvite(options: string[]): Promise<void> {
 
 async function runAdminCreateLocal(options: string[]): Promise<void> {
   const input = await urlAndUsername(options, 'Existing super administrator username');
-  const superAdminPassword = await promptPassword('Existing super administrator password');
   const username = await promptText('New administrator username');
   if (!username) throw new Error('New administrator username is required');
   const displayName = await promptText('New administrator display name');
@@ -271,14 +284,18 @@ async function runAdminCreateLocal(options: string[]): Promise<void> {
   const password = await promptPassword('New administrator password');
   const passwordConfirmation = await promptPassword('Confirm new administrator password');
   if (password !== passwordConfirmation) throw new Error('New administrator passwords do not match');
-  const admin = await createLocalAdmin({
-    baseUrl: input.baseUrl,
-    superAdminUsername: input.username,
-    superAdminPassword,
-    username,
-    displayName,
-    password,
-  });
+  const admin = await withAdministratorPassword(
+    input,
+    (superAdminPassword) =>
+      createLocalAdmin({
+        baseUrl: input.baseUrl,
+        superAdminUsername: input.username,
+        superAdminPassword,
+        username,
+        displayName,
+        password,
+      }),
+  );
   console.error(
     `Administrator ${admin.username} created with role ${admin.role}; login and empty Product ownership verified.`,
   );

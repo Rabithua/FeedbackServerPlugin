@@ -4,6 +4,7 @@ import {
   FeedbackServerApiError,
 } from '../src/api-client.js';
 import {
+  KEYCHAIN_ADMIN_PASSWORD_SERVICE,
   KEYCHAIN_METADATA_SERVICE,
   KEYCHAIN_PENDING_REVOCATIONS_SERVICE,
   KEYCHAIN_SERVICE,
@@ -12,18 +13,33 @@ import {
   SECURITY_EXECUTABLE_FALLBACK,
   SECURITY_SHELL_EXECUTABLE,
   deleteKeychainCredentialRecord,
+  deleteKeychainAdminPassword,
+  keychainAdminPasswordAccount,
+  keychainAdminPasswordWriteArguments,
   loadCredentials,
   normalizeBaseUrl,
+  readKeychainAdminPassword,
   readKeychainCredentialRecord,
   readKeychainPendingTokenRevocations,
   resumeKeychainCredentialRecordCleanup,
   securityCommandCandidates,
+  writeKeychainAdminPassword,
   writeKeychainPendingTokenRevocations,
   writeKeychainCredentialRecord,
   type SecurityCommandRunner,
 } from '../src/credentials.js';
 
 const token = `fspat_${'a'.repeat(64)}`;
+
+async function withPlatform<T>(platform: NodeJS.Platform, operation: () => Promise<T>): Promise<T> {
+  const previousPlatform = process.platform;
+  Object.defineProperty(process, 'platform', { value: platform });
+  try {
+    return await operation();
+  } finally {
+    Object.defineProperty(process, 'platform', { value: previousPlatform });
+  }
+}
 
 describe('credentials and API client', () => {
   test('uses the absolute macOS Keychain executable in restricted MCP environments', () => {
@@ -132,6 +148,72 @@ describe('credentials and API client', () => {
     expect(stored).not.toContain('fspat_');
     expect(stored).not.toContain('password');
     expect(await readKeychainPendingTokenRevocations(runner)).toEqual(entries);
+  });
+
+  test('addresses administrator passwords by normalized URL and username', () => {
+    expect(keychainAdminPasswordAccount('https://feedback.example.com', 'owner')).toBe(
+      'https://feedback.example.com/v1/api|owner',
+    );
+    expect(
+      keychainAdminPasswordWriteArguments('https://feedback.example.com/v1/api/', 'owner'),
+    ).toEqual([
+      'add-generic-password',
+      '-U',
+      '-a',
+      'https://feedback.example.com/v1/api|owner',
+      '-s',
+      KEYCHAIN_ADMIN_PASSWORD_SERVICE,
+      '-l',
+      'FeedbackServer administrator password for owner',
+      '-w',
+    ]);
+  });
+
+  test('keeps the administrator password out of Keychain process arguments', async () => {
+    await withPlatform('darwin', async () => {
+      const calls: { args: string[]; input?: string }[] = [];
+      const runner: SecurityCommandRunner = (args, input) => {
+        calls.push({ args, ...(input === undefined ? {} : { input }) });
+        return Promise.resolve({ exitCode: 0, stdout: '', stderr: '' });
+      };
+      const password = 'secret administrator password';
+      await writeKeychainAdminPassword('https://feedback.example.com', 'owner', password, runner);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.args.join(' ')).not.toContain(password);
+      expect(calls[0]?.args).toContain(KEYCHAIN_ADMIN_PASSWORD_SERVICE);
+      expect(calls[0]?.input).toBe(`${password}\n${password}\n`);
+    });
+  });
+
+  test('reads and deletes administrator passwords through the dedicated Keychain item', async () => {
+    await withPlatform('darwin', async () => {
+      const calls: string[][] = [];
+      const runner: SecurityCommandRunner = (args) => {
+        calls.push(args);
+        if (args[0] === 'find-generic-password') {
+          return Promise.resolve({ exitCode: 0, stdout: 'stored-password\n', stderr: '' });
+        }
+        return Promise.resolve({ exitCode: 0, stdout: '', stderr: '' });
+      };
+      expect(await readKeychainAdminPassword('https://feedback.example.com', 'owner', runner))
+        .toBe('stored-password');
+      await deleteKeychainAdminPassword('https://feedback.example.com', 'owner', runner);
+      expect(calls[0]).toEqual([
+        'find-generic-password',
+        '-a',
+        'https://feedback.example.com/v1/api|owner',
+        '-s',
+        KEYCHAIN_ADMIN_PASSWORD_SERVICE,
+        '-w',
+      ]);
+      expect(calls[1]).toEqual([
+        'delete-generic-password',
+        '-a',
+        'https://feedback.example.com/v1/api|owner',
+        '-s',
+        KEYCHAIN_ADMIN_PASSWORD_SERVICE,
+      ]);
+    });
   });
 
   test('keeps the PAT out of Keychain process arguments and command output', async () => {

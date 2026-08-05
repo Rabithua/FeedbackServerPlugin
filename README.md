@@ -2,7 +2,7 @@
 
 FeedbackServer Plugin is the public multi-agent distribution for administering a compatible
 FeedbackServer instance. One audited TypeScript implementation provides a shared MCP server,
-management Skill, and trusted-terminal account CLI for Codex and Claude Code. The repository
+management Skill, and Keychain-backed account CLI for Codex and Claude Code. The repository
 contains no FeedbackServer source, deployment configuration, database access, or credentials.
 
 ## Install for Codex
@@ -39,9 +39,9 @@ cd FeedbackServerPlugin
 plugins/feedback-server/bin/feedback-server agent configure
 ```
 
-The CLI hides passwords and PATs. Time-limited invitation tokens can be printed in onboarding
-handoffs and passed to `accept-invite --token` for Agent-driven setup. On macOS it stores
-credentials under the existing Keychain service `dev.rote.feedback-server.mcp`, so Codex and
+The CLI hides new account passwords and PATs. Time-limited invitation tokens can be printed in
+onboarding handoffs and passed to `accept-invite --token` for Agent-driven setup. On macOS it
+stores credentials under the existing Keychain service `dev.rote.feedback-server.mcp`, so Codex and
 Claude Code reuse the same account without copying or rotating its PAT. Non-macOS MCP processes
 must receive both
 `FEEDBACK_SERVER_BASE_URL` and `FEEDBACK_SERVER_API_TOKEN` from a secure process environment.
@@ -71,10 +71,13 @@ For a recipient-facing handoff, `admin invite` prints a complete Simplified Chin
 package that includes the one-time invitation, a prompt the recipient can give directly to Codex or
 Claude Code, and a link to [the onboarding guide](docs/invited-admin-onboarding.zh-Hans.md).
 Invitation tokens are time-limited and single-use; administrator passwords, PATs, and refresh
-tokens still belong only in hidden terminal prompts.
+tokens are never sent through chat. Invitation management reads the super administrator password
+only from macOS Keychain service `dev.rote.feedback-server.mcp.admin-password`, using account
+`<normalized /v1/api URL>|<username>`.
 
 `admin invite` creates a 7-day invitation by default, with `--expires-in-days` accepting 1–30. It
-infers `--url` and `--username` from the existing Keychain Agent configuration when possible, then
+infers `--url` and `--username` from the existing Keychain Agent configuration when possible, reads
+the saved super administrator password from Keychain without opening Terminal or prompting, then
 prints the handoff package to stdout so an Agent can paste it back as a chat code block. The old
 clipboard handoff is still available with `--delivery clipboard`.
 
@@ -93,8 +96,9 @@ cannot access another owner's Product.
 
 Remote endpoints must use HTTPS. Plain HTTP is accepted only for exact loopback hosts
 `localhost`, `127.0.0.1`, and `[::1]`. Long-lived secrets are never accepted as command arguments
-or written to logs, bundles, repository files, or pending-revocation metadata. Time-limited
-single-use invitation tokens may appear in onboarding handoff text and `accept-invite --token`.
+or written to logs, bundles, repository files, or pending-revocation metadata. Invitation creation
+uses the Keychain-stored super administrator password only. Time-limited single-use invitation
+tokens may appear in onboarding handoff text and `accept-invite --token`.
 
 ```bash
 bun install --cwd=plugins/feedback-server --frozen-lockfile
