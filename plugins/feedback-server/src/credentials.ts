@@ -7,6 +7,7 @@ export const KEYCHAIN_ACCOUNT = 'default';
 export const KEYCHAIN_TOKEN_SERVICE = `${KEYCHAIN_SERVICE}.token`;
 export const KEYCHAIN_METADATA_SERVICE = `${KEYCHAIN_SERVICE}.metadata`;
 export const KEYCHAIN_PENDING_REVOCATIONS_SERVICE = `${KEYCHAIN_SERVICE}.pending-revocations`;
+export const KEYCHAIN_ADMIN_PASSWORD_SERVICE = `${KEYCHAIN_SERVICE}.admin-password`;
 export const SECURITY_EXECUTABLE = '/usr/bin/security';
 export const SECURITY_EXECUTABLE_FALLBACK = 'security';
 export const SECURITY_SHELL_EXECUTABLE = '/bin/sh';
@@ -220,6 +221,27 @@ export function keychainPendingRevocationsWriteArguments(
   ];
 }
 
+export function keychainAdminPasswordAccount(baseUrl: string, username: string): string {
+  return `${normalizeBaseUrl(baseUrl)}|${username}`;
+}
+
+export function keychainAdminPasswordWriteArguments(
+  baseUrl: string,
+  username: string,
+): string[] {
+  return [
+    'add-generic-password',
+    '-U',
+    '-a',
+    keychainAdminPasswordAccount(baseUrl, username),
+    '-s',
+    KEYCHAIN_ADMIN_PASSWORD_SERVICE,
+    '-l',
+    `FeedbackServer administrator password for ${username}`,
+    '-w',
+  ];
+}
+
 function isMissingKeychainItem(result: SecurityCommandResult): boolean {
   return result.exitCode === 44 || result.stderr.includes('could not be found');
 }
@@ -334,6 +356,54 @@ export async function readPendingTokenRevocations(
 ): Promise<PendingTokenRevocation[]> {
   if (process.platform !== 'darwin') return [];
   return readKeychainPendingTokenRevocations(runner);
+}
+
+export async function readKeychainAdminPassword(
+  baseUrl: string,
+  username: string,
+  runner: SecurityCommandRunner = runSecurity,
+): Promise<string | undefined> {
+  if (process.platform !== 'darwin') return undefined;
+  return readKeychainValue(
+    KEYCHAIN_ADMIN_PASSWORD_SERVICE,
+    keychainAdminPasswordAccount(baseUrl, username),
+    runner,
+  );
+}
+
+export async function writeKeychainAdminPassword(
+  baseUrl: string,
+  username: string,
+  password: string,
+  runner: SecurityCommandRunner = runSecurity,
+): Promise<void> {
+  if (process.platform !== 'darwin') {
+    throw new Error('macOS Keychain is unavailable on this platform');
+  }
+  const result = await runner(
+    keychainAdminPasswordWriteArguments(baseUrl, username),
+    `${password}\n${password}\n`,
+  );
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `Unable to store FeedbackServer administrator password in Keychain: ${result.stderr.trim()}`,
+    );
+  }
+}
+
+export async function deleteKeychainAdminPassword(
+  baseUrl: string,
+  username: string,
+  runner: SecurityCommandRunner = runSecurity,
+): Promise<void> {
+  if (process.platform !== 'darwin') return;
+  if (!(await deleteKeychainItem(
+    KEYCHAIN_ADMIN_PASSWORD_SERVICE,
+    keychainAdminPasswordAccount(baseUrl, username),
+    runner,
+  ))) {
+    throw new Error('Unable to remove FeedbackServer administrator password from Keychain');
+  }
 }
 
 export async function addPendingTokenRevocation(

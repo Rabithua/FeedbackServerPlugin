@@ -1,7 +1,7 @@
 # FeedbackServer agent plugin
 
 This directory is the single `feedback-server` plugin source for Codex and Claude Code. It contains
-the shared MCP server, `manage-feedback-server` Skill, trusted-terminal CLI, tests, and deterministic
+the shared MCP server, `manage-feedback-server` Skill, Keychain-backed CLI, tests, and deterministic
 standalone bundles. It uses only FeedbackServer's documented `/v1/api` HTTPS surface.
 
 Platform-specific metadata is isolated under `.codex-plugin/`, `.claude-plugin/`, the inline Codex
@@ -20,8 +20,10 @@ feedback-server admin accept-invite
 feedback-server admin create-local
 ```
 
-Passwords, refresh tokens, and PATs use hidden TTY input or stdin-only Keychain writes. Invitation
-creation prints a recipient handoff package to stdout by default; the package contains the
+New account passwords, refresh tokens, and PATs use hidden TTY input or stdin-only Keychain writes.
+Invitation creation reads the super administrator password only from macOS Keychain service
+`dev.rote.feedback-server.mcp.admin-password`, prints a recipient handoff package to stdout by
+default, and never opens Terminal or prompts for that password. The package contains the
 time-limited one-time token and an Agent-ready task prompt that the recipient can paste directly
 into Codex or Claude Code. The older macOS clipboard handoff remains available with
 `--delivery clipboard`. PAT storage uses split macOS Keychain records with the token passed only
