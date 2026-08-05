@@ -22,8 +22,8 @@ feedback-server admin create-local
 
 New account passwords, refresh tokens, and PATs use hidden TTY input or stdin-only Keychain writes.
 Invitation creation reads the super administrator password only from macOS Keychain service
-`dev.rote.feedback-server.mcp.admin-password`, prints a recipient handoff package to stdout by
-default, and never opens Terminal or prompts for that password. The package contains the
+`dev.rote.feedback-server.admin` with account `<username>`, prints a recipient handoff package to
+stdout by default, and never opens Terminal or prompts for that password. The package contains the
 time-limited one-time token and an Agent-ready task prompt that the recipient can paste directly
 into Codex or Claude Code. The older macOS clipboard handoff remains available with
 `--delivery clipboard`. PAT storage uses split macOS Keychain records with the token passed only

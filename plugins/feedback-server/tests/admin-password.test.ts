@@ -56,8 +56,10 @@ describe('administrator password Keychain lookup', () => {
     );
     expect(operationCalled).toBe(false);
     expect(error).toBeInstanceOf(MissingAdministratorPasswordError);
-    expect((error as Error).message).toContain('dev.rote.feedback-server.mcp.admin-password');
-    expect((error as Error).message).toContain(`${baseUrl}|${username}`);
+    expect((error as Error).message).toContain('dev.rote.feedback-server.admin');
+    expect((error as Error).message).toContain('account owner');
+    expect((error as Error).message).not.toContain('dev.rote.feedback-server.mcp.admin-password');
+    expect((error as Error).message).not.toContain(`${baseUrl}|${username}`);
   });
 
   test('removes and rejects a stored administrator password when authentication fails', async () => {

@@ -7,7 +7,7 @@ export const KEYCHAIN_ACCOUNT = 'default';
 export const KEYCHAIN_TOKEN_SERVICE = `${KEYCHAIN_SERVICE}.token`;
 export const KEYCHAIN_METADATA_SERVICE = `${KEYCHAIN_SERVICE}.metadata`;
 export const KEYCHAIN_PENDING_REVOCATIONS_SERVICE = `${KEYCHAIN_SERVICE}.pending-revocations`;
-export const KEYCHAIN_ADMIN_PASSWORD_SERVICE = `${KEYCHAIN_SERVICE}.admin-password`;
+export const KEYCHAIN_ADMIN_PASSWORD_SERVICE = 'dev.rote.feedback-server.admin';
 export const SECURITY_EXECUTABLE = '/usr/bin/security';
 export const SECURITY_EXECUTABLE_FALLBACK = 'security';
 export const SECURITY_SHELL_EXECUTABLE = '/bin/sh';
@@ -221,8 +221,8 @@ export function keychainPendingRevocationsWriteArguments(
   ];
 }
 
-export function keychainAdminPasswordAccount(baseUrl: string, username: string): string {
-  return `${normalizeBaseUrl(baseUrl)}|${username}`;
+export function keychainAdminPasswordAccount(_baseUrl: string, username: string): string {
+  return username;
 }
 
 export function keychainAdminPasswordWriteArguments(

@@ -16,8 +16,9 @@ routes.
 - Never ask a user to paste an administrator password, refresh token, or PAT into chat. Invitation
   management must use the super administrator password already saved in macOS Keychain. Do not open
   Terminal, spawn a private PTY, use a GUI password dialog, or wait for password input in chat.
-  Time-limited invitation tokens may appear in the invite handoff text because they are single-use
-  onboarding credentials.
+  The canonical administrator password item is service `dev.rote.feedback-server.admin` with the
+  administrator username as the account. Time-limited invitation tokens may appear in the invite
+  handoff text because they are single-use onboarding credentials.
 - To create a shareable invitation for the current user, run this plugin's CLI directly; do not scan
   the workspace, read source files, or use `command -v` first. Resolve the plugin root from this
   Skill location and run `../../bin/feedback-server admin invite` from there, or the equivalent

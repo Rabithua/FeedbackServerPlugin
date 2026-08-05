@@ -1,6 +1,6 @@
 {
   "name": "@feedback-server/agent-plugin",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "private": true,
   "type": "module",
   "scripts": {
