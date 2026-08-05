@@ -150,9 +150,9 @@ describe('credentials and API client', () => {
     expect(await readKeychainPendingTokenRevocations(runner)).toEqual(entries);
   });
 
-  test('addresses administrator passwords by normalized URL and username', () => {
+  test('addresses administrator passwords by the canonical username account', () => {
     expect(keychainAdminPasswordAccount('https://feedback.example.com', 'owner')).toBe(
-      'https://feedback.example.com/v1/api|owner',
+      'owner',
     );
     expect(
       keychainAdminPasswordWriteArguments('https://feedback.example.com/v1/api/', 'owner'),
@@ -160,7 +160,7 @@ describe('credentials and API client', () => {
       'add-generic-password',
       '-U',
       '-a',
-      'https://feedback.example.com/v1/api|owner',
+      'owner',
       '-s',
       KEYCHAIN_ADMIN_PASSWORD_SERVICE,
       '-l',
@@ -185,7 +185,7 @@ describe('credentials and API client', () => {
     });
   });
 
-  test('reads and deletes administrator passwords through the dedicated Keychain item', async () => {
+  test('reads and deletes administrator passwords through the canonical Keychain item', async () => {
     await withPlatform('darwin', async () => {
       const calls: string[][] = [];
       const runner: SecurityCommandRunner = (args) => {
@@ -201,7 +201,7 @@ describe('credentials and API client', () => {
       expect(calls[0]).toEqual([
         'find-generic-password',
         '-a',
-        'https://feedback.example.com/v1/api|owner',
+        'owner',
         '-s',
         KEYCHAIN_ADMIN_PASSWORD_SERVICE,
         '-w',
@@ -209,7 +209,7 @@ describe('credentials and API client', () => {
       expect(calls[1]).toEqual([
         'delete-generic-password',
         '-a',
-        'https://feedback.example.com/v1/api|owner',
+        'owner',
         '-s',
         KEYCHAIN_ADMIN_PASSWORD_SERVICE,
       ]);

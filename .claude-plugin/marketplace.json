@@ -10,7 +10,7 @@
       "name": "feedback-server",
       "source": "./plugins/feedback-server",
       "description": "Manage FeedbackServer from Claude Code through a local MCP server and shared management Skill.",
-      "version": "0.6.3",
+      "version": "0.6.4",
       "author": {
         "name": "Rabithua"
       },

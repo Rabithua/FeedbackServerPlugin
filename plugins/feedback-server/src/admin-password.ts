@@ -23,7 +23,7 @@ export class MissingAdministratorPasswordError extends Error {
     super(
       [
         `FeedbackServer administrator password is not saved in macOS Keychain for ${username}.`,
-        `Expected service dev.rote.feedback-server.mcp.admin-password and account ${baseUrl}|${username}.`,
+        `Expected service dev.rote.feedback-server.admin and account ${username}.`,
         'Save it in Keychain once, then rerun the command.',
       ].join(' '),
     );
