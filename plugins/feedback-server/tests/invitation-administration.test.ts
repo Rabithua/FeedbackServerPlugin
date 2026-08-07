@@ -65,6 +65,10 @@ function dependencies(
         expect(value).toContain(token);
         expect(value).toContain(`admin accept-invite --url ${baseUrl}`);
         expect(value).toContain('可以把这整段消息直接发给 Codex 或 Claude Code');
+        expect(value).toContain('cd FeedbackServerPlugin');
+        expect(value).toContain('真实绝对路径');
+        expect(value).toContain('不要在 Agent 进程、私有 PTY 或其他不可见终端中运行');
+        expect(value).toContain('自己可见、可控制的交互式终端');
         expect(value).toContain(`--token ${token}`);
         events.push('copy');
         return Promise.resolve();
@@ -103,6 +107,12 @@ describe('administrator invitation lifecycle', () => {
     expect(result.handoffMessage).toBe(handoffMessage);
     expect(result.handoffMessage).toContain(token);
     expect(result.handoffMessage).toContain('可以把这整段消息直接发给 Codex 或 Claude Code');
+    expect(result.handoffMessage).toContain('cd FeedbackServerPlugin');
+    expect(result.handoffMessage).toContain('真实绝对路径');
+    expect(result.handoffMessage).toContain(
+      '不要在 Agent 进程、私有 PTY 或其他不可见终端中运行',
+    );
+    expect(result.handoffMessage).toContain('自己可见、可控制的交互式终端');
     expect(result.handoffMessage).toContain(`--token ${token}`);
     expect(events).toEqual(['login', 'create:7', 'logout']);
   });

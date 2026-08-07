@@ -1,6 +1,6 @@
 # FeedbackServer 受邀管理员接入指南
 
-你收到的是一个一次性管理员邀请码。它只能使用一次，并且会过期。你可以把邀请人发来的整段接入消息交给 Codex 或 Claude Code 处理。
+你收到的是一个一次性管理员邀请码。它只能使用一次，并且会过期。你可以把邀请人发来的整段接入消息交给 Codex 或 Claude Code，让 Agent 安装插件、克隆仓库并准备准确的接入命令。最后的 `accept-invite` 命令需要隐藏输入新密码，因此必须由你在自己可见、可控制的交互式终端中运行。
 
 请不要把你的管理员密码或之后生成的 PAT 发到聊天机器人、工单、代码仓库、截图或共享文档里。密码仍然只应该输入到终端的隐藏提示里。
 
@@ -48,11 +48,14 @@ git clone https://github.com/Rabithua/FeedbackServerPlugin.git
 cd FeedbackServerPlugin
 ```
 
-如果邀请人发给你的是完整接入消息，最简单的方式是把整段消息发给 Codex 或 Claude Code，让 Agent 安装插件并运行接受邀请命令。邀请码可以由 Agent 从接入消息里读取；密码仍然只在隐藏提示里输入。
+如果邀请人发给你的是完整接入消息，最简单的方式是把整段消息发给 Codex 或 Claude Code。Agent 可以安装插件、克隆仓库、询问用户名和显示名，并根据仓库的真实绝对路径生成下面的完整命令。
 
-如果你想手动执行，把下面的 `YOUR_INVITATION_TOKEN`、`YOUR_USERNAME` 和 `Your Display Name` 换成邀请消息里的邀请码，以及你想使用的管理员用户名和显示名：
+Agent 不应在自己的进程、私有 PTY 或其他你看不到的终端中运行 `accept-invite`。请打开自己可见、可控制的交互式终端，先进入 Agent 告诉你的仓库绝对路径，再运行它准备好的接入命令。这样 CLI 才能安全地隐藏密码输入，并且密码不会经过聊天。
+
+如果你不使用 Agent 准备命令，请在可见终端中执行下面两步，并把 `YOUR_INVITATION_TOKEN`、`YOUR_USERNAME` 和 `Your Display Name` 换成邀请消息里的邀请码，以及你想使用的管理员用户名和显示名：
 
 ```bash
+cd "/absolute/path/to/FeedbackServerPlugin"
 plugins/feedback-server/bin/feedback-server admin accept-invite \
   --url https://feedbackserver.rote.ink/v1/api \
   --token YOUR_INVITATION_TOKEN \
@@ -60,7 +63,7 @@ plugins/feedback-server/bin/feedback-server admin accept-invite \
   --display-name "Your Display Name"
 ```
 
-命令会依次隐藏输入：
+不要省略第一条 `cd`，也不要从克隆目录的上一级直接运行相对路径。接入命令会依次隐藏输入：
 
 - 你的新管理员密码
 - 再输入一次密码确认

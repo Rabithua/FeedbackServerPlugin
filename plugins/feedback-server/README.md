@@ -25,10 +25,12 @@ Invitation creation reads the super administrator password only from macOS Keych
 `dev.rote.feedback-server.admin` with account `<username>`, prints a recipient handoff package to
 stdout by default, and never opens Terminal or prompts for that password. The package contains the
 time-limited one-time token and an Agent-ready task prompt that the recipient can paste directly
-into Codex or Claude Code. The older macOS clipboard handoff remains available with
-`--delivery clipboard`. PAT storage uses split macOS Keychain records with the token passed only
-through stdin. A separate Keychain ledger stores only server URL, username, and token ID for
-recoverable PAT revocation. CI and non-macOS MCP processes may use paired
+into Codex or Claude Code. The Agent installs and prepares a command rooted at the checkout's real
+absolute path; the recipient runs `accept-invite` in a visible interactive terminal so hidden
+password input never passes through chat or a private Agent PTY. The older macOS clipboard handoff
+remains available with `--delivery clipboard`. PAT storage uses split macOS Keychain records with
+the token passed only through stdin. A separate Keychain ledger stores only server URL, username,
+and token ID for recoverable PAT revocation. CI and non-macOS MCP processes may use paired
 `FEEDBACK_SERVER_BASE_URL` and `FEEDBACK_SERVER_API_TOKEN` environment values.
 
 Development commands:

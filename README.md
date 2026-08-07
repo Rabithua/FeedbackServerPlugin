@@ -40,7 +40,10 @@ plugins/feedback-server/bin/feedback-server agent configure
 ```
 
 The CLI hides new account passwords and PATs. Time-limited invitation tokens can be printed in
-onboarding handoffs and passed to `accept-invite --token` for Agent-driven setup. On macOS it
+onboarding handoffs and passed to `accept-invite --token` for Agent-assisted setup. An Agent may
+install the plugin, clone this repository, and prepare an exact command that first changes to the
+checkout's real absolute path. The recipient must run that command in a visible, user-controlled
+interactive terminal so the password remains inside the CLI's hidden prompt. On macOS the CLI
 stores credentials under the existing Keychain service `dev.rote.feedback-server.mcp`, so Codex and
 Claude Code reuse the same account without copying or rotating its PAT. Non-macOS MCP processes
 must receive both
@@ -81,10 +84,12 @@ prints the handoff package to stdout so an Agent can paste it back as a chat cod
 clipboard handoff is still available with `--delivery clipboard`.
 
 `admin accept-invite` refuses to consume an invitation when another Agent credential is configured.
-It accepts a time-limited `--token` argument for Agent-driven onboarding, creates an ordinary
-administrator, verifies the account owns no Products, creates a 365-day PAT, stores it atomically,
-and logs out every temporary session. If account creation committed but local configuration failed,
-do not reuse the invitation: run `feedback-server agent configure` with the new account. Any PAT
+It accepts a time-limited `--token` argument for Agent-assisted onboarding and requires a visible
+interactive terminal for hidden password entry. The Agent prepares the checkout path and command;
+the recipient runs it directly. The command creates an ordinary administrator, verifies the account
+owns no Products, creates a 365-day PAT, stores it atomically, and logs out every temporary session.
+If account creation committed but local configuration failed, do not reuse the invitation: run
+`feedback-server agent configure` with the new account. Any PAT
 whose compensating revocation also failed is recorded by non-secret ID in a separate Keychain ledger
 and can be removed with the reported `agent revoke-token` command.
 
