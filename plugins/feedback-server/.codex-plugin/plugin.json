@@ -1,6 +1,6 @@
 {
   "name": "feedback-server",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "description": "Agent-first management for FeedbackServer products, public feedback, activity, roadmaps, releases, attachments, Bark, and audit records.",
   "author": {
     "name": "Rabithua",
