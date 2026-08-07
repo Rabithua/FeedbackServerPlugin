@@ -50,6 +50,8 @@ stores credentials under the existing Keychain service `dev.rote.feedback-server
 Claude Code reuse the same account without copying or rotating its PAT. Non-macOS MCP processes
 must receive both
 `FEEDBACK_SERVER_BASE_URL` and `FEEDBACK_SERVER_API_TOKEN` from a secure process environment.
+The default service URL is `https://api.feedkit.cn/v1/api`. Existing credentials that reference the
+former `feedbackserver.rote.ink` endpoint are routed to the canonical URL without replacing the PAT.
 
 Supported commands:
 

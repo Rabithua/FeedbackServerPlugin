@@ -4,11 +4,13 @@ import {
   FeedbackServerApiError,
 } from '../src/api-client.js';
 import {
+  DEFAULT_BASE_URL,
   KEYCHAIN_ADMIN_PASSWORD_SERVICE,
   KEYCHAIN_METADATA_SERVICE,
   KEYCHAIN_PENDING_REVOCATIONS_SERVICE,
   KEYCHAIN_SERVICE,
   KEYCHAIN_TOKEN_SERVICE,
+  LEGACY_DEFAULT_BASE_URL,
   SECURITY_EXECUTABLE,
   SECURITY_EXECUTABLE_FALLBACK,
   SECURITY_SHELL_EXECUTABLE,
@@ -81,6 +83,8 @@ describe('credentials and API client', () => {
   });
 
   test('normalizes API roots and requires paired environment credentials', async () => {
+    expect(DEFAULT_BASE_URL).toBe('https://api.feedkit.cn/v1/api');
+    expect(normalizeBaseUrl(LEGACY_DEFAULT_BASE_URL)).toBe(DEFAULT_BASE_URL);
     expect(normalizeBaseUrl('https://feedback.example.com/')).toBe(
       'https://feedback.example.com/v1/api',
     );
@@ -283,6 +287,23 @@ describe('credentials and API client', () => {
     expect(await readKeychainCredentialRecord(runner)).toEqual(
       credentials,
     );
+  });
+
+  test('migrates the legacy production URL when reading Keychain credentials', async () => {
+    const credentials = {
+      baseUrl: LEGACY_DEFAULT_BASE_URL,
+      token,
+      username: 'owner',
+    };
+    const runner: SecurityCommandRunner = () => Promise.resolve({
+      exitCode: 0,
+      stdout: JSON.stringify(credentials),
+      stderr: '',
+    });
+    expect(await readKeychainCredentialRecord(runner)).toEqual({
+      ...credentials,
+      baseUrl: DEFAULT_BASE_URL,
+    });
   });
 
   test('reassembles split Keychain records without putting the PAT in metadata', async () => {

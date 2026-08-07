@@ -43,6 +43,8 @@ remains available with `--delivery clipboard`. PAT storage uses split macOS Keyc
 the token passed only through stdin. A separate Keychain ledger stores only server URL, username,
 and token ID for recoverable PAT revocation. CI and non-macOS MCP processes may use paired
 `FEEDBACK_SERVER_BASE_URL` and `FEEDBACK_SERVER_API_TOKEN` environment values.
+The canonical default endpoint is `https://api.feedkit.cn/v1/api`; credentials saved with the former
+production hostname are normalized to this endpoint while preserving the existing PAT.
 
 If Agent credentials already exist, `accept-invite` shows their non-secret username and service URL
 and asks whether to keep or switch accounts. Keeping is the default and stops without consuming the

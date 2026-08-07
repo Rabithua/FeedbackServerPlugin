@@ -45,7 +45,7 @@ Start from [`examples/opencode.json`](../examples/opencode.json):
 On macOS the server automatically reads the same `dev.rote.feedback-server.mcp` Keychain
 credential used by Codex and Claude Code. On other platforms, inject both
 `FEEDBACK_SERVER_BASE_URL` and `FEEDBACK_SERVER_API_TOKEN` through the client's secure environment
-configuration. Never commit those values.
+configuration. Use `https://api.feedkit.cn/v1/api` as the base URL. Never commit those values.
 
 ## Check the transport
 

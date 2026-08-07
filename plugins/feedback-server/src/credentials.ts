@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 
-export const DEFAULT_BASE_URL = 'https://feedbackserver.rote.ink/v1/api';
+export const DEFAULT_BASE_URL = 'https://api.feedkit.cn/v1/api';
+export const LEGACY_DEFAULT_BASE_URL = 'https://feedbackserver.rote.ink/v1/api';
 export const KEYCHAIN_SERVICE = 'dev.rote.feedback-server.mcp';
 export const KEYCHAIN_ACCOUNT = 'default';
 export const KEYCHAIN_TOKEN_SERVICE = `${KEYCHAIN_SERVICE}.token`;
@@ -70,7 +71,16 @@ export function normalizeBaseUrl(value: string): string {
   if (!url.pathname.endsWith('/v1/api')) {
     url.pathname = `${url.pathname}/v1/api`.replaceAll('//', '/');
   }
-  return url.toString().replace(/\/+$/, '');
+  const normalized = url.toString().replace(/\/+$/, '');
+  return normalized === LEGACY_DEFAULT_BASE_URL ? DEFAULT_BASE_URL : normalized;
+}
+
+function normalizeStoredCredentials(value: unknown): StoredCredentials {
+  const credentials = credentialSchema.parse(value);
+  return {
+    ...credentials,
+    baseUrl: normalizeBaseUrl(credentials.baseUrl),
+  };
 }
 
 async function runSecurity(
@@ -285,7 +295,7 @@ export async function readKeychainCredentialRecord(
 
   const recordId = keychainRecordIdSchema.safeParse(pointer);
   if (!recordId.success) {
-    return credentialSchema.parse(JSON.parse(pointer));
+    return normalizeStoredCredentials(JSON.parse(pointer));
   }
 
   const [token, metadataValue] = await Promise.all([
@@ -296,7 +306,7 @@ export async function readKeychainCredentialRecord(
     throw new Error('FeedbackServer credentials in Keychain are incomplete');
   }
   const metadata = credentialMetadataSchema.parse(JSON.parse(metadataValue));
-  return credentialSchema.parse({ ...metadata, token });
+  return normalizeStoredCredentials({ ...metadata, token });
 }
 
 export async function readKeychainCredentials(
@@ -452,7 +462,7 @@ export async function writeKeychainCredentialRecord(
   runner: SecurityCommandRunner,
   createRecordId: () => string = randomUUID,
 ): Promise<void> {
-  const parsed = credentialSchema.parse(credentials);
+  const parsed = normalizeStoredCredentials(credentials);
   const previousPointer = await readKeychainValue(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, runner);
   const previousRecordId = keychainRecordIdSchema.safeParse(previousPointer);
   const recordId = keychainRecordIdSchema.parse(createRecordId());

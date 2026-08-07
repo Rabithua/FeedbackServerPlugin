@@ -81,7 +81,7 @@ Agent 不应在自己的进程、私有 PTY 或其他你看不到的终端中运
 ```bash
 cd "/absolute/path/to/FeedbackServerPlugin"
 plugins/feedback-server/bin/feedback-server admin accept-invite \
-  --url https://feedbackserver.rote.ink/v1/api \
+  --url https://api.feedkit.cn/v1/api \
   --token YOUR_INVITATION_TOKEN \
   --username YOUR_USERNAME \
   --display-name "Your Display Name"
@@ -169,7 +169,7 @@ plugins/feedback-server/bin/feedback-server agent disconnect
 
 ```bash
 plugins/feedback-server/bin/feedback-server agent configure \
-  --url https://feedbackserver.rote.ink/v1/api \
+  --url https://api.feedkit.cn/v1/api \
   --username YOUR_USERNAME
 ```
 
