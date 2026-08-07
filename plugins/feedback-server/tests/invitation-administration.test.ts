@@ -69,6 +69,15 @@ function dependencies(
         expect(value).toContain('真实绝对路径');
         expect(value).toContain('不要在 Agent 进程、私有 PTY 或其他不可见终端中运行');
         expect(value).toContain('自己可见、可控制的交互式终端');
+        expect(value).toContain('保留原账号');
+        expect(value).toContain('切换到受邀账号');
+        expect(value).toContain('这台 Mac 上所有启用 FeedbackServer');
+        expect(value).toContain('自动尝试恢复原账号');
+        expect(value).toContain('当前任务中亲自批准');
+        expect(value).toContain('codex plugin marketplace list --json');
+        expect(value).toContain('codex plugin marketplace upgrade feedback-server');
+        expect(value).toContain('已经安装时不要重复 add');
+        expect(value).toContain('只有我明确输入 switch 才会继续');
         expect(value).toContain(`--token ${token}`);
         events.push('copy');
         return Promise.resolve();
@@ -113,6 +122,15 @@ describe('administrator invitation lifecycle', () => {
       '不要在 Agent 进程、私有 PTY 或其他不可见终端中运行',
     );
     expect(result.handoffMessage).toContain('自己可见、可控制的交互式终端');
+    expect(result.handoffMessage).toContain('保留原账号');
+    expect(result.handoffMessage).toContain('切换到受邀账号');
+    expect(result.handoffMessage).toContain('这台 Mac 上所有启用 FeedbackServer');
+    expect(result.handoffMessage).toContain('自动尝试恢复原账号');
+    expect(result.handoffMessage).toContain('当前任务中亲自批准');
+    expect(result.handoffMessage).toContain('codex plugin marketplace list --json');
+    expect(result.handoffMessage).toContain('codex plugin marketplace upgrade feedback-server');
+    expect(result.handoffMessage).toContain('已经安装时不要重复 add');
+    expect(result.handoffMessage).toContain('只有我明确输入 switch 才会继续');
     expect(result.handoffMessage).toContain(`--token ${token}`);
     expect(events).toEqual(['login', 'create:7', 'logout']);
   });

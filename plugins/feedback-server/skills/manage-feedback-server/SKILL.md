@@ -9,7 +9,8 @@ Use the `feedback-server` MCP tools as the only Product and Feedback management 
 fall back to direct SQL, production shell access, or undocumented HTTP calls. Administrator
 invitations and Agent credential setup are the sole exception: they use the plugin's documented
 Keychain-backed CLI commands because PAT-authenticated MCP tools cannot access authentication
-routes.
+routes. The documented `doctor` preflight and explicit `test roundtrip` acceptance command are also
+CLI exceptions; do not reproduce their HTTP calls manually.
 
 ## Manage administrator onboarding
 
@@ -34,16 +35,48 @@ routes.
   terminal because the command requires hidden password input. An Agent may install the plugin,
   clone the repository, collect the non-secret username and display name, and prepare the exact
   command. It must include `cd` to the repository's real absolute path, must not execute
-  `accept-invite` itself, and must never open a private PTY or ask for the password in chat. The CLI
-  refuses to consume the invitation when Agent credentials already exist, accepts a time-limited
-  `--token` argument from the handoff package, verifies the new tenant is empty, and configures a
-  personal PAT in macOS Keychain. If account creation committed but configuration failed, use
-  `feedback-server agent configure`; do not retry the invitation. If PAT rollback also failed, use
-  the reported `feedback-server agent revoke-token --id <uuid>` recovery command.
+  `accept-invite` itself, and must never open a private PTY or ask for a password in chat.
+- In Codex, inspect `codex plugin marketplace list --json` and `codex plugin list --json` before
+  installation. Add the FeedbackServer marketplace only when absent; otherwise upgrade it with
+  `codex plugin marketplace upgrade feedback-server`. Run `codex plugin add
+  feedback-server@feedback-server` only when the plugin is missing. If Codex requests command
+  approval, the user must approve it in that same task; another Agent or task cannot do so.
+- When Agent credentials already exist, show only the current non-secret username and service URL,
+  then ask whether the user wants to keep the existing account or switch to the invited account.
+  Explain that this Keychain account is shared by every FeedbackServer-enabled Codex and Claude
+  session on the Mac, so switching is not isolated to the current project. Never choose on the
+  user's behalf. Keeping is the CLI default: it stops before new-password input and does not consume
+  the invitation. Only an explicit `switch` entered in the user's visible terminal may continue;
+  warn first that it revokes the current Agent PAT and removes the Mac's shared local credentials.
+  Both the current and new account passwords remain hidden CLI input. If invitation acceptance
+  fails after the switch, the CLI automatically attempts to restore the old account; use
+  `feedback-server agent configure` only when automatic restoration also fails.
+  The CLI accepts a time-limited `--token` from the handoff, verifies the new tenant is empty, and
+  configures a personal PAT in macOS Keychain. If account creation committed but configuration
+  failed, use `feedback-server agent configure` with the new account; do not retry the invitation.
+  If PAT rollback also failed, use the reported `feedback-server agent revoke-token --id <uuid>`
+  recovery command.
 - Use `feedback-server admin create-local` when the super administrator should create both sides locally
   without exposing an invitation token.
 - Installing the plugin and accepting an invitation are separate. New administrators own no
   Products and cannot access or receive another administrator's Product.
+
+## Verify setup and integration
+
+- Run `feedback-server doctor` after setup or upgrade. It is read-only and checks plugin version,
+  credentials, live health, PAT metadata, pending token cleanup, and Product selection without
+  printing a PAT or Product key. Pass `--product <id-or-slug>` whenever more than one Product is
+  visible.
+- For an iOS host, pass `--app-path <absolute-path>` and an explicit Product. Doctor checks the
+  resolved FeedbackKit version, server URL and Product binding, explicit visitor Keychain service,
+  and `.followHost` or `.fixed(Locale)` language policy. Treat warnings as decisions to review and
+  failures as integration blockers.
+- Run `feedback-server test roundtrip --product <id-or-slug> --confirm <product-slug>` only when the
+  user explicitly asks for a live end-to-end test and a brief harmless test post is acceptable for
+  that Product. The repeated slug is mandatory and must not be inferred for the user. The CLI uses
+  a unique random Visitor, verifies submit/administrator receive/reply/client unread/read, then
+  deletes the Visitor and confirms cascade cleanup. If cleanup fails, report that failure
+  prominently; never claim the Product was left clean.
 
 ## Select the app
 

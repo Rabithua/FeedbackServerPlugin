@@ -41,9 +41,11 @@ plugins/feedback-server/bin/feedback-server agent configure
 
 The CLI hides new account passwords and PATs. Time-limited invitation tokens can be printed in
 onboarding handoffs and passed to `accept-invite --token` for Agent-assisted setup. An Agent may
-install the plugin, clone this repository, and prepare an exact command that first changes to the
-checkout's real absolute path. The recipient must run that command in a visible, user-controlled
-interactive terminal so the password remains inside the CLI's hidden prompt. On macOS the CLI
+inspect the configured Codex marketplaces and plugins, upgrade the existing marketplace or add it
+when absent, install the plugin only when missing, clone this repository, and prepare an exact
+command that first changes to the checkout's real absolute path. The recipient must run that
+command in a visible, user-controlled interactive terminal so the password remains inside the
+CLI's hidden prompt. On macOS the CLI
 stores credentials under the existing Keychain service `dev.rote.feedback-server.mcp`, so Codex and
 Claude Code reuse the same account without copying or rotating its PAT. Non-macOS MCP processes
 must receive both
@@ -52,6 +54,8 @@ must receive both
 Supported commands:
 
 ```text
+feedback-server doctor
+feedback-server test roundtrip --product <id-or-slug> --confirm <product-slug>
 feedback-server agent configure
 feedback-server agent disconnect
 feedback-server agent revoke-token --id <uuid>
@@ -61,6 +65,38 @@ feedback-server admin invite revoke --id <uuid>
 feedback-server admin accept-invite
 feedback-server admin create-local
 ```
+
+## Verify an integration
+
+Run the read-only preflight after account setup, and optionally point it at an iOS host App:
+
+```bash
+plugins/feedback-server/bin/feedback-server doctor --product danci-ios
+plugins/feedback-server/bin/feedback-server doctor \
+  --product danci-ios \
+  --app-path /absolute/path/to/App
+```
+
+`doctor` reports the plugin version, Keychain or environment credential state, PAT scopes and
+expiry, pending token cleanup, live server health, Product selection, and Product status. With
+`--app-path`, it also checks FeedbackKit's resolved version (minimum 0.1.29), the server URL and
+Product binding, explicit visitor Keychain service, and `.followHost` or `.fixed(Locale)` language
+policy. Output never includes a PAT or publishable Product key. Use `--format json` for automation.
+
+For a live acceptance test, explicitly select a Product and repeat its slug:
+
+```bash
+plugins/feedback-server/bin/feedback-server test roundtrip \
+  --product danci-ios \
+  --confirm danci-ios
+```
+
+The command uses a unique random Visitor to bootstrap, submit a harmless Feedback item, confirm it
+appears in the administrator list, reply, verify the client's unread event and reply detail,
+acknowledge the inbox, and verify the unread count returns to zero. It then deletes that Visitor and
+verifies the Feedback was cascaded away. Cleanup is attempted even when an intermediate assertion
+fails. Because a Product may be public-by-default, run this only when a brief automated test post is
+acceptable; `--confirm` prevents an accidental Product selection.
 
 Existing checkout workflows such as `bun run agent:configure` and
 `bun run admin:invite:revoke --id <uuid>` remain available as compatibility aliases.
@@ -83,11 +119,18 @@ the saved super administrator password from Keychain without opening Terminal or
 prints the handoff package to stdout so an Agent can paste it back as a chat code block. The old
 clipboard handoff is still available with `--delivery clipboard`.
 
-`admin accept-invite` refuses to consume an invitation when another Agent credential is configured.
-It accepts a time-limited `--token` argument for Agent-assisted onboarding and requires a visible
-interactive terminal for hidden password entry. The Agent prepares the checkout path and command;
-the recipient runs it directly. The command creates an ordinary administrator, verifies the account
-owns no Products, creates a 365-day PAT, stores it atomically, and logs out every temporary session.
+When another Agent credential is configured, `admin accept-invite` shows its non-secret username
+and service URL, then asks whether to keep it or switch to the invited account. Keeping is the
+default: the command stops before password input and does not consume the invitation. Only an
+explicit `switch` continues after warning that the current PAT will be revoked and its local
+credentials removed. Keychain credentials are shared by every FeedbackServer-enabled Codex and
+Claude session on the Mac, so switching is not isolated to one project. Both account passwords
+remain hidden terminal input. If invitation acceptance fails after disconnecting the old account,
+the CLI automatically attempts to restore it. It accepts a time-limited `--token` argument for
+Agent-assisted onboarding and requires a visible interactive terminal. The Agent prepares the
+checkout path and command; the recipient makes the account choice and runs it directly. The command
+creates an ordinary administrator, verifies the account owns no Products, creates a 365-day PAT,
+stores it atomically, and logs out every temporary session.
 If account creation committed but local configuration failed, do not reuse the invitation: run
 `feedback-server agent configure` with the new account. Any PAT
 whose compensating revocation also failed is recorded by non-secret ID in a separate Keychain ledger

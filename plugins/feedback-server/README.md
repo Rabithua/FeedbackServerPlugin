@@ -10,6 +10,8 @@ and Keychain credential. `bin/feedback-server` loads `dist/cli.mjs`, so account 
 cached or cloned distribution without installing source dependencies.
 
 ```text
+feedback-server doctor
+feedback-server test roundtrip --product <id-or-slug> --confirm <product-slug>
 feedback-server agent configure
 feedback-server agent disconnect
 feedback-server agent revoke-token --id <uuid>
@@ -20,18 +22,35 @@ feedback-server admin accept-invite
 feedback-server admin create-local
 ```
 
+`doctor` is a read-only account, server, Product, and optional host-App preflight. Passing
+`--app-path` checks FeedbackKit 0.1.29 or newer, the endpoint and Product binding, language policy,
+and the dedicated visitor Keychain service without printing credentials or the Product key.
+`test roundtrip` is an explicit live acceptance test: it requires the selected Product slug to be
+repeated with `--confirm`, covers submit/receive/reply/unread/read, and deletes the unique test
+Visitor and its Feedback afterward, including on intermediate failure.
+
 New account passwords, refresh tokens, and PATs use hidden TTY input or stdin-only Keychain writes.
 Invitation creation reads the super administrator password only from macOS Keychain service
 `dev.rote.feedback-server.admin` with account `<username>`, prints a recipient handoff package to
 stdout by default, and never opens Terminal or prompts for that password. The package contains the
 time-limited one-time token and an Agent-ready task prompt that the recipient can paste directly
-into Codex or Claude Code. The Agent installs and prepares a command rooted at the checkout's real
-absolute path; the recipient runs `accept-invite` in a visible interactive terminal so hidden
-password input never passes through chat or a private Agent PTY. The older macOS clipboard handoff
+into Codex or Claude Code. In Codex, the Agent lists marketplaces and plugins first, upgrades an
+existing marketplace or adds it when absent, and installs the plugin only when missing. It then
+prepares a command rooted at the checkout's real absolute path; the recipient runs `accept-invite`
+in a visible interactive terminal so hidden password input never passes through chat or a private
+Agent PTY. The older macOS clipboard handoff
 remains available with `--delivery clipboard`. PAT storage uses split macOS Keychain records with
 the token passed only through stdin. A separate Keychain ledger stores only server URL, username,
 and token ID for recoverable PAT revocation. CI and non-macOS MCP processes may use paired
 `FEEDBACK_SERVER_BASE_URL` and `FEEDBACK_SERVER_API_TOKEN` environment values.
+
+If Agent credentials already exist, `accept-invite` shows their non-secret username and service URL
+and asks whether to keep or switch accounts. Keeping is the default and stops without consuming the
+invitation. Only an explicit `switch` proceeds after warning that it revokes the current PAT and
+removes local credentials. Those Keychain credentials are shared by every FeedbackServer-enabled
+Codex and Claude session on the Mac, so switching is not project-local. Current and new passwords
+remain hidden terminal input. If invitation acceptance then fails, the CLI automatically attempts
+to restore the previous account.
 
 Development commands:
 
