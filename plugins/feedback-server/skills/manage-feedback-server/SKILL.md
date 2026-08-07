@@ -30,10 +30,14 @@ routes.
   explicitly asks for clipboard delivery.
 - Use `feedback-server admin invitations` to list non-secret invitation metadata and
   `feedback-server admin invite revoke --id <uuid>` to revoke an unaccepted invitation.
-- The recipient uses `feedback-server admin accept-invite`. It refuses to consume the invitation when Agent
-  credentials already exist, accepts a time-limited `--token` argument from the handoff package,
-  verifies the new tenant is empty, and configures a personal PAT in macOS Keychain. If account
-  creation committed but configuration failed, use
+- The recipient uses `feedback-server admin accept-invite` in a visible, user-controlled interactive
+  terminal because the command requires hidden password input. An Agent may install the plugin,
+  clone the repository, collect the non-secret username and display name, and prepare the exact
+  command. It must include `cd` to the repository's real absolute path, must not execute
+  `accept-invite` itself, and must never open a private PTY or ask for the password in chat. The CLI
+  refuses to consume the invitation when Agent credentials already exist, accepts a time-limited
+  `--token` argument from the handoff package, verifies the new tenant is empty, and configures a
+  personal PAT in macOS Keychain. If account creation committed but configuration failed, use
   `feedback-server agent configure`; do not retry the invitation. If PAT rollback also failed, use
   the reported `feedback-server agent revoke-token --id <uuid>` recovery command.
 - Use `feedback-server admin create-local` when the super administrator should create both sides locally
