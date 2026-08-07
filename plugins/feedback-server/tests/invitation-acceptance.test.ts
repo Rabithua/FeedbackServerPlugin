@@ -169,6 +169,10 @@ describe('invitation acceptance and Agent configuration', () => {
       ),
     );
     expect(error).toBeInstanceOf(AgentAlreadyConfiguredError);
+    expect((error as Error).message).toContain('someone-else');
+    expect((error as Error).message).toContain(baseUrl);
+    expect((error as Error).message).toContain('Keep the existing account');
+    expect((error as Error).message).toContain('invitation was not consumed');
     expect(events).toEqual(['read-credentials']);
   });
 

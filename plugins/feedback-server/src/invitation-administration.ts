@@ -81,16 +81,18 @@ ${input.invitation.expiresAt}
 
 要求：
 1. 可以读取本消息里的服务地址和邀请码，但不要让我把管理员密码或 PAT 发到聊天里。
-2. 如果当前是 Codex，先运行 codex plugin marketplace add Rabithua/FeedbackServerPlugin --ref main，然后运行 codex plugin add feedback-server@feedback-server。
-3. 如果当前是 Claude Code，先运行 claude plugin marketplace add Rabithua/FeedbackServerPlugin，然后运行 claude plugin install feedback-server@feedback-server --scope user。
+2. 如果当前是 Codex，先运行 codex plugin marketplace list --json 和 codex plugin list --json 检查现状。若 feedback-server marketplace 不存在，运行 codex plugin marketplace add Rabithua/FeedbackServerPlugin --ref main；若已存在，改为运行 codex plugin marketplace upgrade feedback-server。只有 feedback-server@feedback-server 插件尚未安装时才运行 codex plugin add feedback-server@feedback-server；已经安装时不要重复 add，marketplace upgrade 会刷新其来源。若 Codex 弹出命令授权，提醒我必须在当前任务中亲自批准；不要声称 Agent 能代为批准。
+3. 如果当前是 Claude Code，先运行 claude plugin marketplace add Rabithua/FeedbackServerPlugin，然后运行 claude plugin install feedback-server@feedback-server --scope user。如果弹出命令授权，同样由我亲自批准。
 4. 运行 git clone https://github.com/Rabithua/FeedbackServerPlugin.git，然后运行 cd FeedbackServerPlugin 进入仓库，并记录仓库的绝对路径。
-5. 询问我要使用的管理员用户名和显示名。
-6. 不要在 Agent 进程、私有 PTY 或其他不可见终端中运行 accept-invite。请把 USERNAME_FROM_USER 和 DISPLAY_NAME_FROM_USER 替换成我提供的值，然后向我展示以下两条完整命令；第一条必须使用第 4 步得到的真实绝对路径：
+5. 如果可以使用 FeedbackServer connection_status，先检查这台机器是否已经配置 Agent。若已有凭据，只展示非敏感的当前用户名和服务地址，并说明该 Keychain 账号由这台 Mac 上所有启用 FeedbackServer 的 Codex/Claude 会话共享，切换并非只影响当前项目。然后询问我是“保留原账号”还是“切换到受邀账号”；不要替我选择。如果当前会话还不能使用该工具，说明接入 CLI 会在最开始完成同样的确认。
+6. 如果我选择保留原账号，就停止接入，不要询问新密码，也不要运行 accept-invite；邀请码不会被消耗。提醒我打开新的 Agent 会话验证当前连接并列出 Products。
+7. 只有我明确选择切换到受邀账号时，才提醒我：切换会撤销当前 Agent PAT、删除这台 Mac 的共享旧凭据，然后尝试接受邀请；如果接受失败，CLI 会自动尝试恢复原账号，自动恢复也失败时才需要用 feedback-server agent configure 手动恢复。之后再询问我要使用的新管理员用户名和显示名。
+8. 如果没有现有凭据，或我已经明确选择切换，不要在 Agent 进程、私有 PTY 或其他不可见终端中运行 accept-invite。请把 USERNAME_FROM_USER 和 DISPLAY_NAME_FROM_USER 替换成我提供的值，然后向我展示以下两条完整命令；第一条必须使用第 4 步得到的真实绝对路径：
    cd "/absolute/path/to/FeedbackServerPlugin"
    plugins/feedback-server/bin/feedback-server admin accept-invite --url ${input.baseUrl} --token ${input.invitation.token} --username USERNAME_FROM_USER --display-name "DISPLAY_NAME_FROM_USER"
-7. 让我在自己可见、可控制的交互式终端中粘贴并运行这两条命令，只在 CLI 的隐藏提示里填写新管理员密码和确认密码。不要在聊天里询问密码。
-8. 等我确认命令成功后，提醒我打开新的 Agent 会话，检查 FeedbackServer connection_status，并列出我的 Products。
-9. 如果 Product 列表为空，告诉我这是正常的；新管理员默认没有 Product，也不能访问邀请人的 Product。
+9. 让我在自己可见、可控制的交互式终端中粘贴并运行这两条命令。CLI 会再次询问保留还是切换，并默认保留；只有我明确输入 switch 才会继续。所有密码只填写在 CLI 的隐藏提示里，不要在聊天里询问密码。
+10. 等我确认命令成功后，提醒我打开新的 Agent 会话，检查 FeedbackServer connection_status，并列出我的 Products。
+11. 如果 Product 列表为空，告诉我这是正常的；新管理员默认没有 Product，也不能访问邀请人的 Product。
 
 完整说明：
 https://github.com/Rabithua/FeedbackServerPlugin/blob/main/docs/invited-admin-onboarding.zh-Hans.md

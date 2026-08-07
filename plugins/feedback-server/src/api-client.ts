@@ -1,4 +1,5 @@
 import type { StoredCredentials } from './credentials.js';
+import { PLUGIN_VERSION } from './version.js';
 
 interface ApiEnvelope<T> {
   code: string;
@@ -48,7 +49,7 @@ export class FeedbackServerApiClient {
     }
     const headers = new Headers({
       Accept: 'application/json',
-      'User-Agent': 'FeedbackServer-MCP/0.6.4',
+      'User-Agent': `FeedbackServer-MCP/${PLUGIN_VERSION}`,
     });
     if (options.authenticated !== false) {
       headers.set('Authorization', `Bearer ${this.credentials.token}`);

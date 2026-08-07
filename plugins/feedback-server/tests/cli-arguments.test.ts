@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { parseCliOptions, parseIntegerOption } from '../src/cli-arguments.js';
-import { isHelpRequest, parseFeedbackServerCliCommand, usage } from '../src/cli.js';
+import {
+  isHelpRequest,
+  parseExistingAgentChoice,
+  parseFeedbackServerCliCommand,
+  usage,
+} from '../src/cli.js';
 
 describe('CLI argument policy', () => {
   test('accepts only declared non-secret options', () => {
@@ -41,6 +46,10 @@ describe('CLI argument policy', () => {
   });
 
   test('dispatches every public multi-agent command without treating options as subcommands', () => {
+    expect(parseFeedbackServerCliCommand(['doctor', '--product', 'app']))
+      .toEqual({ command: 'doctor', options: ['--product', 'app'] });
+    expect(parseFeedbackServerCliCommand(['test', 'roundtrip', '--product', 'app']))
+      .toEqual({ command: 'test roundtrip', options: ['--product', 'app'] });
     expect(parseFeedbackServerCliCommand(['agent', 'configure', '--url', 'https://example.com']))
       .toEqual({
         command: 'agent configure',
@@ -80,7 +89,16 @@ describe('CLI argument policy', () => {
     expect(isHelpRequest([])).toBe(true);
     expect(isHelpRequest(['admin', 'invite', '--help'])).toBe(true);
     expect(usage).toContain('feedback-server admin invite');
+    expect(usage).toContain('feedback-server doctor');
+    expect(usage).toContain('feedback-server test roundtrip');
     expect(usage).toContain('--delivery stdout|clipboard');
     expect(usage).toContain('--token INVITATION_TOKEN');
+  });
+
+  test('defaults existing Agent handling to keep and requires an explicit switch', () => {
+    expect(parseExistingAgentChoice('')).toBe('keep');
+    expect(parseExistingAgentChoice(' KEEP ')).toBe('keep');
+    expect(parseExistingAgentChoice('switch')).toBe('switch');
+    expect(() => parseExistingAgentChoice('replace')).toThrow('Choose keep or switch');
   });
 });

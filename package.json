@@ -1,12 +1,14 @@
 {
   "name": "feedback-server-plugin-marketplace",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "private": true,
   "type": "module",
   "scripts": {
     "check": "bun --cwd=plugins/feedback-server run check",
     "validate": "bun run ./scripts/validate-distribution.ts",
     "scan": "bun run ./scripts/check-sensitive-content.ts",
+    "doctor": "bun --cwd=plugins/feedback-server run doctor",
+    "test:roundtrip": "bun --cwd=plugins/feedback-server run test:roundtrip",
     "agent:configure": "bun --cwd=plugins/feedback-server run configure",
     "agent:disconnect": "bun --cwd=plugins/feedback-server run disconnect",
     "agent:revoke-token": "bun --cwd=plugins/feedback-server run agent:revoke-token",

@@ -1,6 +1,6 @@
 {
   "name": "@feedback-server/agent-plugin",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,6 +10,7 @@
     "test": "bun test --timeout 10000",
     "test:stdio": "bun run ./scripts/stdio-smoke.ts",
     "test:contract": "bun run ./scripts/contract-test.ts",
+    "test:roundtrip": "bun run ./bin/feedback-server test roundtrip",
     "check": "bun run typecheck && bun run lint && bun run test && bun run build && bun run test:stdio",
     "admin:create-local": "bun run ./bin/feedback-server admin create-local",
     "admin:invite": "bun run ./bin/feedback-server admin invite",
@@ -18,7 +19,8 @@
     "admin:accept-invite": "bun run ./bin/feedback-server admin accept-invite",
     "configure": "bun run ./bin/feedback-server agent configure",
     "disconnect": "bun run ./bin/feedback-server agent disconnect",
-    "agent:revoke-token": "bun run ./bin/feedback-server agent revoke-token"
+    "agent:revoke-token": "bun run ./bin/feedback-server agent revoke-token",
+    "doctor": "bun run ./bin/feedback-server doctor"
   },
   "bin": {
     "feedback-server": "./bin/feedback-server"

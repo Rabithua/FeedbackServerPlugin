@@ -17,8 +17,12 @@ import {
   revokeInvitationById,
 } from './invitation-administration.js';
 import { createLocalAdmin } from './local-admin.js';
+import { diagnoseFeedbackServer, formatDoctorReport } from './doctor.js';
+import { runFeedbackRoundTrip } from './roundtrip.js';
 
 export type FeedbackServerCliCommand =
+  | 'doctor'
+  | 'test roundtrip'
   | 'agent configure'
   | 'agent disconnect'
   | 'agent revoke-token'
@@ -34,6 +38,8 @@ export interface ParsedFeedbackServerCliCommand {
 }
 
 export const usage = [
+  'feedback-server doctor [--product ID_OR_SLUG] [--app-path PATH] [--format text|json]',
+  'feedback-server test roundtrip --product ID_OR_SLUG --confirm PRODUCT_SLUG [--locale LOCALE]',
   'feedback-server agent configure [--url URL] [--username USERNAME]',
   'feedback-server agent disconnect [--username USERNAME]',
   'feedback-server agent revoke-token --id UUID [--url URL] [--username USERNAME]',
@@ -54,8 +60,43 @@ export function isHelpRequest(argv: string[]): boolean {
   return argv.length === 0 || argv.includes('--help') || argv.includes('-h');
 }
 
+export type ExistingAgentChoice = 'keep' | 'switch';
+
+export function parseExistingAgentChoice(value: string): ExistingAgentChoice {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === '' || normalized === 'keep') return 'keep';
+  if (normalized === 'switch') return 'switch';
+  throw new Error('Choose keep or switch');
+}
+
+export interface AdminAcceptInviteDependencies {
+  readCredentials: typeof readKeychainCredentials;
+  promptText: typeof promptText;
+  promptPassword: typeof promptPassword;
+  disconnect: typeof disconnectAgent;
+  configure: typeof configureAgent;
+  acceptInvitation: typeof acceptInvitationAndConfigure;
+  log: (message: string) => void;
+}
+
+const defaultAdminAcceptInviteDependencies: AdminAcceptInviteDependencies = {
+  readCredentials: readKeychainCredentials,
+  promptText,
+  promptPassword,
+  disconnect: disconnectAgent,
+  configure: configureAgent,
+  acceptInvitation: acceptInvitationAndConfigure,
+  log: console.error,
+};
+
 export function parseFeedbackServerCliCommand(argv: string[]): ParsedFeedbackServerCliCommand {
   const [group, action, nestedAction, ...remaining] = argv;
+  if (group === 'doctor') {
+    return { command: 'doctor', options: argv.slice(1) };
+  }
+  if (group === 'test' && action === 'roundtrip') {
+    return { command: 'test roundtrip', options: argv.slice(2) };
+  }
   if (group === 'agent' && action === 'configure') {
     return { command: 'agent configure', options: argv.slice(2) };
   }
@@ -247,31 +288,159 @@ async function runAdminInviteRevoke(options: string[]): Promise<void> {
   console.error(`Invitation ${invitationId} revoked.`);
 }
 
-async function runAdminAcceptInvite(options: string[]): Promise<void> {
-  const input = await urlAndUsername(
-    options,
-    'Administrator username',
-    ['--display-name', '--token'],
-  );
-  const token = input.options.get('--token') ?? await promptPassword('One-time invitation token');
-  const displayName = input.options.get('--display-name')
-    ?? (await promptText('Administrator display name'));
+export async function runAdminAcceptInvite(
+  options: string[],
+  dependencies: AdminAcceptInviteDependencies = defaultAdminAcceptInviteDependencies,
+): Promise<void> {
+  const parsed = parseCliOptions(options, [
+    '--url',
+    '--username',
+    '--display-name',
+    '--token',
+  ]);
+  const existing = await dependencies.readCredentials();
+  const baseUrl = parsed.get('--url')
+    ?? existing?.baseUrl
+    ?? (await dependencies.promptText('FeedbackServer URL', DEFAULT_BASE_URL));
+
+  if (existing) {
+    const existingUsername = existing.username ?? 'unknown administrator';
+    dependencies.log(
+      `FeedbackServer Agent is already configured for ${existingUsername} at ${existing.baseUrl}.`,
+    );
+    dependencies.log(
+      'This Keychain account is shared by every FeedbackServer-enabled Codex and Claude session '
+      + 'on this Mac; switching is not limited to the current project.',
+    );
+    let choice: ExistingAgentChoice | undefined;
+    while (!choice) {
+      try {
+        choice = parseExistingAgentChoice(
+          await dependencies.promptText(
+            'Enter keep to use the existing account, or switch to replace it with the invited account',
+            'keep',
+          ),
+        );
+      } catch {
+        dependencies.log('Please enter keep or switch. The default is keep.');
+      }
+    }
+    if (choice === 'keep') {
+      dependencies.log(
+        `Keeping FeedbackServer Agent account ${existingUsername} at ${existing.baseUrl}; `
+        + 'the invitation was not consumed. Start a new Agent session to use the existing connection.',
+      );
+      return;
+    }
+    dependencies.log(
+      `Switching will revoke the current Agent PAT for ${existingUsername}, remove its local `
+      + 'credentials for all FeedbackServer-enabled sessions on this Mac, and then attempt to '
+      + 'accept the invitation. If invitation acceptance fails, the CLI will try to restore the '
+      + 'previous account automatically.',
+    );
+  }
+
+  const username = parsed.get('--username')
+    ?? (await dependencies.promptText('New administrator username'));
+  if (!username) throw new Error('New administrator username is required');
+  const token = parsed.get('--token')
+    ?? await dependencies.promptPassword('One-time invitation token');
+  const displayName = parsed.get('--display-name')
+    ?? (await dependencies.promptText('Administrator display name'));
   if (!displayName) throw new Error('Administrator display name is required');
-  const password = await promptPassword('Administrator password');
+  const password = await dependencies.promptPassword('Administrator password');
   if (password.length < 12 || password.length > 200) {
     throw new Error('Administrator password must contain 12 through 200 characters');
   }
-  const passwordConfirmation = await promptPassword('Confirm administrator password');
+  const passwordConfirmation = await dependencies.promptPassword(
+    'Confirm administrator password',
+  );
   if (password !== passwordConfirmation) throw new Error('Administrator passwords do not match');
-  const configured = await acceptInvitationAndConfigure({
-    baseUrl: input.baseUrl,
-    token,
-    username: input.username,
-    displayName,
-    password,
-  });
-  console.error(
-    `Administrator ${input.username} created and FeedbackServer Agent configured; token expires ${configured.expiresAt ?? 'at an unknown time'}.`,
+
+  let existingPassword: string | undefined;
+  let existingUsernameForSwitch: string | undefined;
+  let existingDisconnected = false;
+  if (existing) {
+    const existingUsername = existing.username
+      ?? (await dependencies.promptText('Current administrator username'));
+    if (!existingUsername) throw new Error('Current administrator username is required');
+    existingUsernameForSwitch = existingUsername;
+    existingPassword = await dependencies.promptPassword(
+      `Current administrator password for ${existingUsername}`,
+    );
+    const removed = await dependencies.disconnect({
+      username: existingUsername,
+      password: existingPassword,
+    });
+    if (!removed) {
+      throw new Error('Existing FeedbackServer Agent credentials changed before the switch');
+    }
+    existingDisconnected = true;
+    dependencies.log(
+      `Previous FeedbackServer Agent account ${existingUsername} disconnected; accepting invitation.`,
+    );
+  }
+
+  let configured;
+  try {
+    configured = await dependencies.acceptInvitation({
+      baseUrl,
+      token,
+      username,
+      displayName,
+      password,
+    });
+  } catch (error) {
+    if (
+      !existing
+      || !existingDisconnected
+      || existingPassword === undefined
+      || !existingUsernameForSwitch
+    ) throw error;
+
+    let activeCredentials;
+    try {
+      activeCredentials = await dependencies.readCredentials();
+    } catch (credentialReadError) {
+      throw new AggregateError(
+        [error, credentialReadError],
+        'Invitation acceptance failed after disconnecting the previous Agent account, and the CLI '
+        + `could not inspect Keychain recovery state. Restore the previous account with `
+        + `feedback-server agent configure --url ${existing.baseUrl} `
+        + `--username ${existingUsernameForSwitch}.`,
+      );
+    }
+    if (activeCredentials) {
+      dependencies.log(
+        `Invitation acceptance reported an error, but FeedbackServer Agent credentials for `
+        + `${activeCredentials.username ?? 'an unknown administrator'} at `
+        + `${activeCredentials.baseUrl} are active. The previous account was not restored.`,
+      );
+      throw error;
+    }
+
+    try {
+      await dependencies.configure({
+        baseUrl: existing.baseUrl,
+        username: existingUsernameForSwitch,
+        password: existingPassword,
+      });
+      dependencies.log(
+        'Invitation acceptance failed; the previous FeedbackServer Agent account was restored '
+        + 'automatically. The invitation error follows.',
+      );
+    } catch (restoreError) {
+      throw new AggregateError(
+        [error, restoreError],
+        'Invitation acceptance failed after disconnecting the previous Agent account, and '
+        + `automatic restoration also failed. Restore it with feedback-server agent configure `
+        + `--url ${existing.baseUrl} --username ${existing.username ?? 'PREVIOUS_USERNAME'}.`,
+      );
+    }
+    throw error;
+  }
+  dependencies.log(
+    `Administrator ${username} created and FeedbackServer Agent configured; token expires ${configured.expiresAt ?? 'at an unknown time'}.`,
   );
 }
 
@@ -301,6 +470,41 @@ async function runAdminCreateLocal(options: string[]): Promise<void> {
   );
 }
 
+async function runDoctor(options: string[]): Promise<void> {
+  const parsed = parseCliOptions(options, ['--product', '--app-path', '--format']);
+  const format = parsed.get('--format') ?? 'text';
+  if (format !== 'text' && format !== 'json') {
+    throw new Error('--format must be text or json');
+  }
+  const product = parsed.get('--product');
+  const appPath = parsed.get('--app-path');
+  const report = await diagnoseFeedbackServer({
+    ...(product ? { product } : {}),
+    ...(appPath ? { appPath } : {}),
+  });
+  process.stdout.write(
+    format === 'json' ? `${JSON.stringify(report, null, 2)}\n` : formatDoctorReport(report),
+  );
+  if (!report.ok) process.exitCode = 1;
+}
+
+async function runRoundTrip(options: string[]): Promise<void> {
+  const parsed = parseCliOptions(options, ['--product', '--confirm', '--locale']);
+  const product = parsed.get('--product');
+  const confirmProductSlug = parsed.get('--confirm');
+  if (!product) throw new Error('--product is required');
+  if (!confirmProductSlug) throw new Error('--confirm is required');
+  const locale = parsed.get('--locale');
+  const result = await runFeedbackRoundTrip({
+    product,
+    confirmProductSlug,
+    ...(locale ? { locale } : {}),
+  });
+  console.error(
+    `Feedback round-trip passed for ${result.product.slug}: submit, receive, reply, unread, read, and cleanup verified.`,
+  );
+}
+
 export async function runFeedbackServerCli(argv: string[]): Promise<void> {
   if (isHelpRequest(argv)) {
     process.stdout.write(`${usage}\n`);
@@ -308,6 +512,8 @@ export async function runFeedbackServerCli(argv: string[]): Promise<void> {
   }
   const parsed = parseFeedbackServerCliCommand(argv);
   switch (parsed.command) {
+    case 'doctor': return runDoctor(parsed.options);
+    case 'test roundtrip': return runRoundTrip(parsed.options);
     case 'agent configure': return runAgentConfigure(parsed.options);
     case 'agent disconnect': return runAgentDisconnect(parsed.options);
     case 'agent revoke-token': return runAgentRevokeToken(parsed.options);

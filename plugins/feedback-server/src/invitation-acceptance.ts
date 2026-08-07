@@ -25,8 +25,13 @@ import {
 } from './invitation-api.js';
 
 export class AgentAlreadyConfiguredError extends Error {
-  public constructor() {
-    super('FeedbackServer Agent is already configured. Run feedback-server agent disconnect before accepting an invitation.');
+  public constructor(existing: StoredCredentials) {
+    const username = existing.username ?? 'an unknown administrator';
+    super(
+      `FeedbackServer Agent is already configured for ${username} at ${existing.baseUrl}. `
+      + 'Keep the existing account, or explicitly switch accounts before accepting the invitation. '
+      + 'The invitation was not consumed.',
+    );
     this.name = 'AgentAlreadyConfiguredError';
   }
 }
@@ -184,7 +189,8 @@ export async function acceptInvitationAndConfigure(
   if (!dependencies.isMacOS()) {
     throw new Error('Invitation acceptance with automatic Agent configuration requires macOS Keychain');
   }
-  if (await dependencies.readCredentials()) throw new AgentAlreadyConfiguredError();
+  const existing = await dependencies.readCredentials();
+  if (existing) throw new AgentAlreadyConfiguredError(existing);
 
   const baseUrl = normalizeBaseUrl(input.baseUrl);
   let accepted: AcceptedInvitation;
