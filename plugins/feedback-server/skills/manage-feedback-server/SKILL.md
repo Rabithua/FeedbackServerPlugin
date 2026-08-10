@@ -153,6 +153,8 @@ CLI exceptions; do not reproduce their HTTP calls manually.
 - Use `preview_latest_app_store_release` only when the user asks to preview or inspect.
 - On an explicit import request, call `import_latest_app_store_release` directly. New Releases remain
   drafts; existing translations are never overwritten.
+- Release translations contain only localized `body` text. The Release `version` is its heading;
+  never invent or request a separate Release title.
 - Summarize whether the import created a draft, added a missing locale, or made no change.
 
 ## Handle errors

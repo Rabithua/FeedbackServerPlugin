@@ -1209,11 +1209,15 @@ export function registerFeedbackServerTools(
     server,
     'set_release_translation',
     'Create or replace a Release translation.',
-    z.object({ releaseId: uuid, ...translationFields }),
-    async ({ releaseId, locale, title, body }, { client }) =>
+    z.object({
+      releaseId: uuid,
+      locale: translationFields.locale,
+      body: translationFields.body,
+    }),
+    async ({ releaseId, locale, body }, { client }) =>
       client.request(
         `/admin/releases/${encodeURIComponent(releaseId)}/translations/${encodeURIComponent(locale)}`,
-        { method: 'PUT', body: { title, body } },
+        { method: 'PUT', body: { body } },
       ),
   );
   registerConfirmedWrite(
