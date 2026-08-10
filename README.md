@@ -15,6 +15,10 @@ codex plugin add feedback-server@feedback-server
 Start a new Codex task after installation. To update, run
 `codex plugin marketplace upgrade feedback-server`, reinstall
 `feedback-server@feedback-server`, and start another task.
+Beginning with version 0.6.8, the MCP server checks the repository's latest stable GitHub Release
+once per process. When a newer plugin exists, the first successful tool result after the check
+includes an `updateNotice` with the release URL and upgrade command; update checks never modify the
+installation and network failures do not affect FeedbackServer operations.
 
 ## Install for Claude Code
 
@@ -81,9 +85,11 @@ plugins/feedback-server/bin/feedback-server doctor \
 
 `doctor` reports the plugin version, Keychain or environment credential state, PAT scopes and
 expiry, pending token cleanup, live server health, Product selection, and Product status. With
-`--app-path`, it also checks FeedbackKit's resolved version (minimum 0.1.29), the server URL and
-Product binding, explicit visitor Keychain service, and `.followHost` or `.fixed(Locale)` language
-policy. Output never includes a PAT or publishable Product key. Use `--format json` for automation.
+`--app-path`, it also checks FeedbackKit's resolved version (minimum 0.1.29), compares it with the
+latest stable FeedbackKit GitHub Release, and checks the server URL and Product binding, explicit
+visitor Keychain service, and `.followHost` or `.fixed(Locale)` language policy. A newer compatible
+SDK is a warning rather than a blocking failure. Output never includes a PAT or publishable Product
+key. Use `--format json` for automation.
 
 For a live acceptance test, explicitly select a Product and repeat its slug:
 

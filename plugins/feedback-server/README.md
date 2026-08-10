@@ -23,8 +23,9 @@ feedback-server admin create-local
 ```
 
 `doctor` is a read-only account, server, Product, and optional host-App preflight. Passing
-`--app-path` checks FeedbackKit 0.1.29 or newer, the endpoint and Product binding, language policy,
-and the dedicated visitor Keychain service without printing credentials or the Product key.
+`--app-path` checks FeedbackKit 0.1.29 or newer, warns when a newer stable GitHub Release is
+available, and checks the endpoint and Product binding, language policy, and dedicated visitor
+Keychain service without printing credentials or the Product key.
 `test roundtrip` is an explicit live acceptance test: it requires the selected Product slug to be
 repeated with `--confirm`, covers submit/receive/reply/unread/read, and deletes the unique test
 Visitor and its Feedback afterward, including on intermediate failure.
@@ -45,6 +46,11 @@ and token ID for recoverable PAT revocation. CI and non-macOS MCP processes may 
 `FEEDBACK_SERVER_BASE_URL` and `FEEDBACK_SERVER_API_TOKEN` environment values.
 The canonical default endpoint is `https://api.feedkit.cn/v1/api`; credentials saved with the former
 production hostname are normalized to this endpoint while preserving the existing PAT.
+
+Once per MCP process, the plugin checks the latest stable FeedbackServer Plugin GitHub Release.
+When an update exists, one successful tool result includes an `updateNotice` containing the current
+and latest versions, release URL, and manual upgrade command. The check is advisory, never upgrades
+the plugin automatically, and fails silently when GitHub is unavailable.
 
 If Agent credentials already exist, `accept-invite` shows their non-secret username and service URL
 and asks whether to keep or switch accounts. Keeping is the default and stops without consuming the
