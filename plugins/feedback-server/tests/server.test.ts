@@ -255,7 +255,7 @@ const toolScenarios: ToolScenario[] = [
   },
   {
     name: 'set_release_translation',
-    arguments: { releaseId: productId, locale: 'zh-Hans', title: '版本' },
+    arguments: { releaseId: productId, locale: 'zh-Hans', body: '更新内容' },
     path: `/v1/api/admin/releases/${productId}/translations/zh-Hans`,
     method: 'PUT',
   },
@@ -317,7 +317,7 @@ function resultData(result: { structuredContent?: unknown }) {
   return (result.structuredContent as { data: Record<string, unknown> }).data;
 }
 
-describe('MCP server 0.6.6', () => {
+describe('MCP server 0.6.7', () => {
   const originalFetch = globalThis.fetch;
   let client: Client;
   let server: ReturnType<typeof createServer>;
@@ -355,6 +355,8 @@ describe('MCP server 0.6.6', () => {
     expect(serialized).not.toContain('votingEnabled');
     expect(serialized).not.toContain('productIds');
     expect(names).not.toContain('create_admin');
+    const releaseTranslationTool = tools.find(({ name }) => name === 'set_release_translation');
+    expect(JSON.stringify(releaseTranslationTool?.inputSchema)).not.toContain('title');
   });
 
   test('reports Product protected effects in deterministic order for combined changes', () => {
@@ -436,6 +438,9 @@ describe('MCP server 0.6.6', () => {
       expect(request!.headers.get('authorization'), scenario.name).toBe(
         scenario.name === 'health' ? null : `Bearer ${token}`,
       );
+      if (scenario.name === 'set_release_translation') {
+        expect(await request!.clone().json()).toEqual({ body: '更新内容' });
+      }
     }
   });
 
