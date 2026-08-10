@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { createServer } from '../src/create-server.js';
+import type { PluginUpdateNotice } from '../src/release-updates.js';
 import { productUpdateProtectedEffects } from '../src/tools.js';
 
 const token = `fspat_${'b'.repeat(64)}`;
@@ -317,15 +318,27 @@ function resultData(result: { structuredContent?: unknown }) {
   return (result.structuredContent as { data: Record<string, unknown> }).data;
 }
 
-describe('MCP server 0.6.7', () => {
+describe('MCP server 0.6.8', () => {
   const originalFetch = globalThis.fetch;
   let client: Client;
   let server: ReturnType<typeof createServer>;
+  let updateNotice: PluginUpdateNotice | undefined;
+  let updateNoticeDelivered: boolean;
 
   beforeEach(async () => {
     process.env.FEEDBACK_SERVER_BASE_URL = 'https://feedback.example.com/v1/api';
     process.env.FEEDBACK_SERVER_API_TOKEN = token;
-    server = createServer();
+    updateNotice = undefined;
+    updateNoticeDelivered = false;
+    server = createServer({
+      updateNoticeProvider: {
+        takeNotice: () => {
+          if (updateNoticeDelivered) return Promise.resolve(undefined);
+          updateNoticeDelivered = true;
+          return Promise.resolve(updateNotice);
+        },
+      },
+    });
     client = new Client({ name: 'feedback-server-tests', version: '1.0.0' });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
@@ -383,6 +396,29 @@ describe('MCP server 0.6.7', () => {
       visibilityChanges: true,
       diagnosticsChanges: true,
     })).toEqual([status, visibility, diagnostics]);
+  });
+
+  test('adds an available update to the first successful tool result only', async () => {
+    updateNotice = {
+      kind: 'plugin_update_available',
+      component: 'feedback-server-plugin',
+      currentVersion: '0.6.7',
+      latestVersion: '0.6.8',
+      releaseUrl: 'https://github.com/Rabithua/FeedbackServerPlugin/releases/tag/v0.6.8',
+      command: 'codex plugin marketplace upgrade feedback-server',
+    };
+    globalThis.fetch = (() => Promise.resolve(Response.json({
+      code: 'ok',
+      message: 'success',
+      data: { status: 'ok' },
+    }))) as unknown as typeof fetch;
+
+    const first = await client.callTool({ name: 'health', arguments: {} });
+    const second = await client.callTool({ name: 'health', arguments: {} });
+    expect(first.structuredContent).toMatchObject({ updateNotice });
+    expect(JSON.parse(first.content[0]?.type === 'text' ? first.content[0].text : '{}'))
+      .toMatchObject({ updateNotice });
+    expect(second.structuredContent).not.toHaveProperty('updateNotice');
   });
 
   test('routes all 54 tools through their documented API contracts', async () => {

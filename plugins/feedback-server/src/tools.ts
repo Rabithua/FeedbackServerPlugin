@@ -9,6 +9,11 @@ import { z } from 'zod';
 import { FeedbackServerApiClient, FeedbackServerApiError } from './api-client.js';
 import { ConfirmationStore, redactPreview } from './confirmation.js';
 import { loadCredentials, type StoredCredentials } from './credentials.js';
+import {
+  createPluginUpdateNoticeProvider,
+  type PluginUpdateNotice,
+  type UpdateNoticeProvider,
+} from './release-updates.js';
 
 const uuid = z.uuid();
 const confirmation = {
@@ -156,9 +161,17 @@ type RegisterToolBridge = (
   callback: (input: Record<string, unknown>) => Promise<CallToolResult>,
 ) => unknown;
 
+const updateNoticeProviders = new WeakMap<McpServer, UpdateNoticeProvider>();
+
 function toolRegistrar(server: McpServer): RegisterToolBridge {
-  // eslint-disable-next-line @typescript-eslint/no-deprecated -- v2 currently exposes the typed Zod-object registration overload under this name.
-  return server.registerTool.bind(server);
+  return (name, config, callback) => {
+    return server.registerTool(name, config, async (input) => {
+      const result = await callback(input);
+      if (result.isError) return result;
+      const notice = await updateNoticeProviders.get(server)?.takeNotice();
+      return notice ? attachUpdateNotice(result, notice) : result;
+    });
+  };
 }
 
 function jsonSafe(value: unknown): JSONObject {
@@ -168,6 +181,21 @@ function jsonSafe(value: unknown): JSONObject {
 function success(value: unknown): CallToolResult {
   const structuredContent = jsonSafe(value);
   return {
+    content: [{ type: 'text', text: JSON.stringify(structuredContent) }],
+    structuredContent,
+  };
+}
+
+function attachUpdateNotice(
+  result: CallToolResult,
+  updateNotice: PluginUpdateNotice,
+): CallToolResult {
+  const structuredContent = JSON.parse(JSON.stringify({
+    ...(result.structuredContent ?? {}),
+    updateNotice,
+  })) as JSONObject;
+  return {
+    ...result,
     content: [{ type: 'text', text: JSON.stringify(structuredContent) }],
     structuredContent,
   };
@@ -413,7 +441,9 @@ function withQuery(
 export function registerFeedbackServerTools(
   server: McpServer,
   confirmations = new ConfirmationStore(),
+  updateNotices: UpdateNoticeProvider = createPluginUpdateNoticeProvider(),
 ): void {
+  updateNoticeProviders.set(server, updateNotices);
   registerRead(
     server,
     'health',

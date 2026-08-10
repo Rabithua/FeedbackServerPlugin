@@ -8,6 +8,11 @@ import {
   type PendingTokenRevocation,
   type StoredCredentials,
 } from './credentials.js';
+import {
+  compareVersions,
+  fetchLatestGitHubRelease,
+  type StableRelease,
+} from './release-updates.js';
 import { MINIMUM_FEEDBACK_KIT_VERSION, PLUGIN_VERSION } from './version.js';
 
 export type DoctorStatus = 'pass' | 'warn' | 'fail';
@@ -56,6 +61,7 @@ export interface DoctorDependencies {
   readPendingRevocations: () => Promise<PendingTokenRevocation[]>;
   createClient: (credentials: StoredCredentials) => DoctorApiClient;
   readHostAppFiles: (path: string) => Promise<HostAppFile[]>;
+  fetchLatestFeedbackKitRelease: () => Promise<StableRelease | undefined>;
   now: () => number;
 }
 
@@ -64,6 +70,7 @@ const defaultDependencies: DoctorDependencies = {
   readPendingRevocations: readPendingTokenRevocations,
   createClient: (credentials) => new FeedbackServerApiClient(credentials),
   readHostAppFiles,
+  fetchLatestFeedbackKitRelease: () => fetchLatestGitHubRelease('Rabithua/FeedbackKit'),
   now: Date.now,
 };
 
@@ -92,19 +99,6 @@ function check(
 
 function safeMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'unknown error';
-}
-
-function compareVersions(left: string, right: string): number {
-  const parse = (value: string): number[] => (value.split('-', 1)[0] ?? '0')
-    .split('.')
-    .map((part) => Number(part));
-  const leftParts = parse(left);
-  const rightParts = parse(right);
-  for (let index = 0; index < Math.max(leftParts.length, rightParts.length); index += 1) {
-    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
-    if (difference !== 0) return difference;
-  }
-  return 0;
 }
 
 function feedbackKitVersions(files: HostAppFile[]): string[] {
@@ -138,6 +132,10 @@ function feedbackKitVersions(files: HostAppFile[]): string[] {
   return versions;
 }
 
+function newestFeedbackKitVersion(files: HostAppFile[]): string | undefined {
+  return [...feedbackKitVersions(files)].sort(compareVersions).at(-1);
+}
+
 function localeLanguage(value: string): string {
   return (value.split(/[-_]/, 1)[0] ?? value).toLowerCase();
 }
@@ -149,8 +147,8 @@ export function inspectHostAppFiles(
 ): DoctorCheck[] {
   const checks: DoctorCheck[] = [];
   const combined = files.map(({ content }) => content).join('\n');
-  const versions = feedbackKitVersions(files);
-  if (versions.length === 0) {
+  const newest = newestFeedbackKitVersion(files);
+  if (!newest) {
     checks.push(check(
       'app.sdk',
       'FeedbackKit SDK',
@@ -158,7 +156,6 @@ export function inspectHostAppFiles(
       'FeedbackKit was not found in Package.resolved.',
     ));
   } else {
-    const newest = [...versions].sort(compareVersions).at(-1) ?? '0.0.0';
     const supported = compareVersions(newest, MINIMUM_FEEDBACK_KIT_VERSION) >= 0;
     checks.push(check(
       'app.sdk',
@@ -444,6 +441,21 @@ export async function diagnoseFeedbackServer(
     try {
       const files = await dependencies.readHostAppFiles(options.appPath);
       checks.push(...inspectHostAppFiles(files, credentials, selectedProduct));
+      const installedVersion = newestFeedbackKitVersion(files);
+      if (installedVersion) {
+        const latest = await dependencies.fetchLatestFeedbackKitRelease().catch(() => undefined);
+        if (latest) {
+          const updateAvailable = compareVersions(installedVersion, latest.version) < 0;
+          checks.push(check(
+            'app.sdk-update',
+            'FeedbackKit update',
+            updateAvailable ? 'warn' : 'pass',
+            updateAvailable
+              ? `FeedbackKit ${latest.version} is available (installed ${installedVersion}): ${latest.url}`
+              : `FeedbackKit ${installedVersion} is the latest stable release.`,
+          ));
+        }
+      }
     } catch (error) {
       checks.push(check('app', 'Host App', 'fail', `Unable to inspect App: ${safeMessage(error)}`));
     }

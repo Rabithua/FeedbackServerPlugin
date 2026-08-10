@@ -35,6 +35,10 @@ function dependencies(overrides: Partial<DoctorDependencies> = {}): DoctorDepend
       ),
     }),
     readHostAppFiles: () => Promise.resolve([]),
+    fetchLatestFeedbackKitRelease: () => Promise.resolve({
+      version: '0.1.33',
+      url: 'https://github.com/Rabithua/FeedbackKit/releases/tag/0.1.33',
+    }),
     now: () => Date.parse('2026-08-07T00:00:00.000Z'),
     ...overrides,
   };
@@ -113,5 +117,53 @@ describe('feedback-server doctor', () => {
     expect(checks.find(({ id }) => id === 'app.product-key')?.status).toBe('warn');
     expect(checks.find(({ id }) => id === 'app.keychain-service')?.status).toBe('fail');
     expect(checks.find(({ id }) => id === 'app.language')?.status).toBe('warn');
+  });
+
+  test('warns when doctor finds a newer stable FeedbackKit release', async () => {
+    const report = await diagnoseFeedbackServer({ appPath: '/App' }, dependencies({
+      readHostAppFiles: () => Promise.resolve([
+        {
+          path: '/App/Package.resolved',
+          content: JSON.stringify({
+            pins: [{ identity: 'feedbackkit', state: { version: '0.1.32' } }],
+          }),
+        },
+        {
+          path: '/App/FeedbackCenter.swift',
+          content: `
+            let configuration = FeedbackCenterConfiguration(
+              baseURL: URL(string: "https://feedback.example.com/v1/api")!,
+              productKey: "pk_danci_public_identifier",
+              keychainService: "com.example.danci.feedback.visitor",
+              languagePolicy: .fixed(Locale(identifier: "zh-Hans"))
+            )
+          `,
+        },
+      ]),
+    }));
+
+    expect(report.ok).toBe(true);
+    expect(report.checks.find(({ id }) => id === 'app.sdk-update')).toMatchObject({
+      status: 'warn',
+      message: expect.stringContaining('0.1.33'),
+    });
+  });
+
+  test('passes the latest FeedbackKit release check when current', async () => {
+    const report = await diagnoseFeedbackServer({ appPath: '/App' }, dependencies({
+      readHostAppFiles: () => Promise.resolve([
+        {
+          path: '/App/Package.resolved',
+          content: JSON.stringify({
+            pins: [{ identity: 'feedbackkit', state: { version: '0.1.33' } }],
+          }),
+        },
+      ]),
+    }));
+
+    expect(report.checks.find(({ id }) => id === 'app.sdk-update')).toMatchObject({
+      status: 'pass',
+      message: 'FeedbackKit 0.1.33 is the latest stable release.',
+    });
   });
 });

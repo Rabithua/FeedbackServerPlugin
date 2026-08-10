@@ -67,10 +67,13 @@ CLI exceptions; do not reproduce their HTTP calls manually.
   credentials, live health, PAT metadata, pending token cleanup, and Product selection without
   printing a PAT or Product key. Pass `--product <id-or-slug>` whenever more than one Product is
   visible.
+- A successful tool result may include `updateNotice` when a newer stable plugin release exists.
+  Briefly tell the user which version is available and show the supplied manual upgrade command.
+  Never upgrade automatically or repeat a notice that is absent from later results.
 - For an iOS host, pass `--app-path <absolute-path>` and an explicit Product. Doctor checks the
-  resolved FeedbackKit version, server URL and Product binding, explicit visitor Keychain service,
-  and `.followHost` or `.fixed(Locale)` language policy. Treat warnings as decisions to review and
-  failures as integration blockers.
+  resolved FeedbackKit version against both the minimum and latest stable GitHub Release, server
+  URL and Product binding, explicit visitor Keychain service, and `.followHost` or `.fixed(Locale)`
+  language policy. Treat warnings as decisions to review and failures as integration blockers.
 - Run `feedback-server test roundtrip --product <id-or-slug> --confirm <product-slug>` only when the
   user explicitly asks for a live end-to-end test and a brief harmless test post is acceptable for
   that Product. The repeated slug is mandatory and must not be inferred for the user. The CLI uses
