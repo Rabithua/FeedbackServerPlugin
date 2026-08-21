@@ -56,6 +56,16 @@ export const usage = [
   'feedback-server admin create-local [--url URL] [--username USERNAME]',
 ].join('\n');
 
+export const AGENT_ONBOARDING_PROMPT = '帮我完成 FeedbackServer 初始配置';
+
+export function agentConfigurationCompletionMessage(summary: string): string {
+  return [
+    summary,
+    'Account connection is complete; app configuration is not complete yet.',
+    `Open a new Agent task and send: “${AGENT_ONBOARDING_PROMPT}”`,
+  ].join('\n');
+}
+
 export function isHelpRequest(argv: string[]): boolean {
   return argv.length === 0 || argv.includes('--help') || argv.includes('-h');
 }
@@ -160,7 +170,9 @@ async function runAgentConfigure(options: string[]): Promise<void> {
     password,
   });
   console.error(
-    `FeedbackServer Agent configured for ${configured.baseUrl}; token expires ${configured.expiresAt ?? 'at an unknown time'}.`,
+    agentConfigurationCompletionMessage(
+      `FeedbackServer Agent configured for ${configured.baseUrl}; token expires ${configured.expiresAt ?? 'at an unknown time'}.`,
+    ),
   );
 }
 
@@ -440,7 +452,9 @@ export async function runAdminAcceptInvite(
     throw error;
   }
   dependencies.log(
-    `Administrator ${username} created and FeedbackServer Agent configured; token expires ${configured.expiresAt ?? 'at an unknown time'}.`,
+    agentConfigurationCompletionMessage(
+      `Administrator ${username} created and FeedbackServer Agent configured; token expires ${configured.expiresAt ?? 'at an unknown time'}.`,
+    ),
   );
 }
 

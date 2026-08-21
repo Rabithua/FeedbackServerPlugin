@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { parseCliOptions, parseIntegerOption } from '../src/cli-arguments.js';
 import {
+  AGENT_ONBOARDING_PROMPT,
+  agentConfigurationCompletionMessage,
   isHelpRequest,
   parseExistingAgentChoice,
   parseFeedbackServerCliCommand,
@@ -100,5 +102,13 @@ describe('CLI argument policy', () => {
     expect(parseExistingAgentChoice(' KEEP ')).toBe('keep');
     expect(parseExistingAgentChoice('switch')).toBe('switch');
     expect(() => parseExistingAgentChoice('replace')).toThrow('Choose keep or switch');
+  });
+
+  test('distinguishes account connection from app setup in configure completion text', () => {
+    const message = agentConfigurationCompletionMessage('Agent configured.');
+    expect(message).toContain('Account connection is complete');
+    expect(message).toContain('app configuration is not complete yet');
+    expect(message).toContain('Open a new Agent task');
+    expect(message).toContain(AGENT_ONBOARDING_PROMPT);
   });
 });

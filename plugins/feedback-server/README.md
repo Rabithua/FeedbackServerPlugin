@@ -22,9 +22,16 @@ feedback-server admin accept-invite
 feedback-server admin create-local
 ```
 
+After account connection, start a new Agent task with `帮我完成 FeedbackServer 初始配置`. The
+Agent uses the read-only `get_onboarding_status` tool to show one next step at a time, without
+persisting completion or skip state. It can create/select a Product, detect a local iOS App, offer
+Bark/Webhook/defer notification choices, recommend an optional roundtrip, and then suggest advanced
+features. Secret notification inputs remain MCP parameters and are never repeated in Agent text.
+
 `doctor` is a read-only account, server, subscription, Product, and optional host-App preflight. It
 reports effective plan and lifecycle, Apps and storage usage, read-only Products, and near-limit
-warnings. Passing `--app-path` checks FeedbackKit 0.1.29 or newer, warns when a newer stable GitHub
+warnings, followed by ordered onboarding next actions. JSON adds `onboarding` and `nextActions`
+fields. Passing `--app-path` checks FeedbackKit 0.1.29 or newer, warns when a newer stable GitHub
 Release is available, and checks the endpoint and Product binding, language policy, and dedicated
 visitor Keychain service without printing credentials or the Product key. The MCP surface can read
 this server-computed subscription state and switch the primary Product through a protected risk
@@ -57,6 +64,9 @@ Once per MCP process, the plugin checks the latest stable FeedbackServer Plugin 
 When an update exists, one successful tool result includes an `updateNotice` containing the current
 and latest versions, release URL, and manual upgrade command. The check is advisory, never upgrades
 the plugin automatically, and fails silently when GitHub is unavailable.
+The same successful result may also contain one process-local `setupNotice` when live Server state
+shows a required setup action, a missing read scope, or no effective notification channel. Status
+check failures are ignored, and unchecked local-App or roundtrip stages alone do not trigger it.
 
 If Agent credentials already exist, `accept-invite` shows their non-secret username and service URL
 and asks whether to keep or switch accounts. Keeping is the default and stops without consuming the
