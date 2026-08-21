@@ -30,6 +30,8 @@ export const AGENT_SCOPES = [
   'diagnostics:read',
   'bark:read',
   'bark:write',
+  'webhooks:read',
+  'webhooks:write',
   'audit:read',
 ] as const;
 

@@ -53,6 +53,10 @@ export type SecurityCommandRunner = (
   args: string[],
   input?: string,
 ) => Promise<SecurityCommandResult>;
+export interface KeychainAdminPasswordCandidate {
+  password: string;
+  legacy: boolean;
+}
 
 export function normalizeBaseUrl(value: string): string {
   const url = new URL(value.trim());
@@ -231,8 +235,8 @@ export function keychainPendingRevocationsWriteArguments(
   ];
 }
 
-export function keychainAdminPasswordAccount(_baseUrl: string, username: string): string {
-  return username;
+export function keychainAdminPasswordAccount(baseUrl: string, username: string): string {
+  return `${new URL(normalizeBaseUrl(baseUrl)).origin}|${username}`;
 }
 
 export function keychainAdminPasswordWriteArguments(
@@ -247,7 +251,7 @@ export function keychainAdminPasswordWriteArguments(
     '-s',
     KEYCHAIN_ADMIN_PASSWORD_SERVICE,
     '-l',
-    `FeedbackServer administrator password for ${username}`,
+    `FeedbackServer administrator password for ${username} at ${new URL(normalizeBaseUrl(baseUrl)).origin}`,
     '-w',
   ];
 }
@@ -373,12 +377,23 @@ export async function readKeychainAdminPassword(
   username: string,
   runner: SecurityCommandRunner = runSecurity,
 ): Promise<string | undefined> {
+  return (await readKeychainAdminPasswordCandidate(baseUrl, username, runner))?.password;
+}
+
+export async function readKeychainAdminPasswordCandidate(
+  baseUrl: string,
+  username: string,
+  runner: SecurityCommandRunner = runSecurity,
+): Promise<KeychainAdminPasswordCandidate | undefined> {
   if (process.platform !== 'darwin') return undefined;
-  return readKeychainValue(
+  const scoped = await readKeychainValue(
     KEYCHAIN_ADMIN_PASSWORD_SERVICE,
     keychainAdminPasswordAccount(baseUrl, username),
     runner,
   );
+  if (scoped) return { password: scoped, legacy: false };
+  const legacy = await readKeychainValue(KEYCHAIN_ADMIN_PASSWORD_SERVICE, username, runner);
+  return legacy ? { password: legacy, legacy: true } : undefined;
 }
 
 export async function writeKeychainAdminPassword(
@@ -413,6 +428,19 @@ export async function deleteKeychainAdminPassword(
     runner,
   ))) {
     throw new Error('Unable to remove FeedbackServer administrator password from Keychain');
+  }
+}
+
+export async function promoteLegacyKeychainAdminPassword(
+  baseUrl: string,
+  username: string,
+  candidate: KeychainAdminPasswordCandidate,
+  runner: SecurityCommandRunner = runSecurity,
+): Promise<void> {
+  if (process.platform !== 'darwin' || !candidate.legacy) return;
+  await writeKeychainAdminPassword(baseUrl, username, candidate.password, runner);
+  if (!(await deleteKeychainItem(KEYCHAIN_ADMIN_PASSWORD_SERVICE, username, runner))) {
+    throw new Error('Unable to remove the legacy FeedbackServer administrator password from Keychain');
   }
 }
 

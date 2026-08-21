@@ -119,7 +119,9 @@ package that includes the one-time invitation, a prompt the recipient can give d
 Claude Code, and a link to [the onboarding guide](docs/invited-admin-onboarding.zh-Hans.md).
 Invitation tokens are time-limited and single-use; administrator passwords, PATs, and refresh
 tokens are never sent through chat. Invitation management reads the super administrator password
-from macOS Keychain service `dev.rote.feedback-server.admin`, using account `<username>`.
+from macOS Keychain service `dev.rote.feedback-server.admin`, using account
+`<normalized-server-origin>|<username>`. A legacy username-only item is accepted once and moved to
+the server-scoped account only after successful authentication.
 
 `admin invite` creates a 7-day invitation by default, with `--expires-in-days` accepting 1–30. It
 infers `--url` and `--username` from the existing Keychain Agent configuration when possible, reads

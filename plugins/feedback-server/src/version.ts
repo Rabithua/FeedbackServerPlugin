@@ -1,2 +1,2 @@
-export const PLUGIN_VERSION = '0.6.8';
+export const PLUGIN_VERSION = '0.6.9';
 export const MINIMUM_FEEDBACK_KIT_VERSION = '0.1.29';

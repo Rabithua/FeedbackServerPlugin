@@ -917,8 +917,9 @@ export function registerFeedbackServerTools(
     async (body, { client }) =>
       client.request('/admin/developer-posts', { method: 'POST', body }),
   );
-  registerDirectWrite(
+  registerRiskAwareWrite(
     server,
+    confirmations,
     'update_developer_post',
     'Edit Developer Post content, CTA, or feed pinning. Published edits update public activity.',
     z
@@ -928,29 +929,57 @@ export function registerFeedbackServerTools(
         canonicalBody: z.string().max(20_000).optional(),
         action: developerPostAction.optional(),
         pinned: z.boolean().optional(),
+        ...confirmation,
       })
       .refine(
         (value) =>
-          Object.entries(value).some(([key, field]) => key !== 'postId' && field !== undefined),
+          Object.entries(value).some(
+            ([key, field]) => !['postId', 'confirmationId'].includes(key) && field !== undefined,
+          ),
         { message: 'At least one update field is required' },
       ),
-    async ({ postId, ...body }, { client }) =>
+    { destructiveHint: false, idempotentHint: true },
+    async ({ postId, ...body }, { client }) => {
+      const current = await client.request<{
+        post: { id: string; productId: string; title: string; status: string };
+        product: { id: string; name: string };
+        precondition: string;
+      }>(`/admin/developer-posts/${encodeURIComponent(postId)}/update-context`);
+      return current.post.status === 'published'
+        ? {
+            precondition: current.precondition,
+            preview: {
+              postId,
+              productId: current.product.id,
+              productName: current.product.name,
+              title: current.post.title,
+              requestedChanges: body,
+              effect: 'Published activity content changes immediately',
+            },
+          }
+        : { precondition: current.precondition };
+    },
+    async ({ postId, ...body }, { client }, precondition) =>
       client.request(`/admin/developer-posts/${encodeURIComponent(postId)}`, {
         method: 'PATCH',
         body,
+        ...(precondition ? { ifMatch: precondition } : {}),
       }),
   );
-  registerDirectWrite(
+  registerConfirmedWrite(
     server,
+    confirmations,
     'set_developer_post_translation',
-    'Create or replace a Developer Post translation.',
+    'Create or replace a Developer Post translation, which may change published activity.',
     z.object({
       postId: uuid,
       locale: translationFields.locale,
       title: translationFields.title,
       body: translationFields.body,
       actionLabel: z.string().min(1).max(160).nullable().optional(),
+      ...confirmation,
     }),
+    { destructiveHint: false, idempotentHint: true },
     async ({ postId, locale, ...body }, { client }) =>
       client.request(
         `/admin/developer-posts/${encodeURIComponent(postId)}/translations/${encodeURIComponent(locale)}`,
@@ -1071,7 +1100,6 @@ export function registerFeedbackServerTools(
     }),
     { destructiveHint: false, idempotentHint: true },
     async ({ itemId, products, ...otherFields }, { client }) => {
-      if (!products) return {};
       const current = await client.request<{
         item: {
           canonicalTitle: string;
@@ -1094,13 +1122,13 @@ export function registerFeedbackServerTools(
           archived: association.archivedAt !== null,
         }))
         .sort((left, right) => left.productId.localeCompare(right.productId));
-      const normalizedNext = [...products].sort((left, right) =>
-        left.productId.localeCompare(right.productId),
-      );
+      const normalizedNext = products
+        ? [...products].sort((left, right) => left.productId.localeCompare(right.productId))
+        : normalizedCurrent;
       if (JSON.stringify(normalizedCurrent) === JSON.stringify(normalizedNext)) {
-        return Object.keys(otherFields).length === 0
-          ? { result: { status: 'no_change', itemId } }
-          : { precondition: current.precondition };
+        if (Object.keys(otherFields).length === 0) {
+          return { result: { status: 'no_change', itemId } };
+        }
       }
       const affectsPublicRoadmap = [...normalizedCurrent, ...normalizedNext].some(
         ({ visibility }) => visibility === 'public',
@@ -1113,7 +1141,8 @@ export function registerFeedbackServerTools(
           itemTitle: current.item.canonicalTitle,
           currentProducts: normalizedCurrent,
           requestedProducts: normalizedNext,
-          effect: 'The public roadmap placement changes and linked visitors may be notified',
+          requestedChanges: otherFields,
+          effect: 'Public roadmap content or placement changes and linked visitors may be notified',
         },
       };
     },
@@ -1124,11 +1153,13 @@ export function registerFeedbackServerTools(
         ...(precondition ? { ifMatch: precondition } : {}),
       }),
   );
-  registerDirectWrite(
+  registerConfirmedWrite(
     server,
+    confirmations,
     'set_item_translation',
-    'Create or replace an Item translation.',
-    z.object({ itemId: uuid, ...translationFields }),
+    'Create or replace an Item translation, which may change a public roadmap.',
+    z.object({ itemId: uuid, ...translationFields, ...confirmation }),
+    { destructiveHint: false, idempotentHint: true },
     async ({ itemId, locale, title, body }, { client }) =>
       client.request(
         `/admin/items/${encodeURIComponent(itemId)}/translations/${encodeURIComponent(locale)}`,
@@ -1201,8 +1232,9 @@ export function registerFeedbackServerTools(
         body: { productId },
       }),
   );
-  registerDirectWrite(
+  registerRiskAwareWrite(
     server,
+    confirmations,
     'create_release',
     'Create a draft or published Release for one Product.',
     z.object({
@@ -1211,39 +1243,55 @@ export function registerFeedbackServerTools(
       status: releaseFields.status.default('draft'),
       releasedAt: releaseFields.releasedAt,
       itemIds: releaseFields.itemIds.default([]),
+      ...confirmation,
     }),
+    { destructiveHint: false, idempotentHint: false },
+    (body) => Promise.resolve(body.status === 'published'
+      ? {
+          preview: {
+            ...body,
+            effect: 'The Release becomes visible in the public changelog',
+          },
+        }
+      : {}),
     async (body, { client }) =>
       client.request('/admin/releases', {
         method: 'POST',
         body: { ...body, releasedAt: normalizeReleasedAt(body.releasedAt) },
       }),
   );
-  registerDirectWrite(
+  registerConfirmedWrite(
     server,
+    confirmations,
     'update_release',
-    'Update, publish, unpublish, or reorder a Release.',
+    'Update, publish, unpublish, or reorder a Release that may be public.',
     z.object({
       releaseId: uuid,
       version: releaseFields.version.optional(),
       status: releaseFields.status.optional(),
       releasedAt: releaseFields.releasedAt,
       itemIds: releaseFields.itemIds.optional(),
+      ...confirmation,
     }),
+    { destructiveHint: false, idempotentHint: true },
     async ({ releaseId, ...body }, { client }) =>
       client.request(`/admin/releases/${encodeURIComponent(releaseId)}`, {
         method: 'PATCH',
         body: { ...body, releasedAt: normalizeReleasedAt(body.releasedAt) },
       }),
   );
-  registerDirectWrite(
+  registerConfirmedWrite(
     server,
+    confirmations,
     'set_release_translation',
-    'Create or replace a Release translation.',
+    'Create or replace a Release translation that may be public.',
     z.object({
       releaseId: uuid,
       locale: translationFields.locale,
       body: translationFields.body,
+      ...confirmation,
     }),
+    { destructiveHint: false, idempotentHint: true },
     async ({ releaseId, locale, body }, { client }) =>
       client.request(
         `/admin/releases/${encodeURIComponent(releaseId)}/translations/${encodeURIComponent(locale)}`,
@@ -1382,6 +1430,70 @@ export function registerFeedbackServerTools(
     { destructiveHint: false, idempotentHint: false },
     async ({ outboxId }, { client }) =>
       client.request(`/admin/bark/deliveries/${encodeURIComponent(outboxId)}/retry`, {
+        method: 'POST',
+      }),
+  );
+
+  registerRead(
+    server,
+    'get_product_webhook_config',
+    'Read the masked Webhook configuration for one Product.',
+    z.object({ productId: uuid }),
+    async ({ productId }, { client }) =>
+      client.request(`/admin/webhooks/products/${encodeURIComponent(productId)}`),
+  );
+  registerConfirmedWrite(
+    server,
+    confirmations,
+    'update_product_webhook_config',
+    'Configure, enable, or disable one Product Webhook. Signing secrets are always redacted.',
+    z.object({
+      productId: uuid,
+      enabled: z.boolean(),
+      endpointUrl: z.url().max(2048).optional(),
+      secret: z.string().trim().min(32).max(500).optional(),
+      ...confirmation,
+    }),
+    { destructiveHint: false, idempotentHint: true },
+    async ({ productId, ...body }, { client }) =>
+      client.request(`/admin/webhooks/products/${encodeURIComponent(productId)}`, {
+        method: 'PUT',
+        body,
+      }),
+  );
+  registerConfirmedWrite(
+    server,
+    confirmations,
+    'test_product_webhook',
+    'Send one real webhook.test delivery through the configured Product channel.',
+    z.object({ productId: uuid, ...confirmation }),
+    { destructiveHint: false, idempotentHint: false },
+    async ({ productId }, { client }) =>
+      client.request(`/admin/webhooks/products/${encodeURIComponent(productId)}/test`, {
+        method: 'POST',
+      }),
+  );
+  registerRead(
+    server,
+    'list_webhook_deliveries',
+    'List Webhook delivery attempts with optional Product and status filters.',
+    z.object({
+      productId: uuid.optional(),
+      status: z.enum(['success', 'failed', 'skipped']).optional(),
+      limit: z.number().int().min(1).max(200).default(50),
+    }),
+    async (input, { client }) =>
+      client.request('/admin/webhooks/deliveries', { query: withQuery(input) }),
+  );
+  registerConfirmedWrite(
+    server,
+    confirmations,
+    'retry_webhook_delivery',
+    'Requeue a failed Webhook Outbox delivery.',
+    z.object({ outboxId: uuid, ...confirmation }),
+    { destructiveHint: false, idempotentHint: false },
+    async ({ outboxId }, { client }) =>
+      client.request(`/admin/webhooks/deliveries/${encodeURIComponent(outboxId)}/retry`, {
         method: 'POST',
       }),
   );

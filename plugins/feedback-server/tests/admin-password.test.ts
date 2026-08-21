@@ -16,8 +16,9 @@ function dependencies(
   overrides: Partial<AdministratorPasswordDependencies> = {},
 ): AdministratorPasswordDependencies {
   return {
-    readPassword: () => Promise.resolve('stored-password'),
+    readPassword: () => Promise.resolve({ password: 'stored-password', legacy: false }),
     deletePassword: () => Promise.resolve(),
+    promoteLegacyPassword: () => Promise.resolve(),
     warn: () => {},
     ...overrides,
   };
@@ -57,7 +58,7 @@ describe('administrator password Keychain lookup', () => {
     expect(operationCalled).toBe(false);
     expect(error).toBeInstanceOf(MissingAdministratorPasswordError);
     expect((error as Error).message).toContain('dev.rote.feedback-server.admin');
-    expect((error as Error).message).toContain('account owner');
+    expect((error as Error).message).toContain('account https://feedback.example.com|owner');
     expect((error as Error).message).not.toContain('dev.rote.feedback-server.mcp.admin-password');
     expect((error as Error).message).not.toContain(`${baseUrl}|${username}`);
   });
@@ -93,6 +94,70 @@ describe('administrator password Keychain lookup', () => {
     );
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toBe('network down');
+  });
+
+  test('does not delete a valid password when a later administrator action is forbidden', async () => {
+    const events: string[] = [];
+    const error = await capturedError(
+      withAdministratorPassword(
+        { baseUrl, username },
+        () => Promise.reject(new ConfigurationApiError(403, 'forbidden', 'super admin required')),
+        dependencies({
+          deletePassword: () => {
+            events.push('delete');
+            return Promise.resolve();
+          },
+        }),
+      ),
+    );
+
+    expect(error).toBeInstanceOf(ConfigurationApiError);
+    expect(events).toEqual([]);
+  });
+
+  test('promotes a legacy password only after successful authentication', async () => {
+    const events: string[] = [];
+    const result = await withAdministratorPassword(
+      { baseUrl, username },
+      (password) => {
+        events.push(`authenticate:${password}`);
+        return Promise.resolve('configured');
+      },
+      dependencies({
+        readPassword: () => Promise.resolve({ password: 'legacy-password', legacy: true }),
+        promoteLegacyPassword: () => {
+          events.push('promote');
+          return Promise.resolve();
+        },
+      }),
+    );
+
+    expect(result).toBe('configured');
+    expect(events).toEqual(['authenticate:legacy-password', 'promote']);
+  });
+
+  test('does not delete an unverified legacy password after target authentication rejects it', async () => {
+    const events: string[] = [];
+    const error = await capturedError(
+      withAdministratorPassword(
+        { baseUrl, username },
+        () => Promise.reject(new ConfigurationApiError(401, 'unauthorized', 'wrong server')),
+        dependencies({
+          readPassword: () => Promise.resolve({ password: 'legacy-password', legacy: true }),
+          deletePassword: () => {
+            events.push('delete');
+            return Promise.resolve();
+          },
+          promoteLegacyPassword: () => {
+            events.push('promote');
+            return Promise.resolve();
+          },
+        }),
+      ),
+    );
+
+    expect(error).toBeInstanceOf(RejectedAdministratorPasswordError);
+    expect(events).toEqual([]);
   });
 
   test('warns and still fails fast when Keychain cannot be read', async () => {
