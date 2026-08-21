@@ -1,6 +1,6 @@
 ---
 name: manage-feedback-server
-description: Manage FeedbackServer apps (Products), private/public Feedback, private diagnostic bundles, internal notes and developer replies, Developer Posts, Product roadmaps, translations, Releases, attachments, Bark and Product Webhook configuration and delivery records, App Store changelog initialization, and audit history through the feedback-server MCP tools. Use when a user asks to inspect, triage, organize, reply to, publish, configure, or delete FeedbackServer data, or refers to app feedback, diagnostics, activity, roadmap, changelog, notifications, or FeedbackServer administration.
+description: Manage FeedbackServer apps (Products), subscription limits and Product access, private/public Feedback, private diagnostic bundles, internal notes and developer replies, Developer Posts, Product roadmaps, translations, Releases, attachments, Bark and Product Webhook configuration and delivery records, App Store changelog initialization, and audit history through the feedback-server MCP tools. Use when a user asks to inspect, triage, organize, reply to, publish, configure, or delete FeedbackServer data, or refers to app feedback, diagnostics, subscription usage, activity, roadmap, changelog, notifications, or FeedbackServer administration.
 ---
 
 # Manage FeedbackServer
@@ -65,9 +65,10 @@ CLI exceptions; do not reproduce their HTTP calls manually.
 ## Verify setup and integration
 
 - Run `feedback-server doctor` after setup or upgrade. It is read-only and checks plugin version,
-  credentials, live health, PAT metadata, pending token cleanup, and Product selection without
-  printing a PAT or Product key. Pass `--product <id-or-slug>` whenever more than one Product is
-  visible.
+  credentials, live health, PAT metadata, pending token cleanup, the server-computed effective
+  subscription, Apps and storage usage, read-only Products, and Product selection without printing
+  a PAT or Product key. Treat usage at or above 80% and read-only Products as warnings. Pass
+  `--product <id-or-slug>` whenever more than one Product is visible.
 - A successful tool result may include `updateNotice` when a newer stable plugin release exists.
   Briefly tell the user which version is available and show the supplied manual upgrade command.
   Never upgrade automatically or repeat a notice that is absent from later results.
@@ -91,6 +92,19 @@ CLI exceptions; do not reproduce their HTTP calls manually.
 - If multiple Products could match, ask the user; never guess or keep an implicit current Product.
 - Pass explicit Product, Feedback, Developer Post, Item, Release, Attachment, or Outbox IDs to every
   later tool.
+
+## Inspect subscription access
+
+- Use `get_subscription` for the server-computed declared and effective plans, lifecycle and dates,
+  limits, enabled features, finalized and reserved storage, primary Product, and each Product's
+  `read_write` or `read_only` access. Never infer access from locally cached Plugin state.
+- The Plugin deliberately has no grant, renewal, or downgrade tool. Do not attempt to change a
+  subscription through undocumented routes, direct database access, or Product state changes.
+- Treat `set_primary_product` as protected even when its current affected-Product list is empty.
+  Show the current and target Product IDs and every access transition, then wait for explicit user
+  confirmation. If the precondition is stale, reread the risk context and present a new preview.
+- Switching the primary Product does not change a subscription plan, delete data, or change Product
+  status. It can change which Product remains writable under a constrained effective plan.
 
 ## Read and summarize
 

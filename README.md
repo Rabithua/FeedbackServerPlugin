@@ -84,12 +84,17 @@ plugins/feedback-server/bin/feedback-server doctor \
 ```
 
 `doctor` reports the plugin version, Keychain or environment credential state, PAT scopes and
-expiry, pending token cleanup, live server health, Product selection, and Product status. With
+expiry, pending token cleanup, live server health, effective subscription and lifecycle, Apps and
+storage usage, read-only Products, Product selection, and Product status. With
 `--app-path`, it also checks FeedbackKit's resolved version (minimum 0.1.29), compares it with the
 latest stable FeedbackKit GitHub Release, and checks the server URL and Product binding, explicit
 visitor Keychain service, and `.followHost` or `.fixed(Locale)` language policy. A newer compatible
 SDK is a warning rather than a blocking failure. Output never includes a PAT or publishable Product
 key. Use `--format json` for automation.
+
+The MCP surface exposes the server-computed subscription overview and a protected primary Product
+switch with risk preview and mutation preconditions. It does not expose subscription grants,
+renewals, or downgrades.
 
 For a live acceptance test, explicitly select a Product and repeat its slug:
 

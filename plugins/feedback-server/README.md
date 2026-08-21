@@ -22,10 +22,13 @@ feedback-server admin accept-invite
 feedback-server admin create-local
 ```
 
-`doctor` is a read-only account, server, Product, and optional host-App preflight. Passing
-`--app-path` checks FeedbackKit 0.1.29 or newer, warns when a newer stable GitHub Release is
-available, and checks the endpoint and Product binding, language policy, and dedicated visitor
-Keychain service without printing credentials or the Product key.
+`doctor` is a read-only account, server, subscription, Product, and optional host-App preflight. It
+reports effective plan and lifecycle, Apps and storage usage, read-only Products, and near-limit
+warnings. Passing `--app-path` checks FeedbackKit 0.1.29 or newer, warns when a newer stable GitHub
+Release is available, and checks the endpoint and Product binding, language policy, and dedicated
+visitor Keychain service without printing credentials or the Product key. The MCP surface can read
+this server-computed subscription state and switch the primary Product through a protected risk
+preview, but cannot grant, renew, or downgrade a subscription.
 `test roundtrip` is an explicit live acceptance test: it requires the selected Product slug to be
 repeated with `--confirm`, covers submit/receive/reply/unread/read, and deletes the unique test
 Visitor and its Feedback afterward, including on intermediate failure.

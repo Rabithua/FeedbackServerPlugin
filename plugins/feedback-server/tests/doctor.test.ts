@@ -5,6 +5,7 @@ import {
   inspectHostAppFiles,
   type DoctorDependencies,
   type DoctorProduct,
+  type DoctorSubscription,
 } from '../src/doctor.js';
 import type { StoredCredentials } from '../src/credentials.js';
 
@@ -25,13 +26,37 @@ const product: DoctorProduct = {
   status: 'active',
 };
 
+const subscription: DoctorSubscription = {
+  declaredPlan: 'studio',
+  effectivePlan: 'studio',
+  lifecycle: 'perpetual',
+  term: 'perpetual',
+  expiresAt: null,
+  graceEndsAt: null,
+  primaryProductId: product.id,
+  limits: { maxProducts: 10, storageBytes: 25 * 1024 * 1024 * 1024 },
+  usage: {
+    products: 1,
+    storage: {
+      finalizedBytes: 1024 * 1024,
+      reservedBytes: 256 * 1024,
+      totalBytes: 1280 * 1024,
+    },
+  },
+  products: [{ id: product.id, name: product.name, access: 'read_write' }],
+};
+
 function dependencies(overrides: Partial<DoctorDependencies> = {}): DoctorDependencies {
   return {
     loadCredentials: () => Promise.resolve(credentials),
     readPendingRevocations: () => Promise.resolve([]),
     createClient: () => ({
       request: <T>(path: string) => Promise.resolve(
-        (path === '/admin/products' ? [product] : { database: 'ok' }) as T,
+        (path === '/admin/products'
+          ? [product]
+          : path === '/admin/subscription'
+            ? subscription
+            : { database: 'ok' }) as T,
       ),
     }),
     readHostAppFiles: () => Promise.resolve([]),
@@ -56,10 +81,66 @@ describe('feedback-server doctor', () => {
       'expiry',
       'pending-revocations',
       'health',
+      'subscription',
+      'subscription.usage',
+      'subscription.product-access',
       'product',
     ]);
+    expect(report.subscription).toEqual(subscription);
+    expect(formatDoctorReport(report)).toContain('Studio; perpetual; no expiry.');
     expect(formatDoctorReport(report)).not.toContain(credentials.token);
     expect(JSON.stringify(report)).not.toContain(product.publishableKey);
+  });
+
+  test('warns about grace, near quota, and read-only Products', async () => {
+    const constrained: DoctorSubscription = {
+      ...subscription,
+      declaredPlan: 'solo',
+      effectivePlan: 'solo',
+      lifecycle: 'grace',
+      term: 'fixed',
+      expiresAt: '2026-08-01T00:00:00.000Z',
+      graceEndsAt: '2026-08-08T00:00:00.000Z',
+      limits: { maxProducts: 1, storageBytes: 2 * 1024 * 1024 * 1024 },
+      usage: {
+        products: 2,
+        storage: {
+          finalizedBytes: 1_800_000_000,
+          reservedBytes: 100_000_000,
+          totalBytes: 1_900_000_000,
+        },
+      },
+      products: [
+        { id: product.id, name: product.name, access: 'read_write' },
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          name: 'Read-only App',
+          access: 'read_only',
+        },
+      ],
+    };
+    const report = await diagnoseFeedbackServer({}, dependencies({
+      createClient: () => ({
+        request: <T>(path: string) => Promise.resolve(
+          (path === '/admin/products'
+            ? [product]
+            : path === '/admin/subscription'
+              ? constrained
+              : { database: 'ok' }) as T,
+        ),
+      }),
+    }));
+
+    expect(report.ok).toBe(true);
+    expect(report.checks.find(({ id }) => id === 'subscription')).toMatchObject({
+      status: 'pass',
+      message: expect.stringContaining('grace ends 2026-08-08'),
+    });
+    expect(report.checks.find(({ id }) => id === 'subscription.usage')?.status).toBe('warn');
+    expect(report.checks.find(({ id }) => id === 'subscription.product-access')).toMatchObject({
+      status: 'warn',
+      message: expect.stringContaining('Read-only App'),
+    });
   });
 
   test('fails safely when Agent credentials cannot be loaded', async () => {

@@ -33,12 +33,40 @@ export interface DoctorProduct {
   status: string;
 }
 
+export interface DoctorSubscription {
+  declaredPlan: 'free' | 'solo' | 'studio';
+  effectivePlan: 'free' | 'solo' | 'studio';
+  lifecycle: 'free' | 'active' | 'grace' | 'expired' | 'perpetual';
+  term: 'free' | 'fixed' | 'perpetual';
+  expiresAt: string | null;
+  graceEndsAt: string | null;
+  primaryProductId: string | null;
+  limits: {
+    maxProducts: number;
+    storageBytes: number;
+  };
+  usage: {
+    products: number;
+    storage: {
+      finalizedBytes: number;
+      reservedBytes: number;
+      totalBytes: number;
+    };
+  };
+  products: Array<{
+    id: string;
+    name: string;
+    access: 'read_write' | 'read_only';
+  }>;
+}
+
 export interface DoctorReport {
   ok: boolean;
   pluginVersion: string;
   endpoint: string | null;
   username: string | null;
   product: Pick<DoctorProduct, 'id' | 'slug' | 'name' | 'defaultLocale' | 'status'> | null;
+  subscription: DoctorSubscription | null;
   checks: DoctorCheck[];
 }
 
@@ -99,6 +127,65 @@ function check(
 
 function safeMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'unknown error';
+}
+
+function formatBytes(bytes: number): string {
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let value = bytes;
+  let index = 0;
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024;
+    index += 1;
+  }
+  return `${value >= 10 || index === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[index]}`;
+}
+
+function subscriptionChecks(subscription: DoctorSubscription): DoctorCheck[] {
+  const plan = subscription.effectivePlan.charAt(0).toUpperCase()
+    + subscription.effectivePlan.slice(1);
+  const declared = subscription.declaredPlan === subscription.effectivePlan
+    ? ''
+    : ` (declared ${subscription.declaredPlan})`;
+  const period = subscription.lifecycle === 'perpetual'
+    ? 'no expiry'
+    : subscription.lifecycle === 'free'
+      ? 'no paid term'
+      : subscription.lifecycle === 'grace'
+        ? `grace ends ${subscription.graceEndsAt ?? 'at an unknown time'}`
+        : subscription.lifecycle === 'expired'
+          ? `grace ended ${subscription.graceEndsAt ?? 'at an unknown time'}`
+          : `expires ${subscription.expiresAt ?? 'at an unknown time'}`;
+  const storage = subscription.usage.storage;
+  const storageRatio = subscription.limits.storageBytes > 0
+    ? storage.totalBytes / subscription.limits.storageBytes
+    : 1;
+  const productRatio = subscription.limits.maxProducts > 0
+    ? subscription.usage.products / subscription.limits.maxProducts
+    : 1;
+  const approachingLimit = storageRatio >= 0.8 || productRatio >= 0.8;
+  const readOnly = subscription.products.filter(({ access }) => access === 'read_only');
+  return [
+    check(
+      'subscription',
+      'Subscription',
+      subscription.lifecycle === 'expired' ? 'warn' : 'pass',
+      `${plan}${declared}; ${subscription.lifecycle}; ${period}.`,
+    ),
+    check(
+      'subscription.usage',
+      'Subscription usage',
+      approachingLimit ? 'warn' : 'pass',
+      `${subscription.usage.products}/${subscription.limits.maxProducts} Apps; ${formatBytes(storage.finalizedBytes)} finalized + ${formatBytes(storage.reservedBytes)} reserved = ${formatBytes(storage.totalBytes)}/${formatBytes(subscription.limits.storageBytes)} storage.`,
+    ),
+    check(
+      'subscription.product-access',
+      'Product write access',
+      readOnly.length > 0 ? 'warn' : 'pass',
+      readOnly.length > 0
+        ? `Read-only Products: ${readOnly.map(({ name, id }) => `${name} (${id})`).join(', ')}.`
+        : `All ${subscription.products.length} Product${subscription.products.length === 1 ? '' : 's'} are read-write.`,
+    ),
+  ];
 }
 
 function feedbackKitVersions(files: HostAppFile[]): string[] {
@@ -359,6 +446,7 @@ export async function diagnoseFeedbackServer(
       endpoint: null,
       username: null,
       product: null,
+      subscription: null,
       checks,
     };
   }
@@ -427,6 +515,19 @@ export async function diagnoseFeedbackServer(
     checks.push(check('health', 'Server health', 'fail', safeMessage(error)));
   }
 
+  let subscription: DoctorSubscription | undefined;
+  try {
+    subscription = await client.request<DoctorSubscription>('/admin/subscription');
+    checks.push(...subscriptionChecks(subscription));
+  } catch (error) {
+    checks.push(check(
+      'subscription',
+      'Subscription',
+      'fail',
+      `Could not read the server-computed subscription: ${safeMessage(error)}`,
+    ));
+  }
+
   let selectedProduct: DoctorProduct | undefined;
   try {
     const products = await client.request<DoctorProduct[]>('/admin/products');
@@ -467,6 +568,7 @@ export async function diagnoseFeedbackServer(
     endpoint: credentials.baseUrl,
     username: credentials.username ?? null,
     product: selectedProduct ? publicProduct(selectedProduct) : null,
+    subscription: subscription ?? null,
     checks,
   };
 }

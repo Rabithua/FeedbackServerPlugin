@@ -495,6 +495,65 @@ export function registerFeedbackServerTools(
     async ({ productId }, { client }) =>
       client.request(`/admin/products/${encodeURIComponent(productId)}`),
   );
+  registerRead(
+    server,
+    'get_subscription',
+    'Get the server-computed subscription lifecycle, limits, features, aggregate storage usage, primary Product, and per-Product write access for the connected account.',
+    z.object({}),
+    async (_input, { client }) => client.request('/admin/subscription'),
+  );
+  registerRiskAwareWrite(
+    server,
+    confirmations,
+    'set_primary_product',
+    'Switch the account primary Product, which controls write priority when the effective plan cannot keep every Product writable.',
+    z.object({ productId: uuid, ...confirmation }),
+    { destructiveHint: false, idempotentHint: true },
+    async ({ productId }, { client }) => {
+      const current = await client.request<{
+        currentPrimaryProductId: string | null;
+        targetProductId: string;
+        affectedProducts: Array<{
+          id: string;
+          name: string;
+          currentAccess: 'read_write' | 'read_only';
+          proposedAccess: 'read_write' | 'read_only';
+        }>;
+        precondition: string;
+      }>('/admin/subscription/primary-product/update-context', {
+        query: { productId },
+      });
+      if (current.currentPrimaryProductId === current.targetProductId) {
+        return {
+          result: {
+            status: 'no_change',
+            primaryProductId: current.currentPrimaryProductId,
+          },
+        };
+      }
+      const effects = current.affectedProducts.map((product) =>
+        `${product.name} (${product.id}): ${product.currentAccess} -> ${product.proposedAccess}`
+      );
+      return {
+        precondition: current.precondition,
+        preview: {
+          currentPrimaryProductId: current.currentPrimaryProductId,
+          targetProductId: current.targetProductId,
+          affectedProducts: current.affectedProducts,
+          effect: effects.length > 0
+            ? effects.join('; ')
+            : 'Changes primary Product priority without changing current Product access.',
+          effects,
+        },
+      };
+    },
+    async ({ productId }, { client }, precondition) =>
+      client.request('/admin/subscription/primary-product', {
+        method: 'PUT',
+        body: { productId },
+        ...(precondition ? { ifMatch: precondition } : {}),
+      }),
+  );
   registerDirectWrite(
     server,
     'create_product',

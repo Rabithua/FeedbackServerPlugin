@@ -30,6 +30,14 @@ const toolScenarios: ToolScenario[] = [
   { name: 'connection_status', arguments: {}, path: '/v1/api/admin/products' },
   { name: 'list_products', arguments: {}, path: '/v1/api/admin/products' },
   { name: 'get_product', arguments: { productId }, path: `/v1/api/admin/products/${productId}` },
+  { name: 'get_subscription', arguments: {}, path: '/v1/api/admin/subscription' },
+  {
+    name: 'set_primary_product',
+    arguments: { productId: secondId },
+    path: '/v1/api/admin/subscription/primary-product',
+    method: 'PUT',
+    confirmation: 'risk',
+  },
   {
     name: 'create_product',
     arguments: { slug: 'agent-app', name: 'Agent App' },
@@ -354,7 +362,7 @@ function resultData(result: { structuredContent?: unknown }) {
   return (result.structuredContent as { data: Record<string, unknown> }).data;
 }
 
-describe('MCP server 0.6.9', () => {
+describe('MCP server 0.6.10', () => {
   const originalFetch = globalThis.fetch;
   let client: Client;
   let server: ReturnType<typeof createServer>;
@@ -392,7 +400,9 @@ describe('MCP server 0.6.9', () => {
   test('exposes the new surface and removes legacy Feedback and Item fields', async () => {
     const tools = (await client.listTools()).tools;
     const names = tools.map(({ name }) => name);
-    expect(names).toHaveLength(59);
+    expect(names).toHaveLength(61);
+    expect(names).toContain('get_subscription');
+    expect(names).toContain('set_primary_product');
     expect(names).toContain('set_feedback_visibility');
     expect(names).toContain('set_feedback_pinned');
     expect(names).toContain('create_developer_post');
@@ -459,7 +469,7 @@ describe('MCP server 0.6.9', () => {
     expect(second.structuredContent).not.toHaveProperty('updateNotice');
   });
 
-  test('routes all 59 tools through their documented API contracts', async () => {
+  test('routes all 61 tools through their documented API contracts', async () => {
     const requests: Request[] = [];
     let activeScenario = '';
     globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
@@ -468,7 +478,19 @@ describe('MCP server 0.6.9', () => {
       const url = new URL(request.url);
       let data: unknown = {};
       if (url.pathname.endsWith('/update-context')) {
-        if (url.pathname.includes('/developer-posts/')) {
+        if (url.pathname.includes('/subscription/primary-product/')) {
+          data = {
+            currentPrimaryProductId: productId,
+            targetProductId: secondId,
+            affectedProducts: [{
+              id: secondId,
+              name: 'Second App',
+              currentAccess: 'read_only',
+              proposedAccess: 'read_write',
+            }],
+            precondition: mutationPrecondition,
+          };
+        } else if (url.pathname.includes('/developer-posts/')) {
           data = {
             post: { id: productId, productId, title: 'News', status: 'draft' },
             product: { id: productId, name: 'Agent App' },
@@ -530,7 +552,114 @@ describe('MCP server 0.6.9', () => {
       if (scenario.name === 'update_product_webhook_config') {
         expect(await request!.clone().json()).toEqual({ enabled: false });
       }
+      if (scenario.name === 'set_primary_product') {
+        expect(request!.headers.get('if-match')).toBe(mutationPrecondition);
+        expect(await request!.clone().json()).toEqual({ productId: secondId });
+      }
     }
+  });
+
+  test('binds primary Product confirmation to target, identity, and precondition', async () => {
+    const requests: Request[] = [];
+    globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init);
+      requests.push(request);
+      const data = request.method === 'GET'
+        ? {
+            currentPrimaryProductId: productId,
+            targetProductId: secondId,
+            affectedProducts: [
+              {
+                id: productId,
+                name: 'Primary App',
+                currentAccess: 'read_write',
+                proposedAccess: 'read_only',
+              },
+              {
+                id: secondId,
+                name: 'Second App',
+                currentAccess: 'read_only',
+                proposedAccess: 'read_write',
+              },
+            ],
+            precondition: mutationPrecondition,
+          }
+        : { primaryProductId: secondId };
+      return Promise.resolve(Response.json({ code: 'ok', message: 'success', data }));
+    }) as typeof fetch;
+
+    const payload = { productId: secondId };
+    const preview = await client.callTool({ name: 'set_primary_product', arguments: payload });
+    expect(resultData(preview)).toMatchObject({
+      status: 'confirmation_required',
+      preview: {
+        currentPrimaryProductId: productId,
+        targetProductId: secondId,
+        affectedProducts: [
+          { id: productId, currentAccess: 'read_write', proposedAccess: 'read_only' },
+          { id: secondId, currentAccess: 'read_only', proposedAccess: 'read_write' },
+        ],
+      },
+    });
+    const confirmationId = resultData(preview).confirmationId as string;
+
+    process.env.FEEDBACK_SERVER_API_TOKEN = `fspat_${'c'.repeat(64)}`;
+    const wrongIdentity = await client.callTool({
+      name: 'set_primary_product',
+      arguments: { ...payload, confirmationId },
+    });
+    process.env.FEEDBACK_SERVER_API_TOKEN = token;
+    expect(wrongIdentity.isError).toBe(true);
+    expect(requests).toHaveLength(1);
+
+    const mismatched = await client.callTool({
+      name: 'set_primary_product',
+      arguments: { productId, confirmationId },
+    });
+    expect(mismatched.isError).toBe(true);
+    expect(requests).toHaveLength(1);
+
+    const executed = await client.callTool({
+      name: 'set_primary_product',
+      arguments: { ...payload, confirmationId },
+    });
+    expect(executed.isError).not.toBe(true);
+    expect(requests.map(({ method }) => method)).toEqual(['GET', 'PUT']);
+    expect(requests[1]?.headers.get('if-match')).toBe(mutationPrecondition);
+  });
+
+  test('preserves a stale primary Product precondition error', async () => {
+    globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init);
+      if (request.method === 'GET') {
+        return Promise.resolve(Response.json({
+          code: 'ok',
+          message: 'success',
+          data: {
+            currentPrimaryProductId: productId,
+            targetProductId: secondId,
+            affectedProducts: [],
+            precondition: mutationPrecondition,
+          },
+        }));
+      }
+      return Promise.resolve(Response.json({
+        code: 'mutation_precondition_failed',
+        message: 'The subscription changed after preview',
+        data: { expected: mutationPrecondition },
+      }, { status: 409 }));
+    }) as typeof fetch;
+
+    const payload = { productId: secondId };
+    const preview = await client.callTool({ name: 'set_primary_product', arguments: payload });
+    const result = await client.callTool({
+      name: 'set_primary_product',
+      arguments: { ...payload, confirmationId: resultData(preview).confirmationId },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result)).toContain('mutation_precondition_failed');
+    expect(JSON.stringify(result)).not.toContain(token);
   });
 
   test('uses current state for direct, confirmation, and no-op decisions', async () => {
