@@ -1,6 +1,6 @@
 ---
 name: manage-feedback-server
-description: Manage FeedbackServer apps (Products), private/public Feedback, private diagnostic bundles, internal notes and developer replies, Developer Posts, Product roadmaps, translations, Releases, attachments, Bark configuration and delivery records, App Store changelog initialization, and audit history through the feedback-server MCP tools. Use when a user asks to inspect, triage, organize, reply to, publish, configure, or delete FeedbackServer data, or refers to app feedback, diagnostics, activity, roadmap, changelog, Bark notifications, or FeedbackServer administration.
+description: Manage FeedbackServer apps (Products), private/public Feedback, private diagnostic bundles, internal notes and developer replies, Developer Posts, Product roadmaps, translations, Releases, attachments, Bark and Product Webhook configuration and delivery records, App Store changelog initialization, and audit history through the feedback-server MCP tools. Use when a user asks to inspect, triage, organize, reply to, publish, configure, or delete FeedbackServer data, or refers to app feedback, diagnostics, activity, roadmap, changelog, notifications, or FeedbackServer administration.
 ---
 
 # Manage FeedbackServer
@@ -18,7 +18,8 @@ CLI exceptions; do not reproduce their HTTP calls manually.
   management must use the super administrator password already saved in macOS Keychain. Do not open
   Terminal, spawn a private PTY, use a GUI password dialog, or wait for password input in chat.
   The canonical administrator password item is service `dev.rote.feedback-server.admin` with the
-  administrator username as the account. Time-limited invitation tokens may appear in the invite
+  normalized server origin and administrator username as the account, formatted
+  `<server-origin>|<username>`. Time-limited invitation tokens may appear in the invite
   handoff text because they are single-use onboarding credentials.
 - To create a shareable invitation for the current user, run this plugin's CLI directly; do not scan
   the workspace, read source files, or use `command -v` first. Resolve the plugin root from this
@@ -110,14 +111,16 @@ CLI exceptions; do not reproduce their HTTP calls manually.
   internal note as permission to call a direct-write tool after resolving its explicit target.
 - A request to draft, review, inspect, preview, plan, or summarize is not permission to mutate.
 - Direct writes include ordinary Product fields, private Feedback replies, unpublishing Feedback or
-  Developer Posts, pinning, Developer Post drafts/edits, private Roadmap placement, translations,
-  Releases and Release publication, Bark configuration, internal notes and links, App Store binding,
-  and draft changelog import. Do not ask for an additional conversational confirmation.
+  Developer Posts, pinning, private Developer Post edits, private Roadmap placement, Bark
+  configuration, internal notes and links, App Store binding, and draft changelog import. Do not ask
+  for an additional conversational confirmation.
 - Protected tools return `confirmation_required` for Product deactivation or archival, switching a
   Product default to public, first publication of private Feedback, public Feedback replies, actual
   Feedback status changes, Developer Post publication/deletion, publishable key rotation, entity or
-  translation deletion, public Roadmap placement changes, Bark test delivery, and failed-delivery
-  retry. Re-publication after a Feedback has previously been public executes directly. Same-state
+  translation deletion, published Developer Post edits, Item or Release translations, public
+  Roadmap content or placement changes, Release publication or edits, Product Webhook configuration
+  and test delivery, Bark test delivery, and failed-delivery retry. Re-publication after a Feedback
+  has previously been public executes directly. Same-state
   conditional requests return `no_change`; report that briefly and do not confirm.
 - For a protected action, present one compact preview containing the Product, affected entity,
   visible text or requested status, and the deletion, notification, or availability effect.
@@ -132,7 +135,16 @@ CLI exceptions; do not reproduce their HTTP calls manually.
 - Non-internal replies are accepted only while Feedback is `open`. If it is `resolved` or `closed`,
   report that it must be reopened with the protected status tool before continuing the conversation.
 - Internal notes remain available after Feedback is resolved or closed.
-- Never expose a Bark device key in a preview or result.
+- Never expose a Bark device key or Product Webhook signing secret in a preview or result.
+
+## Manage Product Webhooks
+
+- Read masked Product configuration with `get_product_webhook_config` and delivery history with
+  `list_webhook_deliveries`.
+- Configuration, test delivery, and failed-delivery retry are protected actions. Show the redacted
+  preview and wait for explicit confirmation before repeating the same call with `confirmationId`.
+- Never display, log, or return a signing secret. A configured endpoint must remain owned and
+  controlled by the Product owner.
 
 ## Manage public Activity
 

@@ -20,7 +20,9 @@ import {
   keychainAdminPasswordWriteArguments,
   loadCredentials,
   normalizeBaseUrl,
+  promoteLegacyKeychainAdminPassword,
   readKeychainAdminPassword,
+  readKeychainAdminPasswordCandidate,
   readKeychainCredentialRecord,
   readKeychainPendingTokenRevocations,
   resumeKeychainCredentialRecordCleanup,
@@ -154,9 +156,9 @@ describe('credentials and API client', () => {
     expect(await readKeychainPendingTokenRevocations(runner)).toEqual(entries);
   });
 
-  test('addresses administrator passwords by the canonical username account', () => {
+  test('addresses administrator passwords by canonical server origin and username', () => {
     expect(keychainAdminPasswordAccount('https://feedback.example.com', 'owner')).toBe(
-      'owner',
+      'https://feedback.example.com|owner',
     );
     expect(
       keychainAdminPasswordWriteArguments('https://feedback.example.com/v1/api/', 'owner'),
@@ -164,11 +166,11 @@ describe('credentials and API client', () => {
       'add-generic-password',
       '-U',
       '-a',
-      'owner',
+      'https://feedback.example.com|owner',
       '-s',
       KEYCHAIN_ADMIN_PASSWORD_SERVICE,
       '-l',
-      'FeedbackServer administrator password for owner',
+      'FeedbackServer administrator password for owner at https://feedback.example.com',
       '-w',
     ]);
   });
@@ -205,7 +207,7 @@ describe('credentials and API client', () => {
       expect(calls[0]).toEqual([
         'find-generic-password',
         '-a',
-        'owner',
+        'https://feedback.example.com|owner',
         '-s',
         KEYCHAIN_ADMIN_PASSWORD_SERVICE,
         '-w',
@@ -213,10 +215,49 @@ describe('credentials and API client', () => {
       expect(calls[1]).toEqual([
         'delete-generic-password',
         '-a',
-        'owner',
+        'https://feedback.example.com|owner',
         '-s',
         KEYCHAIN_ADMIN_PASSWORD_SERVICE,
       ]);
+    });
+  });
+
+  test('promotes a legacy username-only password only after its caller verifies it', async () => {
+    await withPlatform('darwin', async () => {
+      const calls: { args: string[]; input?: string }[] = [];
+      const runner: SecurityCommandRunner = (args, input) => {
+        calls.push({ args, ...(input === undefined ? {} : { input }) });
+        if (args[0] === 'find-generic-password') {
+          const account = args[args.indexOf('-a') + 1];
+          return Promise.resolve(account === 'owner'
+            ? { exitCode: 0, stdout: 'legacy-password\n', stderr: '' }
+            : { exitCode: 44, stdout: '', stderr: 'The specified item could not be found.' });
+        }
+        return Promise.resolve({ exitCode: 0, stdout: '', stderr: '' });
+      };
+
+      const candidate = await readKeychainAdminPasswordCandidate(
+        'https://feedback.example.com/v1/api',
+        'owner',
+        runner,
+      );
+      expect(candidate).toEqual({ password: 'legacy-password', legacy: true });
+      expect(calls.map(({ args }) => args[0])).toEqual([
+        'find-generic-password',
+        'find-generic-password',
+      ]);
+
+      await promoteLegacyKeychainAdminPassword(
+        'https://feedback.example.com/v1/api',
+        'owner',
+        candidate!,
+        runner,
+      );
+      const write = calls.find(({ args }) => args[0] === 'add-generic-password');
+      expect(write?.args).toContain('https://feedback.example.com|owner');
+      expect(write?.input).toBe('legacy-password\nlegacy-password\n');
+      const deletion = calls.find(({ args }) => args[0] === 'delete-generic-password');
+      expect(deletion?.args).toContain('owner');
     });
   });
 

@@ -1,7 +1,7 @@
 {
   "name": "feedback-server",
-  "version": "0.6.8",
-  "description": "Agent-first management for FeedbackServer products, public feedback, activity, roadmaps, releases, attachments, Bark, and audit records.",
+  "version": "0.6.9",
+  "description": "Agent-first management for FeedbackServer products, public feedback, activity, roadmaps, releases, attachments, Bark, Webhooks, and audit records.",
   "author": {
     "name": "Rabithua",
     "url": "https://github.com/Rabithua"

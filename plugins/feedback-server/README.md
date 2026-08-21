@@ -32,7 +32,7 @@ Visitor and its Feedback afterward, including on intermediate failure.
 
 New account passwords, refresh tokens, and PATs use hidden TTY input or stdin-only Keychain writes.
 Invitation creation reads the super administrator password only from macOS Keychain service
-`dev.rote.feedback-server.admin` with account `<username>`, prints a recipient handoff package to
+`dev.rote.feedback-server.admin` with account `<server-origin>|<username>`, prints a recipient handoff package to
 stdout by default, and never opens Terminal or prompts for that password. The package contains the
 time-limited one-time token and an Agent-ready task prompt that the recipient can paste directly
 into Codex or Claude Code. In Codex, the Agent lists marketplaces and plugins first, upgrades an
@@ -46,6 +46,9 @@ and token ID for recoverable PAT revocation. CI and non-macOS MCP processes may 
 `FEEDBACK_SERVER_BASE_URL` and `FEEDBACK_SERVER_API_TOKEN` environment values.
 The canonical default endpoint is `https://api.feedkit.cn/v1/api`; credentials saved with the former
 production hostname are normalized to this endpoint while preserving the existing PAT.
+Legacy username-only administrator-password items are read only as migration candidates. The
+plugin moves one to the server-scoped account only after that password authenticates successfully
+against the selected server, preventing cross-server credential reuse.
 
 Once per MCP process, the plugin checks the latest stable FeedbackServer Plugin GitHub Release.
 When an update exists, one successful tool result includes an `updateNotice` containing the current

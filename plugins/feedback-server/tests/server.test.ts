@@ -165,6 +165,7 @@ const toolScenarios: ToolScenario[] = [
     arguments: { postId: productId, locale: 'zh-Hans', title: '动态' },
     path: `/v1/api/admin/developer-posts/${productId}/translations/zh-Hans`,
     method: 'PUT',
+    confirmation: 'always',
   },
   {
     name: 'set_developer_post_publication',
@@ -200,12 +201,14 @@ const toolScenarios: ToolScenario[] = [
     arguments: { itemId: productId, canonicalTitle: 'Updated Item' },
     path: `/v1/api/admin/items/${productId}`,
     method: 'PATCH',
+    confirmation: 'risk',
   },
   {
     name: 'set_item_translation',
     arguments: { itemId: productId, locale: 'zh-Hans', title: '功能' },
     path: `/v1/api/admin/items/${productId}/translations/zh-Hans`,
     method: 'PUT',
+    confirmation: 'always',
   },
   {
     name: 'delete_item_translation',
@@ -253,12 +256,14 @@ const toolScenarios: ToolScenario[] = [
     arguments: { releaseId: productId, version: '1.0.1' },
     path: `/v1/api/admin/releases/${productId}`,
     method: 'PATCH',
+    confirmation: 'always',
   },
   {
     name: 'set_release_translation',
     arguments: { releaseId: productId, locale: 'zh-Hans', body: '更新内容' },
     path: `/v1/api/admin/releases/${productId}/translations/zh-Hans`,
     method: 'PUT',
+    confirmation: 'always',
   },
   {
     name: 'delete_release_translation',
@@ -311,6 +316,37 @@ const toolScenarios: ToolScenario[] = [
     method: 'POST',
     confirmation: 'always',
   },
+  {
+    name: 'get_product_webhook_config',
+    arguments: { productId },
+    path: `/v1/api/admin/webhooks/products/${productId}`,
+  },
+  {
+    name: 'update_product_webhook_config',
+    arguments: { productId, enabled: false },
+    path: `/v1/api/admin/webhooks/products/${productId}`,
+    method: 'PUT',
+    confirmation: 'always',
+  },
+  {
+    name: 'test_product_webhook',
+    arguments: { productId },
+    path: `/v1/api/admin/webhooks/products/${productId}/test`,
+    method: 'POST',
+    confirmation: 'always',
+  },
+  {
+    name: 'list_webhook_deliveries',
+    arguments: { productId, status: 'failed', limit: 25 },
+    path: `/v1/api/admin/webhooks/deliveries?productId=${productId}&status=failed&limit=25`,
+  },
+  {
+    name: 'retry_webhook_delivery',
+    arguments: { outboxId: productId },
+    path: `/v1/api/admin/webhooks/deliveries/${productId}/retry`,
+    method: 'POST',
+    confirmation: 'always',
+  },
   { name: 'list_audit', arguments: { limit: 25 }, path: '/v1/api/admin/audit?limit=25' },
 ];
 
@@ -318,7 +354,7 @@ function resultData(result: { structuredContent?: unknown }) {
   return (result.structuredContent as { data: Record<string, unknown> }).data;
 }
 
-describe('MCP server 0.6.8', () => {
+describe('MCP server 0.6.9', () => {
   const originalFetch = globalThis.fetch;
   let client: Client;
   let server: ReturnType<typeof createServer>;
@@ -356,11 +392,13 @@ describe('MCP server 0.6.8', () => {
   test('exposes the new surface and removes legacy Feedback and Item fields', async () => {
     const tools = (await client.listTools()).tools;
     const names = tools.map(({ name }) => name);
-    expect(names).toHaveLength(54);
+    expect(names).toHaveLength(59);
     expect(names).toContain('set_feedback_visibility');
     expect(names).toContain('set_feedback_pinned');
     expect(names).toContain('create_developer_post');
     expect(names).toContain('set_developer_post_publication');
+    expect(names).toContain('get_product_webhook_config');
+    expect(names).toContain('retry_webhook_delivery');
     const serialized = JSON.stringify(tools);
     expect(serialized).toContain('conversation');
     expect(serialized).toContain('roadmapStage');
@@ -421,7 +459,7 @@ describe('MCP server 0.6.8', () => {
     expect(second.structuredContent).not.toHaveProperty('updateNotice');
   });
 
-  test('routes all 54 tools through their documented API contracts', async () => {
+  test('routes all 59 tools through their documented API contracts', async () => {
     const requests: Request[] = [];
     let activeScenario = '';
     globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
@@ -434,6 +472,18 @@ describe('MCP server 0.6.8', () => {
           data = {
             post: { id: productId, productId, title: 'News', status: 'draft' },
             product: { id: productId, name: 'Agent App' },
+            precondition: mutationPrecondition,
+          };
+        } else if (url.pathname.includes('/items/')) {
+          data = {
+            item: { id: productId, canonicalTitle: 'Agent Item', type: 'feature' },
+            products: [{
+              productId,
+              visibility: 'public',
+              roadmapStage: 'urgent',
+              rank: 0,
+              archivedAt: null,
+            }],
             precondition: mutationPrecondition,
           };
         } else {
@@ -477,6 +527,9 @@ describe('MCP server 0.6.8', () => {
       if (scenario.name === 'set_release_translation') {
         expect(await request!.clone().json()).toEqual({ body: '更新内容' });
       }
+      if (scenario.name === 'update_product_webhook_config') {
+        expect(await request!.clone().json()).toEqual({ enabled: false });
+      }
     }
   });
 
@@ -508,6 +561,18 @@ describe('MCP server 0.6.8', () => {
           data = {
             post: { id: productId, productId, title: 'News', status: postStatus },
             product: { id: productId, name: 'Agent App' },
+            precondition: mutationPrecondition,
+          };
+        } else if (url.pathname.includes('/items/')) {
+          data = {
+            item: { id: productId, canonicalTitle: 'Public Item', type: 'feature' },
+            products: [{
+              productId,
+              visibility: 'public',
+              roadmapStage: 'urgent',
+              rank: 0,
+              archivedAt: null,
+            }],
             precondition: mutationPrecondition,
           };
         } else {
@@ -650,12 +715,45 @@ describe('MCP server 0.6.8', () => {
 
     requests.length = 0;
     postStatus = 'published';
+    const publishedPostEdit = await client.callTool({
+      name: 'update_developer_post',
+      arguments: { postId: productId, canonicalBody: 'Visible update' },
+    });
+    expect(resultData(publishedPostEdit)).toMatchObject({
+      status: 'confirmation_required',
+      preview: { effect: 'Published activity content changes immediately' },
+    });
+    expect(requests.map(({ method }) => method)).toEqual(['GET']);
+
+    requests.length = 0;
     const unpublishPost = await client.callTool({
       name: 'set_developer_post_publication',
       arguments: { postId: productId, status: 'draft' },
     });
     expect(unpublishPost.isError).not.toBe(true);
     expect(requests.map(({ method }) => method)).toEqual(['GET', 'PATCH']);
+
+    requests.length = 0;
+    const publicItemEdit = await client.callTool({
+      name: 'update_item',
+      arguments: { itemId: productId, canonicalTitle: 'Visible roadmap update' },
+    });
+    expect(resultData(publicItemEdit)).toMatchObject({
+      status: 'confirmation_required',
+      preview: { effect: 'Public roadmap content or placement changes and linked visitors may be notified' },
+    });
+    expect(requests.map(({ method }) => method)).toEqual(['GET']);
+
+    requests.length = 0;
+    const publishedRelease = await client.callTool({
+      name: 'create_release',
+      arguments: { productId, version: '2.1.0', status: 'published' },
+    });
+    expect(resultData(publishedRelease)).toMatchObject({
+      status: 'confirmation_required',
+      preview: { effect: 'The Release becomes visible in the public changelog' },
+    });
+    expect(requests).toHaveLength(0);
 
     requests.length = 0;
     productStatus = 'inactive';
@@ -734,11 +832,19 @@ describe('MCP server 0.6.8', () => {
         releasedAt: '2026-08-03T16:30:00+08:00',
       },
     });
+    const updateArguments = {
+      releaseId: productId,
+      releasedAt: '2026-08-03T01:30:00-07:00',
+    };
+    const updatePreview = await client.callTool({
+      name: 'update_release',
+      arguments: updateArguments,
+    });
     const update = await client.callTool({
       name: 'update_release',
       arguments: {
-        releaseId: productId,
-        releasedAt: '2026-08-03T01:30:00-07:00',
+        ...updateArguments,
+        confirmationId: resultData(updatePreview).confirmationId,
       },
     });
 
