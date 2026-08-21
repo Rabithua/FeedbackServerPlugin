@@ -34,7 +34,9 @@ const subscription: DoctorSubscription = {
   expiresAt: null,
   graceEndsAt: null,
   primaryProductId: product.id,
+  revision: 1,
   limits: { maxProducts: 10, storageBytes: 25 * 1024 * 1024 * 1024 },
+  features: { diagnostics: true, webhooks: true, appStoreImport: true, bark: true },
   usage: {
     products: 1,
     storage: {
@@ -87,7 +89,13 @@ describe('feedback-server doctor', () => {
       'product',
     ]);
     expect(report.subscription).toEqual(subscription);
+    expect(report.onboarding).toMatchObject({
+      coreReady: true,
+      product: { selected: { id: product.id, access: 'read_write' } },
+    });
+    expect(report.nextActions.map(({ id }) => id)).toContain('configure_notification');
     expect(formatDoctorReport(report)).toContain('Studio; perpetual; no expiry.');
+    expect(formatDoctorReport(report)).toContain('Next actions:');
     expect(formatDoctorReport(report)).not.toContain(credentials.token);
     expect(JSON.stringify(report)).not.toContain(product.publishableKey);
   });
@@ -178,6 +186,33 @@ describe('feedback-server doctor', () => {
     ], credentials, product);
     expect(checks.every(({ status }) => status === 'pass')).toBe(true);
     expect(JSON.stringify(checks)).not.toContain(product.publishableKey);
+  });
+
+  test('marks a verified host App complete in shared onboarding output', async () => {
+    const report = await diagnoseFeedbackServer({ appPath: '/App' }, dependencies({
+      readHostAppFiles: () => Promise.resolve([
+        {
+          path: '/App/Package.resolved',
+          content: JSON.stringify({
+            pins: [{ identity: 'feedbackkit', state: { version: '0.1.33' } }],
+          }),
+        },
+        {
+          path: '/App/FeedbackCenter.swift',
+          content: `
+            let configuration = FeedbackCenterConfiguration(
+              baseURL: URL(string: "https://feedback.example.com/v1/api")!,
+              productKey: "pk_danci_public_identifier",
+              keychainService: "com.example.danci.feedback.visitor",
+              languagePolicy: .fixed(Locale(identifier: "zh-Hans"))
+            )
+          `,
+        },
+      ]),
+    }));
+
+    expect(report.onboarding?.localApp).toEqual({ status: 'complete', checked: true });
+    expect(report.nextActions.some(({ id }) => id === 'inspect_local_app')).toBe(false);
   });
 
   test('surfaces unresolved settings and an implicit language policy', () => {

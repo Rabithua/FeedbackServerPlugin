@@ -10,6 +10,12 @@ import { FeedbackServerApiClient, FeedbackServerApiError } from './api-client.js
 import { ConfirmationStore, redactPreview } from './confirmation.js';
 import { loadCredentials, type StoredCredentials } from './credentials.js';
 import {
+  createSetupNoticeProvider,
+  deriveOnboardingStatus,
+  type FeedbackServerSetupNotice,
+  type SetupNoticeProvider,
+} from './onboarding.js';
+import {
   createPluginUpdateNoticeProvider,
   type PluginUpdateNotice,
   type UpdateNoticeProvider,
@@ -162,14 +168,20 @@ type RegisterToolBridge = (
 ) => unknown;
 
 const updateNoticeProviders = new WeakMap<McpServer, UpdateNoticeProvider>();
+const setupNoticeProviders = new WeakMap<McpServer, SetupNoticeProvider>();
 
 function toolRegistrar(server: McpServer): RegisterToolBridge {
   return (name, config, callback) => {
     return server.registerTool(name, config, async (input) => {
       const result = await callback(input);
       if (result.isError) return result;
-      const notice = await updateNoticeProviders.get(server)?.takeNotice();
-      return notice ? attachUpdateNotice(result, notice) : result;
+      const [updateNotice, setupNotice] = await Promise.all([
+        updateNoticeProviders.get(server)?.takeNotice().catch(() => undefined),
+        setupNoticeProviders.get(server)?.takeNotice().catch(() => undefined),
+      ]);
+      return updateNotice || setupNotice
+        ? attachNotices(result, { updateNotice, setupNotice })
+        : result;
     });
   };
 }
@@ -186,13 +198,17 @@ function success(value: unknown): CallToolResult {
   };
 }
 
-function attachUpdateNotice(
+function attachNotices(
   result: CallToolResult,
-  updateNotice: PluginUpdateNotice,
+  notices: {
+    updateNotice?: PluginUpdateNotice | undefined;
+    setupNotice?: FeedbackServerSetupNotice | undefined;
+  },
 ): CallToolResult {
   const structuredContent = JSON.parse(JSON.stringify({
     ...(result.structuredContent ?? {}),
-    updateNotice,
+    ...(notices.updateNotice ? { updateNotice: notices.updateNotice } : {}),
+    ...(notices.setupNotice ? { setupNotice: notices.setupNotice } : {}),
   })) as JSONObject;
   return {
     ...result,
@@ -442,8 +458,10 @@ export function registerFeedbackServerTools(
   server: McpServer,
   confirmations = new ConfirmationStore(),
   updateNotices: UpdateNoticeProvider = createPluginUpdateNoticeProvider(),
+  setupNotices: SetupNoticeProvider = createSetupNoticeProvider(),
 ): void {
   updateNoticeProviders.set(server, updateNotices);
+  setupNoticeProviders.set(server, setupNotices);
   registerRead(
     server,
     'health',
@@ -501,6 +519,19 @@ export function registerFeedbackServerTools(
     'Get the server-computed subscription lifecycle, limits, features, aggregate storage usage, primary Product, and per-Product write access for the connected account.',
     z.object({}),
     async (_input, { client }) => client.request('/admin/subscription'),
+  );
+  registerRead(
+    server,
+    'get_onboarding_status',
+    'Derive the current guided setup stages and prioritized next actions from live FeedbackServer configuration without returning secrets.',
+    z.object({ productId: uuid.optional() }),
+    async ({ productId }, { client, credentials }) => deriveOnboardingStatus({
+      client,
+      endpoint: credentials.baseUrl,
+      username: credentials.username,
+      scopes: credentials.scopes,
+      productId,
+    }),
   );
   registerRiskAwareWrite(
     server,

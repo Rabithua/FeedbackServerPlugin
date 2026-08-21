@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { createServer } from '../src/create-server.js';
 import type { PluginUpdateNotice } from '../src/release-updates.js';
+import type { FeedbackServerSetupNotice } from '../src/onboarding.js';
 import { productUpdateProtectedEffects } from '../src/tools.js';
 
 const token = `fspat_${'b'.repeat(64)}`;
@@ -362,24 +363,35 @@ function resultData(result: { structuredContent?: unknown }) {
   return (result.structuredContent as { data: Record<string, unknown> }).data;
 }
 
-describe('MCP server 0.6.10', () => {
+describe('MCP server 0.6.11', () => {
   const originalFetch = globalThis.fetch;
   let client: Client;
   let server: ReturnType<typeof createServer>;
   let updateNotice: PluginUpdateNotice | undefined;
   let updateNoticeDelivered: boolean;
+  let setupNotice: FeedbackServerSetupNotice | undefined;
+  let setupNoticeDelivered: boolean;
 
   beforeEach(async () => {
     process.env.FEEDBACK_SERVER_BASE_URL = 'https://feedback.example.com/v1/api';
     process.env.FEEDBACK_SERVER_API_TOKEN = token;
     updateNotice = undefined;
     updateNoticeDelivered = false;
+    setupNotice = undefined;
+    setupNoticeDelivered = false;
     server = createServer({
       updateNoticeProvider: {
         takeNotice: () => {
           if (updateNoticeDelivered) return Promise.resolve(undefined);
           updateNoticeDelivered = true;
           return Promise.resolve(updateNotice);
+        },
+      },
+      setupNoticeProvider: {
+        takeNotice: () => {
+          if (setupNoticeDelivered) return Promise.resolve(undefined);
+          setupNoticeDelivered = true;
+          return Promise.resolve(setupNotice);
         },
       },
     });
@@ -400,8 +412,9 @@ describe('MCP server 0.6.10', () => {
   test('exposes the new surface and removes legacy Feedback and Item fields', async () => {
     const tools = (await client.listTools()).tools;
     const names = tools.map(({ name }) => name);
-    expect(names).toHaveLength(61);
+    expect(names).toHaveLength(62);
     expect(names).toContain('get_subscription');
+    expect(names).toContain('get_onboarding_status');
     expect(names).toContain('set_primary_product');
     expect(names).toContain('set_feedback_visibility');
     expect(names).toContain('set_feedback_pinned');
@@ -469,7 +482,112 @@ describe('MCP server 0.6.10', () => {
     expect(second.structuredContent).not.toHaveProperty('updateNotice');
   });
 
-  test('routes all 61 tools through their documented API contracts', async () => {
+  test('returns setup and update notices together without changing tool data', async () => {
+    updateNotice = {
+      kind: 'plugin_update_available',
+      component: 'feedback-server-plugin',
+      currentVersion: '0.6.10',
+      latestVersion: '0.6.11',
+      releaseUrl: 'https://github.com/Rabithua/FeedbackServerPlugin/releases/tag/v0.6.11',
+      command: 'codex plugin marketplace upgrade feedback-server',
+    };
+    setupNotice = {
+      kind: 'feedback_server_setup',
+      message: 'Account connection is complete, but app setup still has a next step.',
+      prompt: '帮我完成 FeedbackServer 初始配置',
+      nextAction: {
+        id: 'configure_notification',
+        stage: 'notifications',
+        status: 'recommended',
+        priority: 30,
+        message: 'Choose Bark, Product Webhook, or explicitly defer notification setup.',
+      },
+    };
+    globalThis.fetch = (() => Promise.resolve(Response.json({
+      code: 'ok',
+      message: 'success',
+      data: { status: 'ok' },
+    }))) as unknown as typeof fetch;
+
+    const result = await client.callTool({ name: 'health', arguments: {} });
+    expect(result.structuredContent).toMatchObject({
+      data: { status: 'ok' },
+      updateNotice,
+      setupNotice,
+    });
+  });
+
+  test('derives onboarding status through its documented read routes', async () => {
+    const requests: Request[] = [];
+    globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init);
+      requests.push(request);
+      const path = new URL(request.url).pathname.replace('/v1/api', '');
+      const data = path === '/admin/products'
+        ? [{
+            id: productId,
+            slug: 'agent-app',
+            name: 'Agent App',
+            defaultLocale: 'en',
+            status: 'active',
+            diagnosticsEnabled: false,
+            publishableKey: 'pk_must_not_be_returned',
+          }]
+        : path === '/admin/subscription'
+          ? {
+              declaredPlan: 'studio',
+              effectivePlan: 'studio',
+              lifecycle: 'perpetual',
+              term: 'perpetual',
+              expiresAt: null,
+              graceEndsAt: null,
+              primaryProductId: productId,
+              revision: 1,
+              limits: { maxProducts: 10, storageBytes: 25 * 1024 * 1024 * 1024 },
+              features: { diagnostics: true, webhooks: true, appStoreImport: true, bark: true },
+              usage: {
+                products: 1,
+                storage: { finalizedBytes: 0, reservedBytes: 0, totalBytes: 0 },
+              },
+              products: [{ id: productId, name: 'Agent App', access: 'read_write' }],
+            }
+          : path === '/admin/bark/global'
+            ? { enabled: false, serverUrl: 'https://api.day.app', deviceKey: null }
+            : path === `/admin/bark/products/${productId}`
+              ? { productId, mode: 'inherit', serverUrl: null, deviceKey: null }
+              : path === `/admin/webhooks/products/${productId}`
+                ? { productId, enabled: false, endpointUrl: null, secret: null }
+                : {};
+      if (path === `/admin/products/${productId}/app-store`) {
+        return Promise.resolve(Response.json({
+          code: 'app_store_binding_not_found',
+          message: 'not found',
+          data: null,
+        }, { status: 404 }));
+      }
+      return Promise.resolve(Response.json({ code: 'ok', message: 'success', data }));
+    }) as typeof fetch;
+
+    const result = await client.callTool({ name: 'get_onboarding_status', arguments: {} });
+    expect(result.isError).not.toBe(true);
+    expect(resultData(result)).toMatchObject({
+      connection: { status: 'complete', endpoint: 'https://feedback.example.com/v1/api' },
+      product: { status: 'complete', selected: { id: productId, access: 'read_write' } },
+      notifications: { status: 'recommended', effective: false },
+      coreReady: true,
+    });
+    expect(requests.map((request) => new URL(request.url).pathname).sort()).toEqual([
+      '/v1/api/admin/bark/global',
+      `/v1/api/admin/bark/products/${productId}`,
+      `/v1/api/admin/products/${productId}/app-store`,
+      '/v1/api/admin/products',
+      '/v1/api/admin/subscription',
+      `/v1/api/admin/webhooks/products/${productId}`,
+    ].sort());
+    expect(JSON.stringify(result)).not.toContain('pk_must_not_be_returned');
+  });
+
+  test('routes all 61 existing tools through their documented API contracts', async () => {
     const requests: Request[] = [];
     let activeScenario = '';
     globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
@@ -990,6 +1108,26 @@ describe('MCP server 0.6.10', () => {
   });
 
   test('preserves API error codes without leaking credentials', async () => {
+    updateNotice = {
+      kind: 'plugin_update_available',
+      component: 'feedback-server-plugin',
+      currentVersion: '0.6.10',
+      latestVersion: '0.6.11',
+      releaseUrl: 'https://github.com/Rabithua/FeedbackServerPlugin/releases/tag/v0.6.11',
+      command: 'codex plugin marketplace upgrade feedback-server',
+    };
+    setupNotice = {
+      kind: 'feedback_server_setup',
+      message: 'Account connection is complete, but app setup still has a next step.',
+      prompt: '帮我完成 FeedbackServer 初始配置',
+      nextAction: {
+        id: 'create_product',
+        stage: 'product',
+        status: 'action_required',
+        priority: 10,
+        message: 'Create the first Product.',
+      },
+    };
     globalThis.fetch = (() =>
       Promise.resolve(
         Response.json(
@@ -1009,5 +1147,7 @@ describe('MCP server 0.6.10', () => {
     const serialized = JSON.stringify(result);
     expect(serialized).toContain('admin_scope_required');
     expect(serialized).not.toContain(token);
+    expect(result.structuredContent).not.toHaveProperty('updateNotice');
+    expect(result.structuredContent).not.toHaveProperty('setupNotice');
   });
 });

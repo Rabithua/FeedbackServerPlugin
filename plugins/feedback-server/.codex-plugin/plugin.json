@@ -1,6 +1,6 @@
 {
   "name": "feedback-server",
-  "version": "0.6.10",
+  "version": "0.6.11",
   "description": "Agent-first management for FeedbackServer products, public feedback, activity, roadmaps, releases, attachments, Bark, Webhooks, and audit records.",
   "author": {
     "name": "Rabithua",
@@ -20,6 +20,7 @@
     "capabilities": ["Read", "Write", "Interactive"],
     "websiteURL": "https://github.com/Rabithua/FeedbackServerPlugin",
     "defaultPrompt": [
+      "Set up FeedbackServer for my app and guide me through the next step.",
       "List my apps and summarize unresolved feedback.",
       "Draft a reply to recent feedback and show me before sending.",
       "Review roadmap items and draft the next changelog."

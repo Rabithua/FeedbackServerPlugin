@@ -103,6 +103,15 @@ plugins/feedback-server/bin/feedback-server admin accept-invite \
 - 把 Agent 凭据写入 macOS Keychain
 - 注销临时登录会话
 
+成功文案会明确说明“账号连接完成”不等于“应用配置完成”。按提示打开一个新的 Codex 或
+Claude Code 任务，并发送：
+
+```text
+帮我完成 FeedbackServer 初始配置
+```
+
+Agent 会从实时服务端状态开始，每次只引导一个下一步；不会在本地保存“完成”或“跳过”标记。
+
 如果你不想让邀请码出现在命令里，也可以省略 `--token`，命令会改为从隐藏输入读取一次性邀请码。
 
 ## 3. 验证连接
@@ -123,7 +132,7 @@ plugins/feedback-server/bin/feedback-server doctor --product YOUR_PRODUCT_SLUG
 打开一个新的 Codex 或 Claude Code 会话，然后让 Agent 执行：
 
 ```text
-检查 FeedbackServer connection_status，并列出我的 Products
+帮我完成 FeedbackServer 初始配置
 ```
 
 首次接入成功时，通常会看到：
@@ -132,7 +141,8 @@ plugins/feedback-server/bin/feedback-server doctor --product YOUR_PRODUCT_SLUG
 - 服务健康状态为 `ok`
 - Product 列表为空
 
-Product 列表为空是正常的。新管理员账号默认不能看到邀请人的 App。
+Product 列表为空是正常的。Agent 会询问 App 名称、slug 和默认语言，并为这个独立账号创建
+第一个 Product；新管理员账号默认不能看到邀请人的 App。
 
 Product 和 App 接入完成后，可以用 `doctor --product YOUR_PRODUCT_SLUG --app-path
 /absolute/path/to/App` 检查 FeedbackKit 版本、服务地址、Product 绑定、语言策略和 Visitor
@@ -179,4 +189,5 @@ plugins/feedback-server/bin/feedback-server agent configure \
 
 ### 我需要管理某个 App
 
-接受邀请只会创建你的管理员账号，不会自动授予别人 Product 的访问权。请让邀请人为你创建对应 Product，或等待服务端支持 Product 协作授权。
+接受邀请只会创建你的管理员账号，不会自动授予别人 Product 的访问权。请为自己的 App
+创建 Product；如果需要管理其他管理员拥有的 Product，则要等待服务端支持 Product 协作授权。

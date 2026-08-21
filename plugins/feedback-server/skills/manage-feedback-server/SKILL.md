@@ -62,6 +62,39 @@ CLI exceptions; do not reproduce their HTTP calls manually.
 - Installing the plugin and accepting an invitation are separate. New administrators own no
   Products and cannot access or receive another administrator's Product.
 
+## Guide initial app onboarding
+
+- When the user asks to set up FeedbackServer, complete initial configuration, or act on a
+  `setupNotice`, start with `get_onboarding_status`. Show the current stage and only the first
+  applicable `nextActions` item. Do not dump the whole setup checklist or claim app setup is
+  complete merely because the account connection succeeded.
+- With no Product, ask for an app name, slug, and explicit default language, then create the first
+  Product with private default visibility and otherwise safe defaults. With exactly one Product,
+  allow the tool to auto-select it. With multiple Products, list their non-secret names and IDs and
+  ask the user to select one explicitly; never guess. If the selected Product is read-only, stop
+  business setup writes and help the user select a read-write Product.
+- After a read-write Product is selected, inspect the current workspace. Enter the FeedbackKit
+  branch only when the workspace clearly contains a local iOS App. Before modifying App source,
+  explain the intended files and integration changes and obtain explicit user confirmation. Keep
+  Product publishable keys out of prose and previews even though a confirmed source edit may need
+  to place the selected Product's public client key in the App configuration.
+- If no notification channel is effective, offer exactly three choices: Bark, Product Webhook, or
+  defer notifications. Use the existing MCP configuration tools for the selected choice and keep
+  their existing risk-confirmation behavior. A Bark device key or Webhook signing secret may enter
+  only as the selected tool's parameter; never repeat it in chat, previews, results, summaries, or
+  later messages. Treat masked response values only as evidence that a secret is stored.
+- Recommend, but do not require, the live roundtrip. If the user defers it, say the core path is
+  ready but not yet verified end to end. If the user requests it, require explicit confirmation of
+  the Product slug exactly as described below; never infer or repeat the confirmation on the
+  user's behalf.
+- Suggest Diagnostics and App Store binding only after the connection and selected Product are
+  core-ready. When the effective plan makes either capability unavailable, explain that its saved
+  configuration is retained but currently inactive; do not prompt the user to overwrite or remove
+  retained configuration.
+- Onboarding never changes public visibility, attachment limits, primary Product, or subscription.
+  Do not persist completion or skip state. A deferred notification recommendation may therefore
+  appear once again in a later MCP process.
+
 ## Verify setup and integration
 
 - Run `feedback-server doctor` after setup or upgrade. It is read-only and checks plugin version,
@@ -72,6 +105,10 @@ CLI exceptions; do not reproduce their HTTP calls manually.
 - A successful tool result may include `updateNotice` when a newer stable plugin release exists.
   Briefly tell the user which version is available and show the supplied manual upgrade command.
   Never upgrade automatically or repeat a notice that is absent from later results.
+- A successful tool result may also include one process-local `setupNotice`. State its single next
+  action and offer to continue with the fixed prompt `帮我完成 FeedbackServer 初始配置`. It is
+  derived from live Server configuration, may coexist with `updateNotice`, and does not mean a
+  skipped step was stored.
 - For an iOS host, pass `--app-path <absolute-path>` and an explicit Product. Doctor checks the
   resolved FeedbackKit version against both the minimum and latest stable GitHub Release, server
   URL and Product binding, explicit visitor Keychain service, and `.followHost` or `.fixed(Locale)`

@@ -20,6 +20,14 @@ once per process. When a newer plugin exists, the first successful tool result a
 includes an `updateNotice` with the release URL and upgrade command; update checks never modify the
 installation and network failures do not affect FeedbackServer operations.
 
+After account connection, open a new Agent task and send `帮我完成 FeedbackServer 初始配置` (or
+choose the plugin's first starter prompt). The Agent reads live setup state, selects or creates a
+Product, detects a local iOS App when present, offers Bark/Webhook/defer notification choices,
+recommends an optional roundtrip, and only then introduces Diagnostics and App Store binding.
+Onboarding does not store completion or skip flags. Once per MCP process, the first successful tool
+result may include a non-blocking `setupNotice` when a required action, missing read permission, or
+missing effective notification channel remains; it can appear alongside `updateNotice`.
+
 ## Install for Claude Code
 
 ```bash
@@ -85,14 +93,16 @@ plugins/feedback-server/bin/feedback-server doctor \
 
 `doctor` reports the plugin version, Keychain or environment credential state, PAT scopes and
 expiry, pending token cleanup, live server health, effective subscription and lifecycle, Apps and
-storage usage, read-only Products, Product selection, and Product status. With
+storage usage, read-only Products, Product selection, Product status, and an ordered `Next actions`
+section derived from the same live onboarding state as `get_onboarding_status`. JSON output adds
+backward-compatible `onboarding` and `nextActions` fields. With
 `--app-path`, it also checks FeedbackKit's resolved version (minimum 0.1.29), compares it with the
 latest stable FeedbackKit GitHub Release, and checks the server URL and Product binding, explicit
 visitor Keychain service, and `.followHost` or `.fixed(Locale)` language policy. A newer compatible
 SDK is a warning rather than a blocking failure. Output never includes a PAT or publishable Product
 key. Use `--format json` for automation.
 
-The MCP surface exposes the server-computed subscription overview and a protected primary Product
+The MCP surface exposes `get_onboarding_status`, the server-computed subscription overview, and a protected primary Product
 switch with risk preview and mutation preconditions. It does not expose subscription grants,
 renewals, or downgrades.
 

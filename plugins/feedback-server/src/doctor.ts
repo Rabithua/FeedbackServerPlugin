@@ -14,6 +14,12 @@ import {
   type StableRelease,
 } from './release-updates.js';
 import { MINIMUM_FEEDBACK_KIT_VERSION, PLUGIN_VERSION } from './version.js';
+import {
+  deriveOnboardingStatus,
+  type FeedbackServerOnboardingStatus,
+  type OnboardingNextAction,
+  type OnboardingSubscription,
+} from './onboarding.js';
 
 export type DoctorStatus = 'pass' | 'warn' | 'fail';
 
@@ -33,32 +39,7 @@ export interface DoctorProduct {
   status: string;
 }
 
-export interface DoctorSubscription {
-  declaredPlan: 'free' | 'solo' | 'studio';
-  effectivePlan: 'free' | 'solo' | 'studio';
-  lifecycle: 'free' | 'active' | 'grace' | 'expired' | 'perpetual';
-  term: 'free' | 'fixed' | 'perpetual';
-  expiresAt: string | null;
-  graceEndsAt: string | null;
-  primaryProductId: string | null;
-  limits: {
-    maxProducts: number;
-    storageBytes: number;
-  };
-  usage: {
-    products: number;
-    storage: {
-      finalizedBytes: number;
-      reservedBytes: number;
-      totalBytes: number;
-    };
-  };
-  products: Array<{
-    id: string;
-    name: string;
-    access: 'read_write' | 'read_only';
-  }>;
-}
+export type DoctorSubscription = OnboardingSubscription;
 
 export interface DoctorReport {
   ok: boolean;
@@ -67,6 +48,8 @@ export interface DoctorReport {
   username: string | null;
   product: Pick<DoctorProduct, 'id' | 'slug' | 'name' | 'defaultLocale' | 'status'> | null;
   subscription: DoctorSubscription | null;
+  onboarding: FeedbackServerOnboardingStatus | null;
+  nextActions: OnboardingNextAction[];
   checks: DoctorCheck[];
 }
 
@@ -447,6 +430,14 @@ export async function diagnoseFeedbackServer(
       username: null,
       product: null,
       subscription: null,
+      onboarding: null,
+      nextActions: [{
+        id: 'rebind_agent',
+        stage: 'connection',
+        status: 'action_required',
+        priority: 10,
+        message: 'Configure the FeedbackServer Agent connection, then rerun Doctor.',
+      }],
       checks,
     };
   }
@@ -529,8 +520,9 @@ export async function diagnoseFeedbackServer(
   }
 
   let selectedProduct: DoctorProduct | undefined;
+  let products: DoctorProduct[] | undefined;
   try {
-    const products = await client.request<DoctorProduct[]>('/admin/products');
+    products = await client.request<DoctorProduct[]>('/admin/products');
     const selection = selectProduct(products, options.product);
     selectedProduct = selection.product;
     checks.push(selection.check);
@@ -538,10 +530,56 @@ export async function diagnoseFeedbackServer(
     checks.push(check('product', 'Product', 'fail', safeMessage(error)));
   }
 
+  let onboarding: FeedbackServerOnboardingStatus | undefined;
+  if (subscription && products && (!options.product || selectedProduct)) {
+    try {
+      onboarding = await deriveOnboardingStatus({
+        client,
+        endpoint: credentials.baseUrl,
+        username: credentials.username,
+        scopes: credentials.scopes,
+        productId: selectedProduct?.id,
+        products,
+        subscription,
+      });
+    } catch (error) {
+      checks.push(check(
+        'onboarding',
+        'Onboarding status',
+        'warn',
+        `Could not derive optional setup guidance: ${safeMessage(error)}`,
+      ));
+    }
+  }
+
   if (options.appPath) {
     try {
       const files = await dependencies.readHostAppFiles(options.appPath);
-      checks.push(...inspectHostAppFiles(files, credentials, selectedProduct));
+      const appChecks = inspectHostAppFiles(files, credentials, selectedProduct);
+      checks.push(...appChecks);
+      if (onboarding) {
+        const appHasFailure = appChecks.some(({ status }) => status === 'fail');
+        const appHasWarning = appChecks.some(({ status }) => status === 'warn');
+        onboarding.localApp = {
+          status: appHasFailure ? 'action_required' : appHasWarning ? 'recommended' : 'complete',
+          checked: true,
+        };
+        onboarding.nextActions = onboarding.nextActions.filter(
+          ({ id }) => id !== 'inspect_local_app',
+        );
+        if (appHasFailure || appHasWarning) {
+          onboarding.nextActions.push({
+            id: 'configure_local_app',
+            stage: 'local_app',
+            status: appHasFailure ? 'action_required' : 'recommended',
+            priority: appHasFailure ? 15 : 20,
+            message: 'Resolve the FeedbackKit host App checks reported by Doctor.',
+          });
+          onboarding.nextActions.sort(
+            (left, right) => left.priority - right.priority || left.id.localeCompare(right.id),
+          );
+        }
+      }
       const installedVersion = newestFeedbackKitVersion(files);
       if (installedVersion) {
         const latest = await dependencies.fetchLatestFeedbackKitRelease().catch(() => undefined);
@@ -569,6 +607,8 @@ export async function diagnoseFeedbackServer(
     username: credentials.username ?? null,
     product: selectedProduct ? publicProduct(selectedProduct) : null,
     subscription: subscription ?? null,
+    onboarding: onboarding ?? null,
+    nextActions: onboarding?.nextActions ?? [],
     checks,
   };
 }
@@ -578,6 +618,12 @@ export function formatDoctorReport(report: DoctorReport): string {
   const lines = report.checks.map(
     ({ status, label, message }) => `[${symbol[status]}] ${label}: ${message}`,
   );
+  if (report.nextActions.length > 0) {
+    lines.push('Next actions:');
+    for (const [index, action] of report.nextActions.entries()) {
+      lines.push(`${index + 1}. ${action.message}`);
+    }
+  }
   lines.push(report.ok ? 'Doctor completed without failures.' : 'Doctor found blocking failures.');
   return `${lines.join('\n')}\n`;
 }

@@ -58,6 +58,27 @@ const options = [
 ];
 
 describe('accept-invite existing Agent choice', () => {
+  test('prompts a new Agent onboarding task after a successful invitation acceptance', async () => {
+    const events: string[] = [];
+    const password = 'new-administrator-password';
+    await runAdminAcceptInvite(options, dependencies(events, {
+      readCredentials: () => Promise.resolve(undefined),
+      promptPassword: () => Promise.resolve(password),
+      acceptInvitation: () => Promise.resolve({
+        baseUrl: 'https://invited.example.com/v1/api',
+        token: `fspat_${'c'.repeat(48)}`,
+        username: 'invited-admin',
+        expiresAt: '2026-09-01T00:00:00.000Z',
+      }),
+    }));
+
+    const completion = events.find((event) => event.startsWith('log:Administrator')) ?? '';
+    expect(completion).toContain('Account connection is complete');
+    expect(completion).toContain('app configuration is not complete yet');
+    expect(completion).toContain('Open a new Agent task');
+    expect(completion).toContain('帮我完成 FeedbackServer 初始配置');
+  });
+
   test('keeps the existing account by default without reading passwords or consuming the invite', async () => {
     const events: string[] = [];
     await runAdminAcceptInvite(options, dependencies(events));
