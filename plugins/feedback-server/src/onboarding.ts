@@ -623,39 +623,47 @@ function shouldTriggerSetupNotice(status: FeedbackServerOnboardingStatus): boole
 }
 
 class DerivedSetupNoticeProvider implements SetupNoticeProvider {
-  private lookup: Promise<FeedbackServerSetupNotice | undefined> | undefined;
+  private readonly lookup: Promise<void>;
+  private notice: FeedbackServerSetupNotice | undefined;
+  private resolved = false;
   private completed = false;
   private checking = false;
+  private waitAttempted = false;
 
   public constructor(
     private readonly load: () => Promise<StoredCredentials>,
     private readonly createClient: (credentials: StoredCredentials) => OnboardingApiClient,
     private readonly waitMilliseconds: number,
-  ) {}
+  ) {
+    this.lookup = this.resolveNotice().then((notice) => {
+      this.notice = notice;
+      this.resolved = true;
+    });
+  }
 
   public async takeNotice(): Promise<FeedbackServerSetupNotice | undefined> {
     if (this.completed || this.checking) return undefined;
+    if (!this.resolved && this.waitAttempted) return undefined;
     this.checking = true;
     try {
-      this.lookup ??= this.resolveNotice();
-      const pending = Symbol('pending');
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const result = await Promise.race([
-        this.lookup,
-        new Promise<typeof pending>((resolve) => {
-          timer = setTimeout(() => {
-            resolve(pending);
-          }, this.waitMilliseconds);
-        }),
-      ]).finally(() => {
-        if (timer) clearTimeout(timer);
-      });
-      if (result === pending) {
-        this.completed = true;
-        return undefined;
+      if (!this.resolved) {
+        this.waitAttempted = true;
+        const pending = Symbol('pending');
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const result = await Promise.race([
+          this.lookup.then(() => 'resolved' as const),
+          new Promise<typeof pending>((resolve) => {
+            timer = setTimeout(() => {
+              resolve(pending);
+            }, this.waitMilliseconds);
+          }),
+        ]).finally(() => {
+          if (timer) clearTimeout(timer);
+        });
+        if (result === pending) return undefined;
       }
       this.completed = true;
-      return result;
+      return this.notice;
     } finally {
       this.checking = false;
     }
