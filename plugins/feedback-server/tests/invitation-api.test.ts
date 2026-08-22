@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  appliedSubscriptionMatchesGrant,
   createAdminInvitation,
   type CreatedInvitation,
 } from '../src/invitation-api.js';
@@ -52,5 +53,73 @@ describe('invitation API contract', () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  test('distinguishes monthly and yearly applied subscriptions using UTC calendar terms', () => {
+    const acceptanceWindow = {
+      earliest: new Date('2028-01-31T12:34:56.789Z'),
+      latest: new Date('2028-01-31T12:34:57.789Z'),
+    };
+    const monthly = {
+      plan: 'solo' as const,
+      term: 'fixed' as const,
+      expiresAt: '2028-02-29T12:34:57.000Z',
+      graceEndsAt: '2028-03-07T12:34:57.000Z',
+    };
+    const yearly = {
+      plan: 'solo' as const,
+      term: 'fixed' as const,
+      expiresAt: '2029-01-31T12:34:57.000Z',
+      graceEndsAt: '2029-02-07T12:34:57.000Z',
+    };
+
+    expect(appliedSubscriptionMatchesGrant(
+      monthly,
+      { plan: 'solo', term: 'month' },
+      acceptanceWindow,
+    )).toBe(true);
+    expect(appliedSubscriptionMatchesGrant(
+      monthly,
+      { plan: 'solo', term: 'year' },
+      acceptanceWindow,
+    )).toBe(false);
+    expect(appliedSubscriptionMatchesGrant(
+      yearly,
+      { plan: 'solo', term: 'year' },
+      acceptanceWindow,
+    )).toBe(true);
+    expect(appliedSubscriptionMatchesGrant(
+      yearly,
+      { plan: 'solo', term: 'month' },
+      acceptanceWindow,
+    )).toBe(false);
+  });
+
+  test('requires the exact seven-day grace period and an acceptance window for fixed terms', () => {
+    const applied = {
+      plan: 'studio' as const,
+      term: 'fixed' as const,
+      expiresAt: '2029-02-28T12:00:00.000Z',
+      graceEndsAt: '2029-03-07T12:00:00.000Z',
+    };
+    const leapDayAcceptance = {
+      earliest: new Date('2028-02-29T12:00:00.000Z'),
+      latest: new Date('2028-02-29T12:00:01.000Z'),
+    };
+
+    expect(appliedSubscriptionMatchesGrant(
+      applied,
+      { plan: 'studio', term: 'year' },
+      leapDayAcceptance,
+    )).toBe(true);
+    expect(appliedSubscriptionMatchesGrant(
+      { ...applied, graceEndsAt: '2029-03-08T12:00:00.000Z' },
+      { plan: 'studio', term: 'year' },
+      leapDayAcceptance,
+    )).toBe(false);
+    expect(appliedSubscriptionMatchesGrant(
+      applied,
+      { plan: 'studio', term: 'year' },
+    )).toBe(false);
   });
 });

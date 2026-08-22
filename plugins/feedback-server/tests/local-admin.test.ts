@@ -75,6 +75,7 @@ function dependencies(
       events.push(`verification-retry:${attempt}`);
       return Promise.resolve();
     },
+    now: () => new Date('2026-08-22T12:00:00.000Z'),
     ...overrides,
   };
 }
@@ -240,6 +241,46 @@ describe('local administrator creation', () => {
     expect(error).toBeInstanceOf(CommittedAdminCreationError);
     expect(events).not.toContain('revoke:invitation-id');
     expect(events).not.toContain('list-products');
+  });
+
+  test('does not claim success when a monthly grant receives a yearly expiration', async () => {
+    const events: string[] = [];
+    const monthlyInput = {
+      ...input,
+      subscriptionGrant: { plan: 'solo', term: 'month' } as const,
+    };
+    const error = await capturedError(
+      createLocalAdmin(
+        monthlyInput,
+        dependencies(events, {
+          createInvitation: () => Promise.resolve({
+            id: 'invitation-id',
+            token: invitationToken,
+            subscriptionGrant: monthlyInput.subscriptionGrant,
+          }),
+          acceptInvitation: (_url, acceptedInput) => Promise.resolve({
+            accessToken: 'accepted-access',
+            refreshToken: 'accepted-refresh',
+            admin: {
+              id: 'new-id',
+              username: acceptedInput.username,
+              displayName: acceptedInput.displayName,
+              role: 'admin',
+            },
+            subscription: {
+              plan: 'solo',
+              term: 'fixed',
+              expiresAt: '2027-08-22T12:00:00.000Z',
+              graceEndsAt: '2027-08-29T12:00:00.000Z',
+            },
+          }),
+        }),
+      ),
+    );
+
+    expect(error).toBeInstanceOf(CommittedAdminCreationError);
+    expect(events).not.toContain('list-products');
+    expect(events).not.toContain('revoke:invitation-id');
   });
 
   test('continues logging out when invitation revocation fails', async () => {

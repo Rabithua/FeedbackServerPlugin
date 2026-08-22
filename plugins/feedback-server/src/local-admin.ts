@@ -47,6 +47,7 @@ export interface LocalAdminDependencies {
   revokeInvitation: typeof revokeAdminInvitation;
   listProducts: typeof listOwnedProducts;
   waitBeforeVerificationRetry: (attempt: number) => Promise<void>;
+  now: () => Date;
 }
 
 export interface CreateLocalAdminInput {
@@ -73,6 +74,7 @@ const defaultDependencies: LocalAdminDependencies = {
   listProducts: listOwnedProducts,
   waitBeforeVerificationRetry: (attempt) =>
     new Promise((resolve) => setTimeout(resolve, 250 * 2 ** (attempt - 1))),
+  now: () => new Date(),
 };
 
 function isIndeterminateApiFailure(error: unknown): boolean {
@@ -145,12 +147,14 @@ export async function createLocalAdmin(
       );
     }
     try {
+      const acceptanceStartedAt = dependencies.now();
       const accepted = await dependencies.acceptInvitation(baseUrl, {
         token: invitation.token,
         username: input.username,
         displayName: input.displayName,
         password: input.password,
       });
+      const acceptanceFinishedAt = dependencies.now();
       invitationAccepted = true;
       temporaryRefreshTokens.push(accepted.refreshToken);
       if (accepted.admin.role !== 'admin' || accepted.admin.username !== input.username) {
@@ -161,7 +165,11 @@ export async function createLocalAdmin(
           new Error('The Server did not return the applied subscription summary'),
         );
       }
-      if (!appliedSubscriptionMatchesGrant(accepted.subscription, subscriptionGrant)) {
+      if (!appliedSubscriptionMatchesGrant(
+        accepted.subscription,
+        subscriptionGrant,
+        { earliest: acceptanceStartedAt, latest: acceptanceFinishedAt },
+      )) {
         throw new CommittedAdminCreationError(
           new Error('The Server applied a subscription that does not match the invitation grant'),
         );
