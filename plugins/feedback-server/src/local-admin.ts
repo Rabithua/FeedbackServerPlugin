@@ -212,6 +212,7 @@ export async function createLocalAdmin(
   }
 
   const cleanupErrors: unknown[] = [];
+  let invitationRevocationFailed = false;
   if (invitation && !invitationAccepted) {
     try {
       await dependencies.revokeInvitation(
@@ -220,6 +221,7 @@ export async function createLocalAdmin(
         invitation.id,
       );
     } catch (error) {
+      invitationRevocationFailed = true;
       cleanupErrors.push(error);
     }
   }
@@ -232,7 +234,7 @@ export async function createLocalAdmin(
   }
 
   if (operationError !== undefined || cleanupErrors.length > 0) {
-    if (grantVerificationFailed && invitation && cleanupErrors.length > 0) {
+    if (grantVerificationFailed && invitation && invitationRevocationFailed) {
       throw new AggregateError(
         [operationError, ...cleanupErrors],
         `Invitation ${invitation.id} has an uncertain state after compensating revocation failed`,
