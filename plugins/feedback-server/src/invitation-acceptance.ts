@@ -22,7 +22,13 @@ import {
   acceptAdminInvitation,
   listOwnedProducts,
   type AcceptedInvitation,
+  type AppliedInvitationSubscription,
 } from './invitation-api.js';
+
+export interface ConfiguredInvitationAccount {
+  credentials: StoredCredentials;
+  subscription: AppliedInvitationSubscription;
+}
 
 export class AgentAlreadyConfiguredError extends Error {
   public constructor(existing: StoredCredentials) {
@@ -185,7 +191,7 @@ export async function acceptInvitationAndConfigure(
     password: string;
   },
   dependencies: InvitationAcceptanceDependencies = defaultDependencies,
-): Promise<StoredCredentials> {
+): Promise<ConfiguredInvitationAccount> {
   if (!dependencies.isMacOS()) {
     throw new Error('Invitation acceptance with automatic Agent configuration requires macOS Keychain');
   }
@@ -211,6 +217,9 @@ export async function acceptInvitationAndConfigure(
   const refreshTokens = [accepted.refreshToken];
   try {
     verifyIdentity(accepted, input.username);
+    if (!accepted.subscription) {
+      throw new Error('The Server did not return the applied subscription summary');
+    }
     const verified = await dependencies.login(baseUrl, input.username, input.password);
     refreshTokens.push(verified.refreshToken);
     verifyIdentity(verified, input.username);
@@ -252,7 +261,7 @@ export async function acceptInvitationAndConfigure(
       await compensateUnstoredToken(error, pendingEntry, verified.accessToken, dependencies);
     }
     await dependencies.removePendingRevocation(pendingEntry);
-    return credentials;
+    return { credentials, subscription: accepted.subscription };
   } catch (error) {
     throw new CommittedInvitationAcceptanceError(error);
   } finally {

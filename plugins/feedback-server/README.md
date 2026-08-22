@@ -15,11 +15,14 @@ feedback-server test roundtrip --product <id-or-slug> --confirm <product-slug>
 feedback-server agent configure
 feedback-server agent disconnect
 feedback-server agent revoke-token --id <uuid>
-feedback-server admin invite
+feedback-server admin invite --plan free
+feedback-server admin invite --plan solo --subscription-term month
+feedback-server admin invite --plan studio --subscription-term year
+feedback-server admin invite --plan studio --subscription-term perpetual
 feedback-server admin invitations
 feedback-server admin invite revoke --id <uuid>
 feedback-server admin accept-invite
-feedback-server admin create-local
+feedback-server admin create-local --plan free
 ```
 
 After account connection, start a new Agent task with `帮我完成 FeedbackServer 初始配置`. The
@@ -35,7 +38,8 @@ fields. Passing `--app-path` checks FeedbackKit 0.1.29 or newer, warns when a ne
 Release is available, and checks the endpoint and Product binding, language policy, and dedicated
 visitor Keychain service without printing credentials or the Product key. The MCP surface can read
 this server-computed subscription state and switch the primary Product through a protected risk
-preview, but cannot grant, renew, or downgrade a subscription.
+preview, but cannot grant, renew, or downgrade a subscription. Initial invitation grants are a
+separate Keychain-backed super-administrator CLI operation, not an MCP capability.
 `test roundtrip` is an explicit live acceptance test: it requires the selected Product slug to be
 repeated with `--confirm`, covers submit/receive/reply/unread/read, and deletes the unique test
 Visitor and its Feedback afterward, including on intermediate failure.
@@ -49,7 +53,11 @@ into Codex or Claude Code. In Codex, the Agent lists marketplaces and plugins fi
 existing marketplace or adds it when absent, and installs the plugin only when missing. It then
 prepares a command rooted at the checkout's real absolute path; the recipient runs `accept-invite`
 in a visible interactive terminal so hidden password input never passes through chat or a private
-Agent PTY. The older macOS clipboard handoff
+Agent PTY. Invitations default to Free; Solo and Studio require a `month`, `year`, or `perpetual`
+subscription term. Fixed terms start when the recipient accepts, independently of the invitation's
+own expiry. Indie is not supported. The same flags work with `admin create-local`. The CLI requires
+the Server to echo the requested grant and compensates a mismatch by revoking the new invitation.
+The older macOS clipboard handoff
 remains available with `--delivery clipboard`. PAT storage uses split macOS Keychain records with
 the token passed only through stdin. A separate Keychain ledger stores only server URL, username,
 and token ID for recoverable PAT revocation. CI and non-macOS MCP processes may use paired

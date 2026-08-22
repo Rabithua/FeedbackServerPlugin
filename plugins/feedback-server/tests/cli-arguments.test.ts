@@ -6,6 +6,7 @@ import {
   isHelpRequest,
   parseExistingAgentChoice,
   parseFeedbackServerCliCommand,
+  parseInvitationSubscriptionGrant,
   usage,
 } from '../src/cli.js';
 
@@ -94,6 +95,8 @@ describe('CLI argument policy', () => {
     expect(usage).toContain('feedback-server doctor');
     expect(usage).toContain('feedback-server test roundtrip');
     expect(usage).toContain('--delivery stdout|clipboard');
+    expect(usage).toContain('--plan free|solo|studio');
+    expect(usage).toContain('--subscription-term month|year|perpetual');
     expect(usage).toContain('--token INVITATION_TOKEN');
   });
 
@@ -102,6 +105,29 @@ describe('CLI argument policy', () => {
     expect(parseExistingAgentChoice(' KEEP ')).toBe('keep');
     expect(parseExistingAgentChoice('switch')).toBe('switch');
     expect(() => parseExistingAgentChoice('replace')).toThrow('Choose keep or switch');
+  });
+
+  test('validates invitation subscription plan and term combinations', () => {
+    expect(parseInvitationSubscriptionGrant(new Map())).toEqual({ plan: 'free' });
+    expect(parseInvitationSubscriptionGrant(new Map([['--plan', 'free']]))).toEqual({
+      plan: 'free',
+    });
+    for (const plan of ['solo', 'studio'] as const) {
+      for (const term of ['month', 'year', 'perpetual'] as const) {
+        expect(parseInvitationSubscriptionGrant(new Map([
+          ['--plan', plan],
+          ['--subscription-term', term],
+        ]))).toEqual({ plan, term });
+      }
+      expect(() => parseInvitationSubscriptionGrant(new Map([['--plan', plan]])))
+        .toThrow('--subscription-term is required');
+    }
+    expect(() => parseInvitationSubscriptionGrant(new Map([
+      ['--plan', 'free'],
+      ['--subscription-term', 'month'],
+    ]))).toThrow('cannot be used with the Free plan');
+    expect(() => parseInvitationSubscriptionGrant(new Map([['--plan', 'indie']])))
+      .toThrow('Indie is not supported');
   });
 
   test('distinguishes account connection from app setup in configure completion text', () => {

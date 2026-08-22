@@ -73,11 +73,14 @@ feedback-server test roundtrip --product <id-or-slug> --confirm <product-slug>
 feedback-server agent configure
 feedback-server agent disconnect
 feedback-server agent revoke-token --id <uuid>
-feedback-server admin invite
+feedback-server admin invite --plan free
+feedback-server admin invite --plan solo --subscription-term month
+feedback-server admin invite --plan studio --subscription-term year
+feedback-server admin invite --plan studio --subscription-term perpetual
 feedback-server admin invitations
 feedback-server admin invite revoke --id <uuid>
 feedback-server admin accept-invite
-feedback-server admin create-local
+feedback-server admin create-local --plan free
 ```
 
 ## Verify an integration
@@ -104,7 +107,8 @@ key. Use `--format json` for automation.
 
 The MCP surface exposes `get_onboarding_status`, the server-computed subscription overview, and a protected primary Product
 switch with risk preview and mutation preconditions. It does not expose subscription grants,
-renewals, or downgrades.
+renewals, or downgrades. The Keychain-backed super-administrator CLI is the sole exception: it can
+attach an immutable initial Free, Solo, or Studio grant to a new-account invitation.
 
 For a live acceptance test, explicitly select a Product and repeat its slug:
 
@@ -138,11 +142,21 @@ from macOS Keychain service `dev.rote.feedback-server.admin`, using account
 `<normalized-server-origin>|<username>`. A legacy username-only item is accepted once and moved to
 the server-scoped account only after successful authentication.
 
-`admin invite` creates a 7-day invitation by default, with `--expires-in-days` accepting 1–30. It
+`admin invite` creates a 7-day invitation by default, with `--expires-in-days` accepting 1–30.
+`--plan` accepts `free`, `solo`, or `studio` and defaults to Free. Solo and Studio require
+`--subscription-term month|year|perpetual`; Free forbids a term, and Indie is not supported. Month
+and year terms begin only when the invitation is accepted and use UTC calendar arithmetic. The
+invitation expiry and subscription term are independent. An invitation grant cannot be edited;
+revoke it and create another invitation instead. The same plan flags are accepted by `admin
+create-local`.
+
+The command
 infers `--url` and `--username` from the existing Keychain Agent configuration when possible, reads
 the saved super administrator password from Keychain without opening Terminal or prompting, then
 prints the handoff package to stdout so an Agent can paste it back as a chat code block. The old
-clipboard handoff is still available with `--delivery clipboard`.
+clipboard handoff is still available with `--delivery clipboard`. Plugin 0.6.13 verifies that the
+Server echoes the requested grant; if an older Server ignores it, the CLI immediately revokes the
+new invitation and reports that the Server must be upgraded.
 
 When another Agent credential is configured, `admin accept-invite` shows its non-secret username
 and service URL, then asks whether to keep it or switch to the invited account. Keeping is the
@@ -155,7 +169,8 @@ the CLI automatically attempts to restore it. It accepts a time-limited `--token
 Agent-assisted onboarding and requires a visible interactive terminal. The Agent prepares the
 checkout path and command; the recipient makes the account choice and runs it directly. The command
 creates an ordinary administrator, verifies the account owns no Products, creates a 365-day PAT,
-stores it atomically, and logs out every temporary session.
+stores it atomically, and logs out every temporary session. Its completion message reports the
+subscription summary actually returned by the Server, including fixed-term expiry and grace end.
 If account creation committed but local configuration failed, do not reuse the invitation: run
 `feedback-server agent configure` with the new account. Any PAT
 whose compensating revocation also failed is recorded by non-secret ID in a separate Keychain ledger

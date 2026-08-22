@@ -6,7 +6,7 @@
 
 ## 你会获得什么权限
 
-接受邀请后，你会创建自己的 FeedbackServer 管理员账号，并在本机配置一个 Agent 凭据。这个账号默认是普通 `admin`，初始没有任何 Product，也不能访问邀请人的 Product。
+接受邀请后，你会创建自己的 FeedbackServer 管理员账号，并在本机配置一个 Agent 凭据。这个账号默认是普通 `admin`，初始没有任何 Product，也不能访问邀请人的 Product。邀请消息会分别列出邀请码过期时间、初始套餐和套餐期限；它们不是同一个期限。Free 没有付费期限，Solo/Studio 的一个月、一个年或永久期限从接受成功时才开始。
 
 如果你需要管理某个 App，请让邀请人之后为你的账号创建或授权对应的 Product。当前版本不提供共享同一个 Product 的协作权限。
 
@@ -102,6 +102,9 @@ plugins/feedback-server/bin/feedback-server admin accept-invite \
 - 创建一个 365 天有效的 Agent PAT
 - 把 Agent 凭据写入 macOS Keychain
 - 注销临时登录会话
+
+成功文案还会显示 Server 实际应用的套餐。固定期限会同时显示到期时间和 7 天宽限结束
+时间；这份服务端结果才是授权成功的依据，不要仅凭邀请消息里的声明判断。
 
 成功文案会明确说明“账号连接完成”不等于“应用配置完成”。按提示打开一个新的 Codex 或
 Claude Code 任务，并发送：

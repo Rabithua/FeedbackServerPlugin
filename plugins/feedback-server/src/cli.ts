@@ -13,9 +13,14 @@ import { acceptInvitationAndConfigure } from './invitation-acceptance.js';
 import {
   createInvitationHandoffMessage,
   createShareableInvitation,
+  formatInvitationSubscriptionGrant,
   getInvitations,
   revokeInvitationById,
 } from './invitation-administration.js';
+import type {
+  AppliedInvitationSubscription,
+  InvitationSubscriptionGrant,
+} from './invitation-api.js';
 import { createLocalAdmin } from './local-admin.js';
 import { diagnoseFeedbackServer, formatDoctorReport } from './doctor.js';
 import { runFeedbackRoundTrip } from './roundtrip.js';
@@ -45,7 +50,8 @@ export const usage = [
   'feedback-server agent revoke-token --id UUID [--url URL] [--username USERNAME]',
   [
     'feedback-server admin invite [--url URL] [--username USERNAME]',
-    '[--expires-in-days DAYS] [--delivery stdout|clipboard]',
+    '[--expires-in-days DAYS] [--delivery stdout|clipboard] [--plan free|solo|studio]',
+    '[--subscription-term month|year|perpetual]',
   ].join(' '),
   'feedback-server admin invitations [--url URL] [--username USERNAME]',
   'feedback-server admin invite revoke --id UUID [--url URL] [--username USERNAME]',
@@ -53,7 +59,10 @@ export const usage = [
     'feedback-server admin accept-invite [--url URL] [--username USERNAME]',
     '[--display-name NAME] [--token INVITATION_TOKEN]',
   ].join(' '),
-  'feedback-server admin create-local [--url URL] [--username USERNAME]',
+  [
+    'feedback-server admin create-local [--url URL] [--username USERNAME]',
+    '[--plan free|solo|studio] [--subscription-term month|year|perpetual]',
+  ].join(' '),
 ].join('\n');
 
 export const AGENT_ONBOARDING_PROMPT = '帮我完成 FeedbackServer 初始配置';
@@ -77,6 +86,42 @@ export function parseExistingAgentChoice(value: string): ExistingAgentChoice {
   if (normalized === '' || normalized === 'keep') return 'keep';
   if (normalized === 'switch') return 'switch';
   throw new Error('Choose keep or switch');
+}
+
+export function parseInvitationSubscriptionGrant(
+  options: ReadonlyMap<string, string>,
+): InvitationSubscriptionGrant {
+  const plan = options.get('--plan') ?? 'free';
+  const term = options.get('--subscription-term');
+  if (plan !== 'free' && plan !== 'solo' && plan !== 'studio') {
+    throw new Error('--plan must be free, solo, or studio; Indie is not supported');
+  }
+  if (plan === 'free') {
+    if (term !== undefined) {
+      throw new Error('--subscription-term cannot be used with the Free plan');
+    }
+    return { plan: 'free' };
+  }
+  if (term !== 'month' && term !== 'year' && term !== 'perpetual') {
+    throw new Error(
+      '--subscription-term is required for Solo and Studio and must be month, year, or perpetual',
+    );
+  }
+  return { plan, term };
+}
+
+export function formatAppliedSubscription(
+  subscription: AppliedInvitationSubscription,
+): string {
+  const plan = subscription.plan === 'free'
+    ? 'Free'
+    : subscription.plan === 'solo'
+      ? 'Solo'
+      : 'Studio';
+  if (subscription.term === 'free') return `${plan} (free)`;
+  if (subscription.term === 'perpetual') return `${plan} (perpetual)`;
+  return `${plan} (fixed); expires ${subscription.expiresAt ?? 'at an unknown time'}; `
+    + `grace ends ${subscription.graceEndsAt ?? 'at an unknown time'}`;
 }
 
 export interface AdminAcceptInviteDependencies {
@@ -207,9 +252,10 @@ async function runAdminInvite(options: string[]): Promise<void> {
   const input = await urlAndUsername(
     options,
     'Super administrator username',
-    ['--expires-in-days', '--delivery'],
+    ['--expires-in-days', '--delivery', '--plan', '--subscription-term'],
   );
   const expiresInDays = parseIntegerOption(input.options, '--expires-in-days', 7, 1, 30);
+  const subscriptionGrant = parseInvitationSubscriptionGrant(input.options);
   const delivery = input.options.get('--delivery') ?? 'stdout';
   if (delivery !== 'stdout' && delivery !== 'clipboard') {
     throw new Error('--delivery must be stdout or clipboard');
@@ -223,12 +269,17 @@ async function runAdminInvite(options: string[]): Promise<void> {
           superAdminUsername: input.username,
           superAdminPassword,
           expiresInDays,
+          subscriptionGrant,
         }),
     );
     console.error(
       `Invitation ${result.invitation.id} (${result.invitation.tokenPrefix}…) expires ${
         result.invitation.expiresAt
-      }.`,
+      }; initial subscription ${formatInvitationSubscriptionGrant(
+        subscriptionGrant,
+      ).plan} (${formatInvitationSubscriptionGrant(
+        subscriptionGrant,
+      ).term}).`,
     );
     process.stdout.write(`\`\`\`text\n${result.handoffMessage.trimEnd()}\n\`\`\`\n`);
     return;
@@ -242,10 +293,13 @@ async function runAdminInvite(options: string[]): Promise<void> {
           superAdminUsername: input.username,
           superAdminPassword,
           expiresInDays,
+          subscriptionGrant,
         },
         async (invitation) => {
           console.error(
-            `Invitation ${invitation.id} (${invitation.tokenPrefix}…) expires ${invitation.expiresAt}.`,
+            `Invitation ${invitation.id} (${invitation.tokenPrefix}…) expires ${invitation.expiresAt}; `
+            + `initial subscription ${formatInvitationSubscriptionGrant(subscriptionGrant).plan} `
+            + `(${formatInvitationSubscriptionGrant(subscriptionGrant).term}).`,
           );
           await promptText(
             'The recipient handoff package is in your clipboard. Share it through a trusted channel, then press Return to clear it',
@@ -275,10 +329,14 @@ async function runAdminInvitations(options: string[]): Promise<void> {
     console.error('No administrator invitations found.');
     return;
   }
-  console.error('ID\tSTATUS\tTOKEN PREFIX\tEXPIRES AT');
+  console.error('ID\tSTATUS\tTOKEN PREFIX\tEXPIRES AT\tPLAN\tSUBSCRIPTION TERM');
   for (const invitation of invitations) {
+    const grant = invitation.subscriptionGrant
+      ? formatInvitationSubscriptionGrant(invitation.subscriptionGrant)
+      : { plan: 'Unknown', term: 'Unknown (upgrade Server)' };
     console.error(
-      `${invitation.id}\t${invitation.status}\t${invitation.tokenPrefix}…\t${invitation.expiresAt}`,
+      `${invitation.id}\t${invitation.status}\t${invitation.tokenPrefix}…\t${invitation.expiresAt}`
+      + `\t${grant.plan}\t${grant.term}`,
     );
   }
 }
@@ -453,13 +511,19 @@ export async function runAdminAcceptInvite(
   }
   dependencies.log(
     agentConfigurationCompletionMessage(
-      `Administrator ${username} created and FeedbackServer Agent configured; token expires ${configured.expiresAt ?? 'at an unknown time'}.`,
+      `Administrator ${username} created and FeedbackServer Agent configured; token expires ${configured.credentials.expiresAt ?? 'at an unknown time'}. `
+      + `Server applied initial subscription: ${formatAppliedSubscription(configured.subscription)}.`,
     ),
   );
 }
 
 async function runAdminCreateLocal(options: string[]): Promise<void> {
-  const input = await urlAndUsername(options, 'Existing super administrator username');
+  const input = await urlAndUsername(
+    options,
+    'Existing super administrator username',
+    ['--plan', '--subscription-term'],
+  );
+  const subscriptionGrant = parseInvitationSubscriptionGrant(input.options);
   const username = await promptText('New administrator username');
   if (!username) throw new Error('New administrator username is required');
   const displayName = await promptText('New administrator display name');
@@ -477,10 +541,13 @@ async function runAdminCreateLocal(options: string[]): Promise<void> {
         username,
         displayName,
         password,
+        subscriptionGrant,
       }),
   );
   console.error(
-    `Administrator ${admin.username} created with role ${admin.role}; login and empty Product ownership verified.`,
+    `Administrator ${admin.admin.username} created with role ${admin.admin.role}; login and empty `
+    + `Product ownership verified. Server applied initial subscription: `
+    + `${formatAppliedSubscription(admin.subscription)}.`,
   );
 }
 

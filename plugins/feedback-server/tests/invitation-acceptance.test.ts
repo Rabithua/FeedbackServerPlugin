@@ -22,6 +22,12 @@ const input = {
   displayName: 'New Admin',
   password: 'correct horse battery staple',
 };
+const subscription = {
+  plan: 'solo' as const,
+  term: 'fixed' as const,
+  expiresAt: '2026-09-04T00:00:00.000Z',
+  graceEndsAt: '2026-09-11T00:00:00.000Z',
+};
 
 function identity(role: 'admin' | 'super_admin' = 'admin') {
   return {
@@ -58,6 +64,7 @@ function dependencies(
         accessToken: 'accepted-access',
         refreshToken: 'accepted-refresh',
         admin: identity(),
+        subscription,
       });
     },
     login: () => {
@@ -133,13 +140,14 @@ describe('invitation acceptance and Agent configuration', () => {
       }),
     );
     expect(stored).toBeDefined();
-    expect(configured).toEqual(stored!);
-    expect(configured).toMatchObject({
+    expect(configured.credentials).toEqual(stored!);
+    expect(configured.credentials).toMatchObject({
       baseUrl,
       token: pat,
       username: input.username,
       scopes: [...AGENT_SCOPES],
     });
+    expect(configured.subscription).toEqual(subscription);
     expect(events).toEqual([
       'read-credentials',
       'accept',
@@ -205,6 +213,26 @@ describe('invitation acceptance and Agent configuration', () => {
     );
     expect(error).toBe(conflict);
     expect(events).toEqual(['read-credentials', 'accept']);
+  });
+
+  test('treats a missing applied subscription summary as committed and does not create a PAT', async () => {
+    const events: string[] = [];
+    const error = await capturedError(
+      acceptInvitationAndConfigure(
+        input,
+        dependencies(events, {
+          acceptInvitation: () => Promise.resolve({
+            accessToken: 'accepted-access',
+            refreshToken: 'accepted-refresh',
+            admin: identity(),
+          }),
+        }),
+      ),
+    );
+    expect(error).toBeInstanceOf(CommittedInvitationAcceptanceError);
+    expect((error as Error).message).toContain('account was created');
+    expect(events).not.toContain('create-token');
+    expect(events).toContain('logout:accepted-refresh');
   });
 
   test('marks interrupted acceptance as indeterminate', async () => {

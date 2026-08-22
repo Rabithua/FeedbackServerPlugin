@@ -46,7 +46,13 @@ const invitationDependencies: InvitationAdministrationDependencies = {
 };
 
 const first = await createShareableInvitation(
-  { baseUrl, superAdminUsername, superAdminPassword, expiresInDays: 1 },
+  {
+    baseUrl,
+    superAdminUsername,
+    superAdminPassword,
+    expiresInDays: 1,
+    subscriptionGrant: { plan: 'solo', term: 'month' },
+  },
   () => Promise.resolve(),
   invitationDependencies,
 );
@@ -82,8 +88,13 @@ const credentials = await acceptInvitationAndConfigure(
   },
   acceptanceDependencies,
 );
-if (stored?.token !== credentials.token) throw new Error('Contract PAT was not persisted');
-const client = new FeedbackServerApiClient(credentials);
+if (stored?.token !== credentials.credentials.token) {
+  throw new Error('Contract PAT was not persisted');
+}
+if (credentials.subscription.plan !== 'solo' || credentials.subscription.term !== 'fixed') {
+  throw new Error('Contract invitation subscription grant was not applied');
+}
+const client = new FeedbackServerApiClient(credentials.credentials);
 const products = await client.request<unknown[]>('/admin/products');
 if (products.length !== 0) throw new Error('Contract administrator unexpectedly owns Products');
 

@@ -30,6 +30,16 @@ CLI exceptions; do not reproduce their HTTP calls manually.
   If the password is missing from Keychain, stop and report the missing service/account from the CLI
   error instead of switching to another input path. Use `--delivery clipboard` only when the user
   explicitly asks for clipboard delivery.
+- Invitation creation defaults to `--plan free` when the user does not name a plan. For Solo or
+  Studio, require `--subscription-term month|year|perpetual`; if the plan is known but the term is
+  missing, ask only for the term. Recognize “一个月” as `month`, “一年” as `year`, and “永久” as
+  `perpetual`. Reject Indie and state that the valid plans are Free, Solo, and Studio. Use one of:
+  `feedback-server admin invite --plan free`, `feedback-server admin invite --plan solo
+  --subscription-term month`, `feedback-server admin invite --plan studio --subscription-term
+  year`, or `feedback-server admin invite --plan studio --subscription-term perpetual`.
+- Explain that invitation expiry and subscription duration are separate: fixed subscription terms
+  begin when the recipient accepts. The initial grant is immutable after creation; revoke and
+  recreate the invitation to change it. Do not use or invent an MCP subscription-grant tool.
 - Use `feedback-server admin invitations` to list non-secret invitation metadata and
   `feedback-server admin invite revoke --id <uuid>` to revoke an unaccepted invitation.
 - The recipient uses `feedback-server admin accept-invite` in a visible, user-controlled interactive
@@ -57,8 +67,9 @@ CLI exceptions; do not reproduce their HTTP calls manually.
   failed, use `feedback-server agent configure` with the new account; do not retry the invitation.
   If PAT rollback also failed, use the reported `feedback-server agent revoke-token --id <uuid>`
   recovery command.
-- Use `feedback-server admin create-local` when the super administrator should create both sides locally
-  without exposing an invitation token.
+- Use `feedback-server admin create-local` with the same `--plan` and `--subscription-term` rules
+  when the super administrator should create both sides locally without exposing an invitation
+  token.
 - Installing the plugin and accepting an invitation are separate. New administrators own no
   Products and cannot access or receive another administrator's Product.
 
