@@ -373,6 +373,35 @@ describe('setup notice', () => {
     expect(await provider.takeNotice()).toBeUndefined();
   });
 
+  test('delivers a prefetched notice after a slow lookup without repeatedly delaying tools', async () => {
+    let resolveProducts: ((products: OnboardingProductRecord[]) => void) | undefined;
+    const products = new Promise<OnboardingProductRecord[]>((resolve) => {
+      resolveProducts = resolve;
+    });
+    const provider = createSetupNoticeProvider({
+      loadCredentials: () => Promise.resolve(credentials),
+      createClient: () => ({
+        request: <T>(path: string) => path === '/admin/products'
+          ? products as Promise<T>
+          : Promise.resolve({ ...subscription(), products: [] } as T),
+      }),
+      waitMilliseconds: 100,
+    });
+
+    expect(await provider.takeNotice()).toBeUndefined();
+    const secondStartedAt = performance.now();
+    expect(await provider.takeNotice()).toBeUndefined();
+    expect(performance.now() - secondStartedAt).toBeLessThan(50);
+
+    resolveProducts?.([]);
+    await Bun.sleep(1);
+    expect(await provider.takeNotice()).toMatchObject({
+      kind: 'feedback_server_setup',
+      nextAction: { id: 'create_product' },
+    });
+    expect(await provider.takeNotice()).toBeUndefined();
+  });
+
   test('does not trigger only for unchecked local App or roundtrip stages', async () => {
     const provider = createSetupNoticeProvider({
       loadCredentials: () => Promise.resolve(credentials),
