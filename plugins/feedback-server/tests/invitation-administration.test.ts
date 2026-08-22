@@ -22,6 +22,7 @@ const invitation: CreatedInvitation = {
   acceptedAt: null,
   revokedAt: null,
   createdAt: '2026-08-04T00:00:00.000Z',
+  subscriptionGrant: { plan: 'studio', term: 'year' },
 };
 const handoffMessage = buildInvitationHandoffMessage({ baseUrl, invitation });
 
@@ -47,8 +48,8 @@ function dependencies(
       events.push('logout');
       return Promise.resolve();
     },
-    createInvitation: (_url, _access, expiresInDays) => {
-      events.push(`create:${expiresInDays}`);
+    createInvitation: (_url, _access, expiresInDays, subscriptionGrant) => {
+      events.push(`create:${expiresInDays}:${subscriptionGrant?.plan ?? 'missing'}`);
       return Promise.resolve(invitation);
     },
     listInvitations: () => {
@@ -97,6 +98,7 @@ const input = {
   superAdminUsername: 'owner',
   superAdminPassword: 'not-logged',
   expiresInDays: 7,
+  subscriptionGrant: { plan: 'studio', term: 'year' } as const,
 };
 
 async function capturedError(operation: Promise<unknown>): Promise<unknown> {
@@ -132,7 +134,9 @@ describe('administrator invitation lifecycle', () => {
     expect(result.handoffMessage).toContain('已经安装时不要重复 add');
     expect(result.handoffMessage).toContain('只有我明确输入 switch 才会继续');
     expect(result.handoffMessage).toContain(`--token ${token}`);
-    expect(events).toEqual(['login', 'create:7', 'logout']);
+    expect(result.handoffMessage).toContain('Studio');
+    expect(result.handoffMessage).toContain('One UTC calendar year from acceptance');
+    expect(events).toEqual(['login', 'create:7:studio', 'logout']);
   });
 
   test('copies once, waits for sharing, clears if unchanged, and logs out', async () => {
@@ -146,7 +150,7 @@ describe('administrator invitation lifecycle', () => {
       dependencies(events),
     );
     expect(result).toEqual({ invitation, clipboardCleared: true });
-    expect(events).toEqual(['login', 'create:7', 'copy', 'shared', 'clear', 'logout']);
+    expect(events).toEqual(['login', 'create:7:studio', 'copy', 'shared', 'clear', 'logout']);
   });
 
   test('revokes a new invitation when clipboard delivery fails', async () => {
@@ -170,11 +174,53 @@ describe('administrator invitation lifecycle', () => {
     expect((error as Error).message).toContain('clipboard unavailable');
     expect(events).toEqual([
       'login',
-      'create:7',
+      'create:7:studio',
       'copy-failed',
       `revoke:${invitation.id}`,
       'logout',
     ]);
+  });
+
+  test('revokes an invitation when an older Server omits the requested grant echo', async () => {
+    const events: string[] = [];
+    const error = await capturedError(
+      createInvitationHandoffMessage(
+        input,
+        dependencies(events, {
+          createInvitation: () => {
+            const oldServerInvitation = { ...invitation };
+            delete oldServerInvitation.subscriptionGrant;
+            return Promise.resolve(oldServerInvitation);
+          },
+        }),
+      ),
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('must be upgraded');
+    expect((error as Error).message).toContain(invitation.id);
+    expect((error as Error).message).not.toContain(token);
+    expect(events).toEqual(['login', `revoke:${invitation.id}`, 'logout']);
+  });
+
+  test('reports an uncertain invitation ID without its token when grant rollback fails', async () => {
+    const events: string[] = [];
+    const error = await capturedError(
+      createInvitationHandoffMessage(
+        input,
+        dependencies(events, {
+          createInvitation: () => Promise.resolve({
+            ...invitation,
+            subscriptionGrant: { plan: 'free' },
+          }),
+          revokeInvitation: () => Promise.reject(new Error('revocation unavailable')),
+        }),
+      ),
+    );
+    expect(error).toBeInstanceOf(AggregateError);
+    expect((error as Error).message).toContain(invitation.id);
+    expect((error as Error).message).toContain('uncertain state');
+    expect((error as Error).message).not.toContain(token);
+    expect(events).toEqual(['login', 'logout']);
   });
 
   test('revokes an invitation when the sharing handoff aborts', async () => {
@@ -190,7 +236,7 @@ describe('administrator invitation lifecycle', () => {
     expect((error as Error).message).toContain('cancelled after sharing');
     expect(events).toEqual([
       'login',
-      'create:7',
+      'create:7:studio',
       'copy',
       `revoke:${invitation.id}`,
       'clear',

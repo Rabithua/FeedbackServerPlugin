@@ -6,10 +6,12 @@ import {
 import { normalizeBaseUrl } from './credentials.js';
 import {
   createAdminInvitation,
+  invitationSubscriptionGrantsMatch,
   listAdminInvitations,
   revokeAdminInvitation,
   type CreatedInvitation,
   type InvitationSummary,
+  type InvitationSubscriptionGrant,
 } from './invitation-api.js';
 import { MacOSClipboard, type SecureClipboard } from './macos-clipboard.js';
 
@@ -37,6 +39,32 @@ function requireSuperAdmin(session: LoginResponse): void {
   }
 }
 
+function requireMatchingSubscriptionGrant(
+  invitation: CreatedInvitation,
+  expected: InvitationSubscriptionGrant,
+): void {
+  if (invitationSubscriptionGrantsMatch(invitation.subscriptionGrant, expected)) return;
+  throw new Error(
+    `Invitation ${invitation.id} did not echo the requested initial subscription grant. `
+    + 'The FeedbackServer must be upgraded before creating subscription-bearing invitations.',
+  );
+}
+
+export function formatInvitationSubscriptionGrant(
+  grant: InvitationSubscriptionGrant,
+): { plan: string; term: string } {
+  if (grant.plan === 'free') return { plan: 'Free', term: 'Free (no paid term)' };
+  const term = grant.term === 'month'
+    ? 'One UTC calendar month from acceptance'
+    : grant.term === 'year'
+      ? 'One UTC calendar year from acceptance'
+      : 'Perpetual from acceptance';
+  return {
+    plan: grant.plan === 'solo' ? 'Solo' : 'Studio',
+    term,
+  };
+}
+
 async function logoutWithWarning(
   baseUrl: string,
   refreshToken: string,
@@ -57,6 +85,10 @@ export function buildInvitationHandoffMessage(input: {
   baseUrl: string;
   invitation: CreatedInvitation;
 }): string {
+  if (!input.invitation.subscriptionGrant) {
+    throw new Error('Invitation response is missing its initial subscription grant');
+  }
+  const subscription = formatInvitationSubscriptionGrant(input.invitation.subscriptionGrant);
   return `FeedbackServer 管理员邀请
 
 你收到的是一个一次性管理员邀请码。它有时效限制，只能使用一次。你可以把这整段消息直接发给 Codex 或 Claude Code，让 Agent 帮你安装插件并准备接入命令。出于密码安全，最后的 accept-invite 命令必须由你在自己可见、可控制的交互式终端中运行。
@@ -74,6 +106,12 @@ ${input.invitation.id}
 
 过期时间：
 ${input.invitation.expiresAt}
+
+初始套餐：
+${subscription.plan}
+
+套餐期限（与邀请码过期时间相互独立）：
+${subscription.term}
 
 给 Codex 或 Claude Code 的任务文本：
 
@@ -105,6 +143,7 @@ export async function createInvitationHandoffMessage(
     superAdminUsername: string;
     superAdminPassword: string;
     expiresInDays: number;
+    subscriptionGrant?: InvitationSubscriptionGrant;
   },
   dependencies: InvitationAdministrationDependencies = defaultDependencies,
 ): Promise<{ invitation: CreatedInvitation; handoffMessage: string }> {
@@ -114,17 +153,33 @@ export async function createInvitationHandoffMessage(
     input.superAdminUsername,
     input.superAdminPassword,
   );
+  const subscriptionGrant = input.subscriptionGrant ?? { plan: 'free' };
+  let invitation: CreatedInvitation | undefined;
   try {
     requireSuperAdmin(session);
-    const invitation = await dependencies.createInvitation(
+    invitation = await dependencies.createInvitation(
       baseUrl,
       session.accessToken,
       input.expiresInDays,
+      subscriptionGrant,
     );
+    requireMatchingSubscriptionGrant(invitation, subscriptionGrant);
     return {
       invitation,
       handoffMessage: buildInvitationHandoffMessage({ baseUrl, invitation }),
     };
+  } catch (error) {
+    if (invitation) {
+      try {
+        await dependencies.revokeInvitation(baseUrl, session.accessToken, invitation.id);
+      } catch (revocationError) {
+        throw new AggregateError(
+          [error, revocationError],
+          `Invitation ${invitation.id} has an uncertain state after its grant could not be verified`,
+        );
+      }
+    }
+    throw error;
   } finally {
     await logoutWithWarning(baseUrl, session.refreshToken, dependencies.logout);
   }
@@ -136,6 +191,7 @@ export async function createShareableInvitation(
     superAdminUsername: string;
     superAdminPassword: string;
     expiresInDays: number;
+    subscriptionGrant?: InvitationSubscriptionGrant;
   },
   onCopied: (invitation: CreatedInvitation) => Promise<void>,
   dependencies: InvitationAdministrationDependencies = defaultDependencies,
@@ -146,9 +202,11 @@ export async function createShareableInvitation(
     input.superAdminUsername,
     input.superAdminPassword,
   );
+  const subscriptionGrant = input.subscriptionGrant ?? { plan: 'free' };
   let invitation: CreatedInvitation | undefined;
   let copied = false;
   let handoffCommitted = false;
+  let rollbackFailed = false;
   let clipboardCleared = false;
   const errors: unknown[] = [];
 
@@ -158,7 +216,9 @@ export async function createShareableInvitation(
       baseUrl,
       session.accessToken,
       input.expiresInDays,
+      subscriptionGrant,
     );
+    requireMatchingSubscriptionGrant(invitation, subscriptionGrant);
     const handoffMessage = buildInvitationHandoffMessage({ baseUrl, invitation });
     await dependencies.clipboard.write(handoffMessage);
     copied = true;
@@ -170,6 +230,7 @@ export async function createShareableInvitation(
       try {
         await dependencies.revokeInvitation(baseUrl, session.accessToken, invitation.id);
       } catch (revocationError) {
+        rollbackFailed = true;
         errors.push(revocationError);
       }
     }
@@ -191,6 +252,12 @@ export async function createShareableInvitation(
   }
 
   if (errors.length > 0) {
+    if (rollbackFailed && invitation) {
+      throw new AggregateError(
+        errors,
+        `Invitation ${invitation.id} has an uncertain state after compensating revocation failed`,
+      );
+    }
     throw errors.length === 1
       ? errors[0] instanceof Error
         ? errors[0]

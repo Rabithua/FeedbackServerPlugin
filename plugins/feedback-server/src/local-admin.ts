@@ -6,15 +6,20 @@ import {
 import { normalizeBaseUrl } from './credentials.js';
 import {
   acceptAdminInvitation,
+  appliedSubscriptionMatchesGrant,
   createAdminInvitation,
+  invitationSubscriptionGrantsMatch,
   listOwnedProducts,
   revokeAdminInvitation,
   type AdminIdentity,
+  type AppliedInvitationSubscription,
+  type InvitationSubscriptionGrant,
 } from './invitation-api.js';
 
 interface ConsumableInvitation {
   id: string;
   token: string;
+  subscriptionGrant?: InvitationSubscriptionGrant;
 }
 
 class LocalAdminVerificationError extends Error {}
@@ -36,6 +41,7 @@ export interface LocalAdminDependencies {
     baseUrl: string,
     accessToken: string,
     expiresInDays: number,
+    subscriptionGrant: InvitationSubscriptionGrant,
   ) => Promise<ConsumableInvitation>;
   acceptInvitation: typeof acceptAdminInvitation;
   revokeInvitation: typeof revokeAdminInvitation;
@@ -50,6 +56,12 @@ export interface CreateLocalAdminInput {
   username: string;
   displayName: string;
   password: string;
+  subscriptionGrant?: InvitationSubscriptionGrant;
+}
+
+export interface CreateLocalAdminResult {
+  admin: AdminIdentity;
+  subscription: AppliedInvitationSubscription;
 }
 
 const defaultDependencies: LocalAdminDependencies = {
@@ -75,8 +87,9 @@ function isIndeterminateApiFailure(error: unknown): boolean {
 export async function createLocalAdmin(
   input: CreateLocalAdminInput,
   dependencies: LocalAdminDependencies = defaultDependencies,
-): Promise<AdminIdentity> {
+): Promise<CreateLocalAdminResult> {
   const baseUrl = normalizeBaseUrl(input.baseUrl);
+  const subscriptionGrant = input.subscriptionGrant ?? { plan: 'free' };
   const superAdminSession = await dependencies.login(
     baseUrl,
     input.superAdminUsername,
@@ -84,8 +97,9 @@ export async function createLocalAdmin(
   );
   let invitation: ConsumableInvitation | undefined;
   let invitationAccepted = false;
+  let grantVerificationFailed = false;
   const temporaryRefreshTokens = [superAdminSession.refreshToken];
-  let result: AdminIdentity | undefined;
+  let result: CreateLocalAdminResult | undefined;
   let operationError: unknown;
 
   const verifyNewAdminOnce = async (): Promise<AdminIdentity> => {
@@ -118,7 +132,18 @@ export async function createLocalAdmin(
       baseUrl,
       superAdminSession.accessToken,
       1,
+      subscriptionGrant,
     );
+    if (!invitationSubscriptionGrantsMatch(
+      invitation.subscriptionGrant,
+      subscriptionGrant,
+    )) {
+      grantVerificationFailed = true;
+      throw new Error(
+        `Invitation ${invitation.id} did not echo the requested initial subscription grant. `
+        + 'The FeedbackServer must be upgraded before creating subscription-bearing invitations.',
+      );
+    }
     try {
       const accepted = await dependencies.acceptInvitation(baseUrl, {
         token: invitation.token,
@@ -131,8 +156,21 @@ export async function createLocalAdmin(
       if (accepted.admin.role !== 'admin' || accepted.admin.username !== input.username) {
         throw new Error('Invitation created an unexpected administrator account');
       }
+      if (!accepted.subscription) {
+        throw new CommittedAdminCreationError(
+          new Error('The Server did not return the applied subscription summary'),
+        );
+      }
+      if (!appliedSubscriptionMatchesGrant(accepted.subscription, subscriptionGrant)) {
+        throw new CommittedAdminCreationError(
+          new Error('The Server applied a subscription that does not match the invitation grant'),
+        );
+      }
       try {
-        result = await verifyNewAdmin();
+        result = {
+          admin: await verifyNewAdmin(),
+          subscription: accepted.subscription,
+        };
       } catch (error) {
         if (isIndeterminateApiFailure(error)) {
           throw new CommittedAdminCreationError(error);
@@ -147,9 +185,13 @@ export async function createLocalAdmin(
         throw error;
       }
       try {
-        result = await verifyNewAdmin();
+        await verifyNewAdmin();
         invitationAccepted = true;
+        throw new CommittedAdminCreationError(error);
       } catch (verificationError) {
+        if (verificationError instanceof CommittedAdminCreationError) {
+          throw verificationError;
+        }
         if (isIndeterminateApiFailure(verificationError)) {
           invitationAccepted = true;
           throw new CommittedAdminCreationError(verificationError);
@@ -182,6 +224,12 @@ export async function createLocalAdmin(
   }
 
   if (operationError !== undefined || cleanupErrors.length > 0) {
+    if (grantVerificationFailed && invitation && cleanupErrors.length > 0) {
+      throw new AggregateError(
+        [operationError, ...cleanupErrors],
+        `Invitation ${invitation.id} has an uncertain state after compensating revocation failed`,
+      );
+    }
     if (result && operationError === undefined) {
       throw new CommittedAdminCreationError(
         new AggregateError(cleanupErrors, 'Committed administrator creation cleanup failed'),

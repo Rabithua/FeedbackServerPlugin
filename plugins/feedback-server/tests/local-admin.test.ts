@@ -8,6 +8,13 @@ import {
 
 const baseUrl = 'https://feedback.example.com/v1/api';
 const invitationToken = `fsinv_${'x'.repeat(48)}`;
+const subscriptionGrant = { plan: 'solo', term: 'perpetual' } as const;
+const subscription = {
+  plan: 'solo' as const,
+  term: 'perpetual' as const,
+  expiresAt: null,
+  graceEndsAt: null,
+};
 
 function dependencies(
   events: string[],
@@ -31,10 +38,15 @@ function dependencies(
       events.push(`logout:${refreshToken}`);
       return Promise.resolve();
     },
-    createInvitation: (_url, _accessToken, expiresInDays) => {
+    createInvitation: (_url, _accessToken, expiresInDays, grant) => {
       events.push('create-invitation');
       expect(expiresInDays).toBe(1);
-      return Promise.resolve({ id: 'invitation-id', token: invitationToken });
+      expect(grant).toEqual(subscriptionGrant);
+      return Promise.resolve({
+        id: 'invitation-id',
+        token: invitationToken,
+        subscriptionGrant,
+      });
     },
     acceptInvitation: (_url, input) => {
       events.push(`accept:${input.username}`);
@@ -48,6 +60,7 @@ function dependencies(
           displayName: input.displayName,
           role: 'admin',
         },
+        subscription,
       });
     },
     revokeInvitation: (_url, _accessToken, invitationId) => {
@@ -73,6 +86,7 @@ const input = {
   username: 'new-admin',
   displayName: 'New Administrator',
   password: 'new-password',
+  subscriptionGrant,
 };
 
 async function capturedError(operation: Promise<unknown>): Promise<unknown> {
@@ -87,9 +101,10 @@ async function capturedError(operation: Promise<unknown>): Promise<unknown> {
 describe('local administrator creation', () => {
   test('accepts a one-day invitation, verifies login and isolation, then logs out every session', async () => {
     const events: string[] = [];
-    const admin = await createLocalAdmin(input, dependencies(events));
+    const result = await createLocalAdmin(input, dependencies(events));
 
-    expect(admin).toMatchObject({ username: 'new-admin', role: 'admin' });
+    expect(result.admin).toMatchObject({ username: 'new-admin', role: 'admin' });
+    expect(result.subscription).toEqual(subscription);
     expect(events).toEqual([
       'login:owner',
       'create-invitation',
@@ -131,6 +146,49 @@ describe('local administrator creation', () => {
     ]);
   });
 
+  test('revokes before acceptance when the Server does not echo the requested grant', async () => {
+    const events: string[] = [];
+    const error = await capturedError(
+      createLocalAdmin(
+        input,
+        dependencies(events, {
+          createInvitation: () => Promise.resolve({
+            id: 'invitation-id',
+            token: invitationToken,
+          }),
+        }),
+      ),
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('must be upgraded');
+    expect((error as Error).message).not.toContain(invitationToken);
+    expect(events).toEqual([
+      'login:owner',
+      'revoke:invitation-id',
+      'logout:owner-refresh',
+    ]);
+  });
+
+  test('reports the invitation ID but not token when grant compensation is uncertain', async () => {
+    const events: string[] = [];
+    const error = await capturedError(
+      createLocalAdmin(
+        input,
+        dependencies(events, {
+          createInvitation: () => Promise.resolve({
+            id: 'invitation-id',
+            token: invitationToken,
+          }),
+          revokeInvitation: () => Promise.reject(new Error('revocation unavailable')),
+        }),
+      ),
+    );
+    expect(error).toBeInstanceOf(AggregateError);
+    expect((error as Error).message).toContain('invitation-id');
+    expect((error as Error).message).toContain('uncertain state');
+    expect((error as Error).message).not.toContain(invitationToken);
+  });
+
   test('does not revoke an accepted invitation when Product isolation verification fails', async () => {
     const events: string[] = [];
     const error = await capturedError(
@@ -154,6 +212,36 @@ describe('local administrator creation', () => {
     ]);
   });
 
+  test('does not claim success when the applied subscription differs from the invitation grant', async () => {
+    const events: string[] = [];
+    const error = await capturedError(
+      createLocalAdmin(
+        input,
+        dependencies(events, {
+          acceptInvitation: (_url, acceptedInput) => Promise.resolve({
+            accessToken: 'accepted-access',
+            refreshToken: 'accepted-refresh',
+            admin: {
+              id: 'new-id',
+              username: acceptedInput.username,
+              displayName: acceptedInput.displayName,
+              role: 'admin',
+            },
+            subscription: {
+              plan: 'free',
+              term: 'free',
+              expiresAt: null,
+              graceEndsAt: null,
+            },
+          }),
+        }),
+      ),
+    );
+    expect(error).toBeInstanceOf(CommittedAdminCreationError);
+    expect(events).not.toContain('revoke:invitation-id');
+    expect(events).not.toContain('list-products');
+  });
+
   test('continues logging out when invitation revocation fails', async () => {
     const events: string[] = [];
     const error = await capturedError(
@@ -174,19 +262,21 @@ describe('local administrator creation', () => {
     expect(events.slice(-2)).toEqual(['revoke:failed', 'logout:owner-refresh']);
   });
 
-  test('recovers when invitation acceptance commits but its response is lost', async () => {
+  test('reports committed state when acceptance succeeds but its subscription response is lost', async () => {
     const events: string[] = [];
-    const admin = await createLocalAdmin(
-      input,
-      dependencies(events, {
-        acceptInvitation: () => {
-          events.push('accept:response-lost');
-          return Promise.reject(new TypeError('connection closed after commit'));
-        },
-      }),
+    const error = await capturedError(
+      createLocalAdmin(
+        input,
+        dependencies(events, {
+          acceptInvitation: () => {
+            events.push('accept:response-lost');
+            return Promise.reject(new TypeError('connection closed after commit'));
+          },
+        }),
+      ),
     );
 
-    expect(admin).toMatchObject({ username: 'new-admin', role: 'admin' });
+    expect(error).toBeInstanceOf(CommittedAdminCreationError);
     expect(events).toEqual([
       'login:owner',
       'create-invitation',
@@ -255,7 +345,7 @@ describe('local administrator creation', () => {
   test('retries transient verification failures after acceptance has committed', async () => {
     const events: string[] = [];
     let productAttempts = 0;
-    const admin = await createLocalAdmin(
+    const result = await createLocalAdmin(
       input,
       dependencies(events, {
         listProducts: () => {
@@ -268,7 +358,7 @@ describe('local administrator creation', () => {
       }),
     );
 
-    expect(admin).toMatchObject({ username: 'new-admin', role: 'admin' });
+    expect(result.admin).toMatchObject({ username: 'new-admin', role: 'admin' });
     expect(events).toContain('verification-retry:1');
     expect(events.filter((event) => event === 'login:new-admin')).toHaveLength(2);
     expect(events).not.toContain('revoke:invitation-id');

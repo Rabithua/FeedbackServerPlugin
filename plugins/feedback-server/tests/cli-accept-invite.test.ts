@@ -12,6 +12,23 @@ const existingCredentials: StoredCredentials = {
   username: 'current-admin',
 };
 
+function configuredAccount(username = 'invited-admin') {
+  return {
+    credentials: {
+      baseUrl: 'https://invited.example.com/v1/api',
+      token: `fspat_${'c'.repeat(48)}`,
+      username,
+      expiresAt: '2026-09-01T00:00:00.000Z',
+    },
+    subscription: {
+      plan: 'studio' as const,
+      term: 'fixed' as const,
+      expiresAt: '2027-08-22T00:00:00.000Z',
+      graceEndsAt: '2027-08-29T00:00:00.000Z',
+    },
+  };
+}
+
 function dependencies(
   events: string[],
   overrides: Partial<AdminAcceptInviteDependencies> = {},
@@ -64,12 +81,7 @@ describe('accept-invite existing Agent choice', () => {
     await runAdminAcceptInvite(options, dependencies(events, {
       readCredentials: () => Promise.resolve(undefined),
       promptPassword: () => Promise.resolve(password),
-      acceptInvitation: () => Promise.resolve({
-        baseUrl: 'https://invited.example.com/v1/api',
-        token: `fspat_${'c'.repeat(48)}`,
-        username: 'invited-admin',
-        expiresAt: '2026-09-01T00:00:00.000Z',
-      }),
+      acceptInvitation: () => Promise.resolve(configuredAccount()),
     }));
 
     const completion = events.find((event) => event.startsWith('log:Administrator')) ?? '';
@@ -77,6 +89,8 @@ describe('accept-invite existing Agent choice', () => {
     expect(completion).toContain('app configuration is not complete yet');
     expect(completion).toContain('Open a new Agent task');
     expect(completion).toContain('帮我完成 FeedbackServer 初始配置');
+    expect(completion).toContain('Server applied initial subscription: Studio (fixed)');
+    expect(completion).toContain('grace ends 2027-08-29T00:00:00.000Z');
   });
 
   test('keeps the existing account by default without reading passwords or consuming the invite', async () => {
@@ -136,11 +150,7 @@ describe('accept-invite existing Agent choice', () => {
         },
         acceptInvitation: (input) => {
           events.push(`accept-invitation:${input.username}:${input.password}`);
-          return Promise.resolve({
-            baseUrl: input.baseUrl,
-            token: `fspat_${'c'.repeat(48)}`,
-            username: input.username,
-          });
+          return Promise.resolve(configuredAccount(input.username));
         },
       }),
     );
