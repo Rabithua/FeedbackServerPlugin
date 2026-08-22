@@ -154,7 +154,7 @@ The command
 infers `--url` and `--username` from the existing Keychain Agent configuration when possible, reads
 the saved super administrator password from Keychain without opening Terminal or prompting, then
 prints the handoff package to stdout so an Agent can paste it back as a chat code block. The old
-clipboard handoff is still available with `--delivery clipboard`. Plugin 0.6.13 verifies that the
+clipboard handoff is still available with `--delivery clipboard`. Plugin 0.6.14 verifies that the
 Server echoes the requested grant; if an older Server ignores it, the CLI immediately revokes the
 new invitation and reports that the Server must be upgraded.
 

@@ -122,4 +122,51 @@ describe('invitation API contract', () => {
       { plan: 'studio', term: 'year' },
     )).toBe(false);
   });
+
+  test('validates clamped expiry candidates when the acceptance window crosses UTC midnight', () => {
+    const cases = [
+      {
+        grant: { plan: 'solo', term: 'month' } as const,
+        acceptanceWindow: {
+          earliest: new Date('2028-01-29T23:59:30.000Z'),
+          latest: new Date('2028-01-30T00:00:30.000Z'),
+        },
+        expiresAt: '2028-02-29T00:00:00.000Z',
+        graceEndsAt: '2028-03-07T00:00:00.000Z',
+      },
+      {
+        grant: { plan: 'studio', term: 'year' } as const,
+        acceptanceWindow: {
+          earliest: new Date('2028-02-28T23:59:30.000Z'),
+          latest: new Date('2028-02-29T00:00:30.000Z'),
+        },
+        expiresAt: '2029-02-28T00:00:00.000Z',
+        graceEndsAt: '2029-03-07T00:00:00.000Z',
+      },
+    ];
+
+    for (const testCase of cases) {
+      expect(appliedSubscriptionMatchesGrant(
+        {
+          plan: testCase.grant.plan,
+          term: 'fixed',
+          expiresAt: testCase.expiresAt,
+          graceEndsAt: testCase.graceEndsAt,
+        },
+        testCase.grant,
+        testCase.acceptanceWindow,
+      )).toBe(true);
+    }
+
+    expect(appliedSubscriptionMatchesGrant(
+      {
+        plan: 'solo',
+        term: 'fixed',
+        expiresAt: '2028-02-29T12:00:00.000Z',
+        graceEndsAt: '2028-03-07T12:00:00.000Z',
+      },
+      { plan: 'solo', term: 'month' },
+      cases[0]!.acceptanceWindow,
+    )).toBe(false);
+  });
 });

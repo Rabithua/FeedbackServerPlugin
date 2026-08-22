@@ -46,6 +46,37 @@ function addUtcCalendarMonthsClamped(value: Date, months: 1 | 12): Date {
   ));
 }
 
+function expiryCanComeFromAcceptanceWindow(
+  expiresAt: number,
+  acceptanceWindow: { earliest: number; latest: number },
+  months: 1 | 12,
+): boolean {
+  const expiry = new Date(expiresAt);
+  const sourceMonthIndex = expiry.getUTCMonth() - months;
+  const sourceYear = expiry.getUTCFullYear() + Math.floor(sourceMonthIndex / 12);
+  const sourceMonth = ((sourceMonthIndex % 12) + 12) % 12;
+  const lastSourceDay = new Date(Date.UTC(sourceYear, sourceMonth + 1, 0)).getUTCDate();
+
+  for (let sourceDay = 1; sourceDay <= lastSourceDay; sourceDay += 1) {
+    const candidateAcceptedAt = Date.UTC(
+      sourceYear,
+      sourceMonth,
+      sourceDay,
+      expiry.getUTCHours(),
+      expiry.getUTCMinutes(),
+      expiry.getUTCSeconds(),
+      expiry.getUTCMilliseconds(),
+    );
+    if (
+      candidateAcceptedAt >= acceptanceWindow.earliest
+      && candidateAcceptedAt <= acceptanceWindow.latest
+      && addUtcCalendarMonthsClamped(new Date(candidateAcceptedAt), months).getTime() === expiresAt
+    ) return true;
+  }
+
+  return false;
+}
+
 export function invitationSubscriptionGrantsMatch(
   actual: InvitationSubscriptionGrant | undefined,
   expected: InvitationSubscriptionGrant,
@@ -91,15 +122,11 @@ export function appliedSubscriptionMatchesGrant(
     || earliestAcceptedAt > latestAcceptedAt
   ) return false;
   const durationMonths = grant.term === 'month' ? 1 : 12;
-  const earliestExpiry = addUtcCalendarMonthsClamped(
-    new Date(earliestAcceptedAt),
+  return expiryCanComeFromAcceptanceWindow(
+    expiresAt,
+    { earliest: earliestAcceptedAt, latest: latestAcceptedAt },
     durationMonths,
-  ).getTime();
-  const latestExpiry = addUtcCalendarMonthsClamped(
-    new Date(latestAcceptedAt),
-    durationMonths,
-  ).getTime();
-  return expiresAt >= earliestExpiry && expiresAt <= latestExpiry;
+  );
 }
 
 export interface InvitationSummary {

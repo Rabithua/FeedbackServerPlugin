@@ -190,6 +190,31 @@ describe('local administrator creation', () => {
     expect((error as Error).message).not.toContain(invitationToken);
   });
 
+  test('does not report uncertain invitation state when revocation succeeded but logout failed', async () => {
+    const events: string[] = [];
+    const error = await capturedError(
+      createLocalAdmin(
+        input,
+        dependencies(events, {
+          createInvitation: () => Promise.resolve({
+            id: 'invitation-id',
+            token: invitationToken,
+          }),
+          logout: (_url, refreshToken) => {
+            events.push(`logout:${refreshToken}:failed`);
+            return Promise.reject(new Error('logout unavailable'));
+          },
+        }),
+      ),
+    );
+
+    expect(error).toBeInstanceOf(AggregateError);
+    expect((error as Error).message).toBe('Administrator creation or cleanup failed');
+    expect((error as Error).message).not.toContain('uncertain state');
+    expect(events).toContain('revoke:invitation-id');
+    expect(events).toContain('logout:owner-refresh:failed');
+  });
+
   test('does not revoke an accepted invitation when Product isolation verification fails', async () => {
     const events: string[] = [];
     const error = await capturedError(
