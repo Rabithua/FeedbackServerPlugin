@@ -1,7 +1,7 @@
 {
   "name": "feedback-server",
-  "version": "0.6.14",
-  "description": "Manage FeedbackServer products, feedback, activity, roadmaps, releases, attachments, Bark, Webhooks, and audit records through MCP.",
+  "version": "0.7.0",
+  "description": "Manage FeedbackServer products, feedback, waitlists, activity, roadmaps, releases, attachments, Bark, Webhooks, and audit records through MCP.",
   "author": {
     "name": "Rabithua",
     "url": "https://github.com/Rabithua"

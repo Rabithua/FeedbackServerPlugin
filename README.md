@@ -110,6 +110,10 @@ switch with risk preview and mutation preconditions. It does not expose subscrip
 renewals, or downgrades. The Keychain-backed super-administrator CLI is the sole exception: it can
 attach an immutable initial Free, Solo, or Studio grant to a new-account invitation.
 
+Plugin 0.7.0 adds owner-scoped FeedbackKit waitlist tools for stable listing/search, detail with
+internal notes, preconditioned lifecycle updates, note append, and explicitly confirmed permanent
+deletion. Waitlist entries are independent from Products and do not consume subscription capacity.
+
 For a live acceptance test, explicitly select a Product and repeat its slug:
 
 ```bash

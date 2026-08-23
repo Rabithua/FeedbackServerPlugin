@@ -83,6 +83,35 @@ const toolScenarios: ToolScenario[] = [
     method: 'DELETE',
   },
   {
+    name: 'list_waitlist_entries',
+    arguments: { status: 'new', platform: 'ios_ipados', search: 'Example', limit: 25 },
+    path: '/v1/api/admin/waitlist?status=new&platform=ios_ipados&search=Example&limit=25',
+  },
+  {
+    name: 'get_waitlist_entry',
+    arguments: { entryId: productId },
+    path: `/v1/api/admin/waitlist/${productId}`,
+  },
+  {
+    name: 'update_waitlist_status',
+    arguments: { entryId: productId, status: 'contacted' },
+    path: `/v1/api/admin/waitlist/${productId}`,
+    method: 'PATCH',
+  },
+  {
+    name: 'add_waitlist_note',
+    arguments: { entryId: productId, body: 'Followed up.' },
+    path: `/v1/api/admin/waitlist/${productId}/notes`,
+    method: 'POST',
+  },
+  {
+    name: 'delete_waitlist_entry',
+    arguments: { entryId: productId },
+    path: `/v1/api/admin/waitlist/${productId}`,
+    method: 'DELETE',
+    confirmation: 'risk',
+  },
+  {
     name: 'list_feedback',
     arguments: { productId, type: 'suggestion', status: 'open', limit: 25 },
     path: `/v1/api/admin/feedback?productId=${productId}&status=open&type=suggestion&limit=25`,
@@ -363,7 +392,7 @@ function resultData(result: { structuredContent?: unknown }) {
   return (result.structuredContent as { data: Record<string, unknown> }).data;
 }
 
-describe('MCP server 0.6.14', () => {
+describe('MCP server 0.7.0', () => {
   const originalFetch = globalThis.fetch;
   let client: Client;
   let server: ReturnType<typeof createServer>;
@@ -412,7 +441,7 @@ describe('MCP server 0.6.14', () => {
   test('exposes the new surface and removes legacy Feedback and Item fields', async () => {
     const tools = (await client.listTools()).tools;
     const names = tools.map(({ name }) => name);
-    expect(names).toHaveLength(62);
+    expect(names).toHaveLength(67);
     expect(names).toContain('get_subscription');
     expect(names).toContain('get_onboarding_status');
     expect(names).toContain('set_primary_product');
@@ -422,6 +451,8 @@ describe('MCP server 0.6.14', () => {
     expect(names).toContain('set_developer_post_publication');
     expect(names).toContain('get_product_webhook_config');
     expect(names).toContain('retry_webhook_delivery');
+    expect(names).toContain('list_waitlist_entries');
+    expect(names).toContain('delete_waitlist_entry');
     const serialized = JSON.stringify(tools);
     expect(serialized).toContain('conversation');
     expect(serialized).toContain('roadmapStage');
@@ -587,7 +618,7 @@ describe('MCP server 0.6.14', () => {
     expect(JSON.stringify(result)).not.toContain('pk_must_not_be_returned');
   });
 
-  test('routes all 61 existing tools through their documented API contracts', async () => {
+  test('routes every tool scenario through its documented API contract', async () => {
     const requests: Request[] = [];
     let activeScenario = '';
     globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
@@ -606,6 +637,11 @@ describe('MCP server 0.6.14', () => {
               currentAccess: 'read_only',
               proposedAccess: 'read_write',
             }],
+            precondition: mutationPrecondition,
+          };
+        } else if (url.pathname.includes('/waitlist/')) {
+          data = {
+            entry: { id: productId, status: 'new' },
             precondition: mutationPrecondition,
           };
         } else if (url.pathname.includes('/developer-posts/')) {
@@ -639,6 +675,20 @@ describe('MCP server 0.6.14', () => {
             precondition: mutationPrecondition,
           };
         }
+      } else if (
+        url.pathname.includes(`/admin/waitlist/${productId}`)
+        && request.method === 'GET'
+      ) {
+        data = {
+          entry: {
+            id: productId,
+            appName: 'Example App',
+            platform: 'ios_ipados',
+            email: 'owner@example.com',
+            createdAt: '2026-08-24T00:00:00.000Z',
+          },
+          notes: [{ id: secondId }],
+        };
       }
       return Promise.resolve(Response.json({ code: 'ok', message: 'success', data }));
     }) as typeof fetch;
@@ -674,7 +724,104 @@ describe('MCP server 0.6.14', () => {
         expect(request!.headers.get('if-match')).toBe(mutationPrecondition);
         expect(await request!.clone().json()).toEqual({ productId: secondId });
       }
+      if (scenario.name === 'update_waitlist_status') {
+        expect(request!.headers.get('if-match')).toBe(mutationPrecondition);
+        expect(await request!.clone().json()).toEqual({ status: 'contacted' });
+      }
+      if (scenario.name === 'add_waitlist_note') {
+        expect(await request!.clone().json()).toEqual({ body: 'Followed up.' });
+      }
     }
+  });
+
+  test('updates waitlist status with a fresh precondition and skips same-state writes', async () => {
+    const requests: Request[] = [];
+    let currentStatus: 'new' | 'contacted' = 'new';
+    globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init);
+      requests.push(request);
+      const data = request.method === 'GET'
+        ? { entry: { id: productId, status: currentStatus }, precondition: mutationPrecondition }
+        : { id: productId, status: 'contacted' };
+      return Promise.resolve(Response.json({ code: 'ok', message: 'success', data }));
+    }) as typeof fetch;
+
+    const changed = await client.callTool({
+      name: 'update_waitlist_status',
+      arguments: { entryId: productId, status: 'contacted' },
+    });
+    expect(changed.isError).not.toBe(true);
+    expect(requests.map(({ method }) => method)).toEqual(['GET', 'PATCH']);
+    expect(requests[1]?.headers.get('if-match')).toBe(mutationPrecondition);
+
+    requests.length = 0;
+    currentStatus = 'contacted';
+    const unchanged = await client.callTool({
+      name: 'update_waitlist_status',
+      arguments: { entryId: productId, status: 'contacted' },
+    });
+    expect(resultData(unchanged)).toEqual({
+      status: 'no_change',
+      entryId: productId,
+      currentStatus: 'contacted',
+    });
+    expect(requests.map(({ method }) => method)).toEqual(['GET']);
+  });
+
+  test('requires an explicit single-use confirmation before permanent waitlist deletion', async () => {
+    const requests: Request[] = [];
+    globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init);
+      requests.push(request);
+      const data = request.method === 'GET'
+        ? {
+            entry: {
+              id: productId,
+              appName: 'Example App',
+              platform: 'web',
+              email: 'hello@example.com',
+              createdAt: '2026-08-24T00:00:00.000Z',
+            },
+            notes: [{ id: secondId }],
+          }
+        : null;
+      return Promise.resolve(Response.json({ code: 'ok', message: 'success', data }));
+    }) as typeof fetch;
+
+    const preview = await client.callTool({
+      name: 'delete_waitlist_entry',
+      arguments: { entryId: productId },
+    });
+    expect(resultData(preview)).toMatchObject({
+      status: 'confirmation_required',
+      preview: {
+        entryId: productId,
+        appName: 'Example App',
+        platform: 'web',
+        noteCount: 1,
+      },
+    });
+    expect(requests.map(({ method }) => method)).toEqual(['GET']);
+
+    const executed = await client.callTool({
+      name: 'delete_waitlist_entry',
+      arguments: {
+        entryId: productId,
+        confirmationId: resultData(preview).confirmationId,
+      },
+    });
+    expect(executed.isError).not.toBe(true);
+    expect(requests.map(({ method }) => method)).toEqual(['GET', 'DELETE']);
+
+    const replay = await client.callTool({
+      name: 'delete_waitlist_entry',
+      arguments: {
+        entryId: productId,
+        confirmationId: resultData(preview).confirmationId,
+      },
+    });
+    expect(replay.isError).toBe(true);
+    expect(requests.map(({ method }) => method)).toEqual(['GET', 'DELETE']);
   });
 
   test('binds primary Product confirmation to target, identity, and precondition', async () => {

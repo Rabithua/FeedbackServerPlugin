@@ -132,6 +132,9 @@ const appStoreBindingFields = {
   locale: z.string().min(2).max(35),
 };
 
+const waitlistStatus = z.enum(['new', 'contacted', 'invited', 'converted', 'archived']);
+const waitlistPlatform = z.enum(['ios_ipados', 'macos', 'android', 'web', 'other']);
+
 interface ToolContext {
   credentials: StoredCredentials;
   client: FeedbackServerApiClient;
@@ -732,6 +735,95 @@ export function registerFeedbackServerTools(
       client.request(`/admin/products/${encodeURIComponent(productId)}/app-store`, {
         method: 'DELETE',
       }),
+  );
+
+  registerRead(
+    server,
+    'list_waitlist_entries',
+    'List owner-scoped FeedbackKit waitlist entries with lifecycle, platform, search, and stable cursor filters. Archived entries are hidden unless requested explicitly.',
+    z.object({
+      status: waitlistStatus.optional(),
+      platform: waitlistPlatform.optional(),
+      search: z.string().trim().min(1).max(160).optional(),
+      cursor: z.string().max(1000).optional(),
+      limit: z.number().int().min(1).max(100).default(50),
+    }),
+    async (input, { client }) =>
+      client.request('/admin/waitlist', { query: withQuery(input) }),
+  );
+  registerRead(
+    server,
+    'get_waitlist_entry',
+    'Get one owner-scoped waitlist entry and its append-only internal notes.',
+    z.object({ entryId: uuid }),
+    async ({ entryId }, { client }) =>
+      client.request(`/admin/waitlist/${encodeURIComponent(entryId)}`),
+  );
+  registerRiskAwareWrite(
+    server,
+    confirmations,
+    'update_waitlist_status',
+    'Update the internal follow-up status for one waitlist entry.',
+    z.object({ entryId: uuid, status: waitlistStatus, ...confirmation }),
+    { destructiveHint: false, idempotentHint: true },
+    async ({ entryId, status }, { client }) => {
+      const current = await client.request<{
+        entry: { status: z.infer<typeof waitlistStatus> };
+        precondition: string;
+      }>(`/admin/waitlist/${encodeURIComponent(entryId)}/update-context`);
+      return current.entry.status === status
+        ? { result: { status: 'no_change', entryId, currentStatus: status } }
+        : { precondition: current.precondition };
+    },
+    async ({ entryId, status }, { client }, precondition) =>
+      client.request(`/admin/waitlist/${encodeURIComponent(entryId)}`, {
+        method: 'PATCH',
+        body: { status },
+        ...(precondition ? { ifMatch: precondition } : {}),
+      }),
+  );
+  registerDirectWrite(
+    server,
+    'add_waitlist_note',
+    'Append an administrator-only internal note to one waitlist entry.',
+    z.object({ entryId: uuid, body: z.string().trim().min(1).max(5_000) }),
+    async ({ entryId, body }, { client }) =>
+      client.request(`/admin/waitlist/${encodeURIComponent(entryId)}/notes`, {
+        method: 'POST',
+        body: { body },
+      }),
+  );
+  registerRiskAwareWrite(
+    server,
+    confirmations,
+    'delete_waitlist_entry',
+    'Permanently delete a waitlist entry and all of its internal notes for a data-deletion request.',
+    z.object({ entryId: uuid, ...confirmation }),
+    { destructiveHint: true, idempotentHint: false },
+    async ({ entryId }, { client }) => {
+      const detail = await client.request<{
+        entry: {
+          appName: string;
+          platform: z.infer<typeof waitlistPlatform>;
+          email: string;
+          createdAt: string;
+        };
+        notes: unknown[];
+      }>(`/admin/waitlist/${encodeURIComponent(entryId)}`);
+      return {
+        preview: {
+          entryId,
+          appName: detail.entry.appName,
+          platform: detail.entry.platform,
+          email: detail.entry.email,
+          createdAt: detail.entry.createdAt,
+          noteCount: detail.notes.length,
+          effect: 'Permanently deletes the signup email, App details, and all internal notes; this cannot be undone.',
+        },
+      };
+    },
+    async ({ entryId }, { client }) =>
+      client.request(`/admin/waitlist/${encodeURIComponent(entryId)}`, { method: 'DELETE' }),
   );
 
   registerRead(

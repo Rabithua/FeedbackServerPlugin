@@ -40,6 +40,10 @@ visitor Keychain service without printing credentials or the Product key. The MC
 this server-computed subscription state and switch the primary Product through a protected risk
 preview, but cannot grant, renew, or downgrade a subscription. Initial invitation grants are a
 separate Keychain-backed super-administrator CLI operation, not an MCP capability.
+Plugin 0.7.0 also manages the connected administrator's independent FeedbackKit waitlist through
+`list_waitlist_entries`, `get_waitlist_entry`, `update_waitlist_status`, `add_waitlist_note`, and
+the explicitly confirmed `delete_waitlist_entry`. Waitlist operations never require Product
+selection or consume Product plan capacity.
 `test roundtrip` is an explicit live acceptance test: it requires the selected Product slug to be
 repeated with `--confirm`, covers submit/receive/reply/unread/read, and deletes the unique test
 Visitor and its Feedback afterward, including on intermediate failure.
