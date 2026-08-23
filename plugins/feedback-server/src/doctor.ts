@@ -442,7 +442,14 @@ export async function diagnoseFeedbackServer(
     };
   }
 
-  const requiredScopes = ['products:read', 'feedback:read', 'feedback:write'];
+  const requiredScopes = [
+    'products:read',
+    'feedback:read',
+    'feedback:write',
+    'waitlist:read',
+    'waitlist:write',
+    'waitlist:dangerous',
+  ];
   if (credentials.scopes) {
     const scopes = credentials.scopes;
     const missing = requiredScopes.filter((scope) => !scopes.includes(scope));
@@ -451,7 +458,7 @@ export async function diagnoseFeedbackServer(
       'PAT scopes',
       missing.length === 0 ? 'pass' : 'warn',
       missing.length === 0
-        ? 'PAT includes Product read and Feedback round-trip scopes.'
+        ? 'PAT includes Product, Feedback round-trip, and waitlist management scopes.'
         : `PAT is missing recommended scopes: ${missing.join(', ')}.`,
     ));
   } else {
