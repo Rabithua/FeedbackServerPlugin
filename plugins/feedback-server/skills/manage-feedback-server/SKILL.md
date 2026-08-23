@@ -1,6 +1,6 @@
 ---
 name: manage-feedback-server
-description: Manage FeedbackServer apps (Products), subscription limits and Product access, private/public Feedback, private diagnostic bundles, internal notes and developer replies, Developer Posts, Product roadmaps, translations, Releases, attachments, Bark and Product Webhook configuration and delivery records, App Store changelog initialization, and audit history through the feedback-server MCP tools. Use when a user asks to inspect, triage, organize, reply to, publish, configure, or delete FeedbackServer data, or refers to app feedback, diagnostics, subscription usage, activity, roadmap, changelog, notifications, or FeedbackServer administration.
+description: Manage FeedbackServer apps (Products), subscription limits and Product access, owner-scoped waitlists, private/public Feedback, private diagnostic bundles, internal notes and developer replies, Developer Posts, Product roadmaps, translations, Releases, attachments, Bark and Product Webhook configuration and delivery records, App Store changelog initialization, and audit history through the feedback-server MCP tools. Use when a user asks to inspect, triage, organize, reply to, publish, configure, or delete FeedbackServer data, or refers to app feedback, waitlists, diagnostics, subscription usage, activity, roadmap, changelog, notifications, or FeedbackServer administration.
 ---
 
 # Manage FeedbackServer
@@ -207,6 +207,26 @@ CLI exceptions; do not reproduce their HTTP calls manually.
   preview and wait for explicit confirmation before repeating the same call with `confirmationId`.
 - Never display, log, or return a signing secret. A configured endpoint must remain owned and
   controlled by the Product owner.
+
+## Manage waitlist entries
+
+- Waitlist entries belong directly to the connected administrator and are not Products, Feedback,
+  Visitors, or subscription usage. Do not ask the user to select a Product before waitlist work.
+- Use `list_waitlist_entries` with status, platform, or search filters. Archived rows are hidden by
+  default; request `status: archived` when the user explicitly wants them. Follow `nextCursor` until
+  the requested range is complete.
+- Use `get_waitlist_entry` before summarizing the signup or its internal follow-up history. Email is
+  private contact data: include it only when the user's task needs the address, and never copy it
+  into unrelated summaries.
+- `update_waitlist_status` and `add_waitlist_note` are direct internal writes after resolving the
+  exact entry. Status is `new`, `contacted`, `invited`, `converted`, or `archived`. A same-state
+  update returns `no_change`; a stale precondition requires a fresh read and must not be retried
+  automatically.
+- `delete_waitlist_entry` is permanent and exists for data-deletion requests. First call it without
+  `confirmationId`, show the returned App/platform/notes preview, and wait for explicit user
+  confirmation. Then repeat the unchanged arguments with the single-use confirmation ID. Do not
+  substitute archival when permanent deletion was requested, or permanently delete when archival
+  was requested.
 
 ## Manage public Activity
 
