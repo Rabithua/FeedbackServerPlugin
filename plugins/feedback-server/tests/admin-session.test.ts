@@ -96,6 +96,14 @@ async function capturedError(operation: Promise<unknown>): Promise<unknown> {
 }
 
 describe('Agent configuration lifecycle', () => {
+  test('requests every scope required by the waitlist tools', () => {
+    expect(AGENT_SCOPES).toEqual(expect.arrayContaining([
+      'waitlist:read',
+      'waitlist:write',
+      'waitlist:dangerous',
+    ]));
+  });
+
   test('preserves multibyte UTF-8 in hidden password input across chunks', () => {
     const input = new HiddenPasswordInput();
     const encoded = Buffer.from('密碼🔒');

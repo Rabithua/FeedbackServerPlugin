@@ -11,7 +11,7 @@ const transport = new StdioClientTransport({
   },
   stderr: 'pipe',
 });
-const client = new Client({ name: 'feedback-server-stdio-smoke', version: '0.7.0' });
+const client = new Client({ name: 'feedback-server-stdio-smoke', version: '0.7.1' });
 
 try {
   await client.connect(transport);

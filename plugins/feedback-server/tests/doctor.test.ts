@@ -13,7 +13,14 @@ const credentials: StoredCredentials = {
   baseUrl: 'https://feedback.example.com/v1/api',
   token: `fspat_${'a'.repeat(64)}`,
   username: 'owner',
-  scopes: ['products:read', 'feedback:read', 'feedback:write'],
+  scopes: [
+    'products:read',
+    'feedback:read',
+    'feedback:write',
+    'waitlist:read',
+    'waitlist:write',
+    'waitlist:dangerous',
+  ],
   expiresAt: '2027-08-07T00:00:00.000Z',
 };
 
