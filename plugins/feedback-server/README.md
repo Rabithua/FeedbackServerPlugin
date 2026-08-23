@@ -5,9 +5,9 @@ the shared MCP server, `manage-feedback-server` Skill, Keychain-backed CLI, test
 standalone bundles. It uses only FeedbackServer's documented `/v1/api` HTTPS surface.
 
 Platform-specific metadata is isolated under `.codex-plugin/`, `.claude-plugin/`, the inline Codex
-MCP declaration, and `.mcp.claude.json`. Both platforms load the same `skills/`, `dist/server.mjs`,
+MCP declaration, and Claude Code's canonical `.mcp.json`. Both platforms load the same `skills/`, `dist/server.mjs`,
 and Keychain credential. `bin/feedback-server` loads `dist/cli.mjs`, so account workflows run from a
-cached or cloned distribution without installing source dependencies.
+cached distribution without cloning the repository or installing source dependencies.
 
 ```text
 feedback-server doctor
@@ -25,7 +25,7 @@ feedback-server admin accept-invite
 feedback-server admin create-local --plan free
 ```
 
-After account connection, start a new Agent task with `帮我完成 FeedbackServer 初始配置`. The
+After account connection, continue the current Agent task with `帮我完成 FeedbackServer 初始配置`. The
 Agent uses the read-only `get_onboarding_status` tool to show one next step at a time, without
 persisting completion or skip state. It can create/select a Product, detect a local iOS App, offer
 Bark/Webhook/defer notification choices, recommend an optional roundtrip, and then suggest advanced
@@ -36,7 +36,9 @@ reports effective plan and lifecycle, Apps and storage usage, read-only Products
 warnings, followed by ordered onboarding next actions. JSON adds `onboarding` and `nextActions`
 fields. Passing `--app-path` checks FeedbackKit 0.1.29 or newer, warns when a newer stable GitHub
 Release is available, and checks the endpoint and Product binding, language policy, and dedicated
-visitor Keychain service without printing credentials or the Product key. The MCP surface can read
+visitor Keychain service without printing credentials or the Product key. FeedbackKit 0.2 and
+newer pass when they use the fixed production endpoint, bundle-derived Keychain service, and
+follow-host language defaults. The MCP surface can read
 this server-computed subscription state and switch the primary Product through a protected risk
 preview, but cannot grant, renew, or downgrade a subscription. Initial invitation grants are a
 separate Keychain-backed super-administrator CLI operation, not an MCP capability.
@@ -55,7 +57,7 @@ stdout by default, and never opens Terminal or prompts for that password. The pa
 time-limited one-time token and an Agent-ready task prompt that the recipient can paste directly
 into Codex or Claude Code. In Codex, the Agent lists marketplaces and plugins first, upgrades an
 existing marketplace or adds it when absent, and installs the plugin only when missing. It then
-prepares a command rooted at the checkout's real absolute path; the recipient runs `accept-invite`
+uses the credential-free `prepare_local_setup` tool to prepare the cached bundle's command; the recipient runs `accept-invite`
 in a visible interactive terminal so hidden password input never passes through chat or a private
 Agent PTY. Invitations default to Free; Solo and Studio require a `month`, `year`, or `perpetual`
 subscription term. Fixed terms start when the recipient accepts, independently of the invitation's
@@ -95,5 +97,5 @@ bun install --frozen-lockfile
 bun run check
 ```
 
-See the repository [README](../../README.md) for installation, upgrades, onboarding, ownership, and
+See the repository [README](https://github.com/Rabithua/FeedbackServerPlugin#readme) for installation, upgrades, onboarding, ownership, and
 security behavior.

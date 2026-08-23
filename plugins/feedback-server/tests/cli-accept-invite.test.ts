@@ -87,7 +87,7 @@ describe('accept-invite existing Agent choice', () => {
     const completion = events.find((event) => event.startsWith('log:Administrator')) ?? '';
     expect(completion).toContain('Account connection is complete');
     expect(completion).toContain('app configuration is not complete yet');
-    expect(completion).toContain('Open a new Agent task');
+    expect(completion).toContain('Return to the current Agent task');
     expect(completion).toContain('帮我完成 FeedbackServer 初始配置');
     expect(completion).toContain('Server applied initial subscription: Studio (fixed)');
     expect(completion).toContain('grace ends 2027-08-29T00:00:00.000Z');

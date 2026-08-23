@@ -20,6 +20,7 @@ import {
   type PluginUpdateNotice,
   type UpdateNoticeProvider,
 } from './release-updates.js';
+import { localSetupInputSchema, prepareLocalSetup } from './local-setup.js';
 
 const uuid = z.uuid();
 const confirmation = {
@@ -288,6 +289,35 @@ function registerRead<T extends ObjectSchema>(
   );
 }
 
+function registerLocalRead<T extends ObjectSchema>(
+  server: McpServer,
+  name: string,
+  description: string,
+  inputSchema: T,
+  handler: (input: z.infer<T>) => unknown,
+): void {
+  toolRegistrar(server)(
+    name,
+    {
+      description,
+      inputSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async (input) => {
+      try {
+        return success(await handler(inputSchema.parse(input)));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+}
+
 function registerDirectWrite<T extends ObjectSchema>(
   server: McpServer,
   name: string,
@@ -465,6 +495,13 @@ export function registerFeedbackServerTools(
 ): void {
   updateNoticeProviders.set(server, updateNotices);
   setupNoticeProviders.set(server, setupNotices);
+  registerLocalRead(
+    server,
+    'prepare_local_setup',
+    'Prepare, but never execute, the exact installed FeedbackServer CLI command for account configuration or invitation acceptance. Passwords and PATs must still be entered only in the visible terminal opened by the user.',
+    localSetupInputSchema,
+    (input) => prepareLocalSetup(input),
+  );
   registerRead(
     server,
     'health',

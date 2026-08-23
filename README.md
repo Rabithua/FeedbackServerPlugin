@@ -12,15 +12,15 @@ codex plugin marketplace add Rabithua/FeedbackServerPlugin --ref main
 codex plugin add feedback-server@feedback-server
 ```
 
-Start a new Codex task after installation. To update, run
-`codex plugin marketplace upgrade feedback-server`, reinstall
-`feedback-server@feedback-server`, and start another task.
+Start a new Codex task after the first installation so the MCP server is loaded. To update, run
+`codex plugin marketplace upgrade feedback-server` and start another task; do not reinstall an
+already installed plugin.
 Beginning with version 0.6.8, the MCP server checks the repository's latest stable GitHub Release
 once per process. When a newer plugin exists, the first successful tool result after the check
 includes an `updateNotice` with the release URL and upgrade command; update checks never modify the
 installation and network failures do not affect FeedbackServer operations.
 
-After account connection, open a new Agent task and send `帮我完成 FeedbackServer 初始配置` (or
+After account connection, continue the current Agent task and send `帮我完成 FeedbackServer 初始配置` (or
 choose the plugin's first starter prompt). The Agent reads live setup state, selects or creates a
 Product, detects a local iOS App when present, offers Bark/Webhook/defer notification choices,
 recommends an optional roundtrip, and only then introduces Diagnostics and App Store binding.
@@ -43,19 +43,15 @@ Cursor and OpenCode can use the same standalone MCP bundle. See
 
 ## Configure an Agent account
 
-The distributable CLI runs from the committed bundle and does not require `node_modules`:
-
-```bash
-git clone https://github.com/Rabithua/FeedbackServerPlugin.git
-cd FeedbackServerPlugin
-plugins/feedback-server/bin/feedback-server agent configure
-```
+The installed plugin includes a distributable CLI and does not require a repository clone or
+`node_modules`. In a loaded Codex or Claude Code task, ask the Agent to configure the account. It
+calls the credential-free `prepare_local_setup` tool and shows the exact command for the current
+cached bundle. Run that command in a visible, user-controlled terminal.
 
 The CLI hides new account passwords and PATs. Time-limited invitation tokens can be printed in
 onboarding handoffs and passed to `accept-invite --token` for Agent-assisted setup. An Agent may
-inspect the configured Codex marketplaces and plugins, upgrade the existing marketplace or add it
-when absent, install the plugin only when missing, clone this repository, and prepare an exact
-command that first changes to the checkout's real absolute path. The recipient must run that
+inspect the configured marketplaces and plugins, update an existing installation or add it when
+absent, install the plugin only when missing, and prepare the exact installed-bundle command. The recipient must run that
 command in a visible, user-controlled interactive terminal so the password remains inside the
 CLI's hidden prompt. On macOS the CLI
 stores credentials under the existing Keychain service `dev.rote.feedback-server.mcp`, so Codex and
@@ -100,8 +96,10 @@ storage usage, read-only Products, Product selection, Product status, and an ord
 section derived from the same live onboarding state as `get_onboarding_status`. JSON output adds
 backward-compatible `onboarding` and `nextActions` fields. With
 `--app-path`, it also checks FeedbackKit's resolved version (minimum 0.1.29), compares it with the
-latest stable FeedbackKit GitHub Release, and checks the server URL and Product binding, explicit
-visitor Keychain service, and `.followHost` or `.fixed(Locale)` language policy. A newer compatible
+latest stable FeedbackKit GitHub Release, and checks the server URL, Product binding, visitor
+Keychain service, and language policy. FeedbackKit 0.2 or newer is checked against its fixed
+production endpoint, bundle-derived visitor Keychain service, and follow-host language defaults;
+older integrations retain the explicit checks. A newer compatible
 SDK is a warning rather than a blocking failure. Output never includes a PAT or publishable Product
 key. Use `--format json` for automation.
 

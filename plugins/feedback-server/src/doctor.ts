@@ -2,6 +2,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { basename, extname, join, resolve } from 'node:path';
 import { FeedbackServerApiClient } from './api-client.js';
 import {
+  DEFAULT_BASE_URL,
   KEYCHAIN_SERVICE,
   loadCredentials,
   readPendingTokenRevocations,
@@ -62,6 +63,8 @@ export interface HostAppFile {
   path: string;
   content: string;
 }
+
+const FEEDBACK_KIT_DEFAULTS_VERSION = '0.2.0';
 
 interface DoctorApiClient {
   request<T>(path: string, options?: { authenticated?: boolean }): Promise<T>;
@@ -218,6 +221,8 @@ export function inspectHostAppFiles(
   const checks: DoctorCheck[] = [];
   const combined = files.map(({ content }) => content).join('\n');
   const newest = newestFeedbackKitVersion(files);
+  const usesCurrentDefaults = newest !== undefined
+    && compareVersions(newest, FEEDBACK_KIT_DEFAULTS_VERSION) >= 0;
   if (!newest) {
     checks.push(check(
       'app.sdk',
@@ -241,12 +246,27 @@ export function inspectHostAppFiles(
   const endpointWithoutApi = normalizedEndpoint.replace(/\/v1\/api$/, '');
   const hasUrl = combined.includes(normalizedEndpoint) || combined.includes(endpointWithoutApi);
   const hasUrlSetting = combined.includes('FeedbackServerBaseURL');
+  const explicitApiEndpoints = [...combined.matchAll(/https?:\/\/[^\s"'<>]+\/v1\/api\/?/g)]
+    .map(([value]) => value.replace(/[),.;]+$/, '').replace(/\/+$/, ''));
+  const conflictingEndpoint = explicitApiEndpoints.find((value) => value !== normalizedEndpoint);
+  const usesFixedProductionEndpoint = usesCurrentDefaults
+    && normalizedEndpoint === DEFAULT_BASE_URL;
   checks.push(check(
     'app.url',
     'Server URL',
-    hasUrl ? 'pass' : hasUrlSetting ? 'warn' : 'fail',
-    hasUrl
+    conflictingEndpoint
+      ? 'fail'
+      : hasUrl || (usesFixedProductionEndpoint && !hasUrlSetting)
+        ? 'pass'
+        : hasUrlSetting
+          ? 'warn'
+          : 'fail',
+    conflictingEndpoint
+      ? `The host App explicitly references ${conflictingEndpoint}, which conflicts with the connected endpoint.`
+      : hasUrl
       ? 'The host App references the connected FeedbackServer endpoint.'
+      : usesFixedProductionEndpoint && !hasUrlSetting
+        ? `FeedbackKit ${newest} uses the fixed production FeedbackServer endpoint by default.`
       : hasUrlSetting
         ? 'A FeedbackServerBaseURL setting exists, but its resolved value could not be verified.'
         : 'No FeedbackServer URL configuration was found.',
@@ -275,13 +295,22 @@ export function inspectHostAppFiles(
   }
 
   const keychainMatch = combined.match(/keychainService\s*:\s*"([^"]+)"/);
+  const keychainService = keychainMatch?.[1];
   checks.push(check(
     'app.keychain-service',
     'Keychain service',
-    keychainMatch ? 'pass' : 'fail',
-    keychainMatch
-      ? `A dedicated visitor credential service is configured (${keychainMatch[1]}).`
-      : `No explicit FeedbackKit keychainService was found; do not reuse ${KEYCHAIN_SERVICE}.`,
+    keychainService === KEYCHAIN_SERVICE
+      ? 'fail'
+      : keychainService || usesCurrentDefaults
+        ? 'pass'
+        : 'fail',
+    keychainService === KEYCHAIN_SERVICE
+      ? `The host App reuses the Agent credential service ${KEYCHAIN_SERVICE}; configure a visitor-only service instead.`
+      : keychainService
+        ? `A dedicated visitor credential service is configured (${keychainService}).`
+        : usesCurrentDefaults
+          ? `FeedbackKit ${newest} derives a visitor-only Keychain service from the App bundle identifier.`
+          : `No explicit FeedbackKit keychainService was found; do not reuse ${KEYCHAIN_SERVICE}.`,
   ));
 
   const fixedLocale = combined.match(
@@ -305,6 +334,13 @@ export function inspectHostAppFiles(
       'Language policy',
       'pass',
       'FeedbackKit explicitly follows the host App language.',
+    ));
+  } else if (usesCurrentDefaults) {
+    checks.push(check(
+      'app.language',
+      'Language policy',
+      'pass',
+      `FeedbackKit ${newest} follows the host App language by default.`,
     ));
   } else {
     checks.push(check(

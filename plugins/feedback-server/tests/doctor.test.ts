@@ -8,6 +8,7 @@ import {
   type DoctorSubscription,
 } from '../src/doctor.js';
 import type { StoredCredentials } from '../src/credentials.js';
+import { DEFAULT_BASE_URL, KEYCHAIN_SERVICE } from '../src/credentials.js';
 
 const credentials: StoredCredentials = {
   baseUrl: 'https://feedback.example.com/v1/api',
@@ -193,6 +194,68 @@ describe('feedback-server doctor', () => {
     ], credentials, product);
     expect(checks.every(({ status }) => status === 'pass')).toBe(true);
     expect(JSON.stringify(checks)).not.toContain(product.publishableKey);
+  });
+
+  test('accepts the FeedbackKit 0.2 README-minimal defaults', () => {
+    const checks = inspectHostAppFiles([
+      {
+        path: '/App/Package.resolved',
+        content: JSON.stringify({
+          pins: [{ identity: 'feedbackkit', state: { version: '0.2.0' } }],
+        }),
+      },
+      {
+        path: '/App/Info.plist',
+        content: `<key>FeedbackProductKey</key><string>${product.publishableKey}</string>`,
+      },
+    ], { ...credentials, baseUrl: DEFAULT_BASE_URL }, product);
+    expect(checks.every(({ status }) => status === 'pass')).toBe(true);
+    expect(checks.find(({ id }) => id === 'app.url')?.message).toContain('fixed production');
+    expect(checks.find(({ id }) => id === 'app.keychain-service')?.message)
+      .toContain('bundle identifier');
+    expect(checks.find(({ id }) => id === 'app.language')?.message)
+      .toContain('host App language by default');
+  });
+
+  test('warns for an unresolved dynamic Product key without rejecting 0.2 defaults', () => {
+    const checks = inspectHostAppFiles([
+      {
+        path: '/App/Package.resolved',
+        content: JSON.stringify({
+          pins: [{ identity: 'feedbackkit', state: { version: '0.2.0' } }],
+        }),
+      },
+      {
+        path: '/App/Info.plist',
+        content: '<key>FeedbackProductKey</key><string>$(FEEDBACK_PRODUCT_KEY)</string>',
+      },
+    ], { ...credentials, baseUrl: DEFAULT_BASE_URL }, product);
+    expect(checks.find(({ id }) => id === 'app.product-key')?.status).toBe('warn');
+    expect(checks.filter(({ status }) => status === 'fail')).toEqual([]);
+  });
+
+  test('rejects a conflicting 0.2 endpoint and the Agent credential Keychain service', () => {
+    const checks = inspectHostAppFiles([
+      {
+        path: '/App/Package.resolved',
+        content: JSON.stringify({
+          pins: [{ identity: 'feedbackkit', state: { version: '0.2.0' } }],
+        }),
+      },
+      {
+        path: '/App/FeedbackCenter.swift',
+        content: `
+          let endpoint = URL(string: "https://other.example.com/v1/api")!
+          let configuration = try FeedbackConfiguration(
+            productKey: "${product.publishableKey}",
+            keychainService: "${KEYCHAIN_SERVICE}"
+          )
+        `,
+      },
+    ], { ...credentials, baseUrl: DEFAULT_BASE_URL }, product);
+    expect(checks.find(({ id }) => id === 'app.url')?.status).toBe('fail');
+    expect(checks.find(({ id }) => id === 'app.keychain-service')?.status).toBe('fail');
+    expect(JSON.stringify(checks)).not.toContain(credentials.token);
   });
 
   test('marks a verified host App complete in shared onboarding output', async () => {

@@ -71,7 +71,8 @@ export function agentConfigurationCompletionMessage(summary: string): string {
   return [
     summary,
     'Account connection is complete; app configuration is not complete yet.',
-    `Open a new Agent task and send: “${AGENT_ONBOARDING_PROMPT}”`,
+    `Return to the current Agent task and send: “${AGENT_ONBOARDING_PROMPT}”`,
+    'The running MCP process reads the new Keychain credential on its next tool call.',
   ].join('\n');
 }
 
@@ -398,7 +399,7 @@ export async function runAdminAcceptInvite(
     if (choice === 'keep') {
       dependencies.log(
         `Keeping FeedbackServer Agent account ${existingUsername} at ${existing.baseUrl}; `
-        + 'the invitation was not consumed. Start a new Agent session to use the existing connection.',
+        + 'the invitation was not consumed. Continue in the current Agent task and verify connection_status.',
       );
       return;
     }

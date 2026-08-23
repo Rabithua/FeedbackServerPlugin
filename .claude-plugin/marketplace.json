@@ -10,7 +10,7 @@
       "name": "feedback-server",
       "source": "./plugins/feedback-server",
       "description": "Manage FeedbackServer from Claude Code through a local MCP server and shared management Skill.",
-      "version": "0.7.1",
+      "version": "0.8.0",
       "author": {
         "name": "Rabithua"
       },
@@ -19,6 +19,7 @@
       "license": "MIT",
       "keywords": [
         "feedback",
+        "waitlist",
         "roadmap",
         "changelog",
         "mcp"

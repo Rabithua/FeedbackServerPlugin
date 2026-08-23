@@ -55,7 +55,7 @@ requireCondition(
   && 'feedback-server' in codexManifest.mcpServers,
   'Codex MCP configuration is invalid',
 );
-requireCondition(claudeManifest.mcpServers === './.mcp.claude.json', 'Claude MCP path is invalid');
+requireCondition(!('mcpServers' in claudeManifest), 'Claude must use the canonical root .mcp.json');
 requireCondition(codexMarketplace.name === 'feedback-server', 'Codex marketplace name is invalid');
 requireCondition(codexMarketplace.plugins?.length === 1, 'Codex marketplace must contain exactly one plugin');
 const entry = codexMarketplace.plugins[0]!;
@@ -84,7 +84,7 @@ requireCondition(
 for (const relativePath of [
   'skills',
   '.claude-plugin/plugin.json',
-  '.mcp.claude.json',
+  '.mcp.json',
   'bin/feedback-server',
   'dist/server.mjs',
   'dist/cli.mjs',
@@ -102,6 +102,7 @@ const allowedRootEntries = new Set([
   '.git',
   '.github',
   '.gitignore',
+  'CHANGELOG.md',
   'LICENSE',
   'README.md',
   'docs',

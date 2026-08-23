@@ -57,6 +57,14 @@ describe('release update checks', () => {
       currentVersion: '0.6.7',
       latestVersion: '0.6.8',
       command: 'codex plugin marketplace upgrade feedback-server',
+      commands: {
+        codex: ['codex plugin marketplace upgrade feedback-server'],
+        claudeCode: [
+          'claude plugin marketplace update feedback-server',
+          'claude plugin update feedback-server@feedback-server',
+        ],
+      },
+      reloadRequired: true,
     });
     expect(await provider.takeNotice()).toBeUndefined();
     expect(requests).toBe(1);
