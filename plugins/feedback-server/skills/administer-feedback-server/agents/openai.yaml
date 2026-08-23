@@ -1,0 +1,12 @@
+interface:
+  display_name: "Administer FeedbackServer"
+  short_description: "Manage Products, access, invitations, keys, and audits"
+  default_prompt: "Use $administer-feedback-server to inspect my subscription access and Product limits."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "feedback-server"
+      description: "FeedbackServer administration tools"
+      transport: "stdio"
+policy:
+  allow_implicit_invocation: true

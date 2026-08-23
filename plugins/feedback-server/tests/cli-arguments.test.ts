@@ -66,6 +66,18 @@ describe('CLI argument policy', () => {
       command: 'agent revoke-token',
       options: ['--id', 'id'],
     });
+    expect(parseFeedbackServerCliCommand(['profile', 'list'])).toEqual({
+      command: 'profile list',
+      options: [],
+    });
+    expect(parseFeedbackServerCliCommand(['profile', 'use', 'work'])).toEqual({
+      command: 'profile use',
+      options: ['work'],
+    });
+    expect(parseFeedbackServerCliCommand(['profile', 'remove', 'work'])).toEqual({
+      command: 'profile remove',
+      options: ['work'],
+    });
     expect(parseFeedbackServerCliCommand(['admin', 'invite', '--expires-in-days', '7']))
       .toEqual({ command: 'admin invite', options: ['--expires-in-days', '7'] });
     expect(parseFeedbackServerCliCommand(['admin', 'invite', '--delivery', 'clipboard']))
@@ -98,6 +110,8 @@ describe('CLI argument policy', () => {
     expect(usage).toContain('--plan free|solo|studio');
     expect(usage).toContain('--subscription-term month|year|perpetual');
     expect(usage).toContain('--token INVITATION_TOKEN');
+    expect(usage).toContain('agent configure [--url URL] [--username USERNAME] [--profile NAME]');
+    expect(usage).toContain('feedback-server profile use NAME');
   });
 
   test('defaults existing Agent handling to keep and requires an explicit switch', () => {

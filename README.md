@@ -2,7 +2,7 @@
 
 FeedbackServer Plugin is the public multi-agent distribution for administering a compatible
 FeedbackServer instance. One audited TypeScript implementation provides a shared MCP server,
-management Skill, and Keychain-backed account CLI for Codex and Claude Code. The repository
+six focused Skills plus a compatibility router, and a Keychain-backed account CLI for Codex and Claude Code. The repository
 contains no FeedbackServer source, deployment configuration, database access, or credentials.
 
 ## Install for Codex
@@ -36,7 +36,8 @@ claude plugin install feedback-server@feedback-server --scope user
 ```
 
 Restart or reload Claude Code after installation. The plugin starts its MCP server from the cached
-bundle through `${CLAUDE_PLUGIN_ROOT}` and exposes the same `manage-feedback-server` Skill.
+bundle through `${CLAUDE_PLUGIN_ROOT}` and exposes the same setup, triage, waitlist, publishing,
+notification, and administration Skills as Codex.
 
 Cursor and OpenCode can use the same standalone MCP bundle. See
 [Generic MCP clients](docs/generic-mcp.md) for checked configuration templates.
@@ -55,7 +56,12 @@ absent, install the plugin only when missing, and prepare the exact installed-bu
 command in a visible, user-controlled interactive terminal so the password remains inside the
 CLI's hidden prompt. On macOS the CLI
 stores credentials under the existing Keychain service `dev.rote.feedback-server.mcp`, so Codex and
-Claude Code reuse the same account without copying or rotating its PAT. Non-macOS MCP processes
+Claude Code reuse global named profiles without copying or rotating PATs. Profile IDs use 1–40
+lowercase letters, numbers, dots, underscores, or hyphens. Switching the active profile affects
+every local FeedbackServer Codex and Claude session; profiles are never repository-local. The old
+`default` pointer migrates on first read without rotating its PAT and can resume after interruption.
+Paired environment variables override Keychain, in which case `connection_status` reports
+`credentialSource: "environment"` and `activeProfile: null`. Non-macOS MCP processes
 must receive both
 `FEEDBACK_SERVER_BASE_URL` and `FEEDBACK_SERVER_API_TOKEN` from a secure process environment.
 The default service URL is `https://api.feedkit.cn/v1/api`. Existing credentials that reference the
@@ -66,9 +72,12 @@ Supported commands:
 ```text
 feedback-server doctor
 feedback-server test roundtrip --product <id-or-slug> --confirm <product-slug>
-feedback-server agent configure
-feedback-server agent disconnect
+feedback-server agent configure [--profile <name>]
+feedback-server agent disconnect [--profile <name>]
 feedback-server agent revoke-token --id <uuid>
+feedback-server profile list
+feedback-server profile use <name>
+feedback-server profile remove <name>
 feedback-server admin invite --plan free
 feedback-server admin invite --plan solo --subscription-term month
 feedback-server admin invite --plan studio --subscription-term year
@@ -107,6 +116,13 @@ The MCP surface exposes `get_onboarding_status`, the server-computed subscriptio
 switch with risk preview and mutation preconditions. It does not expose subscription grants,
 renewals, or downgrades. The Keychain-backed super-administrator CLI is the sole exception: it can
 attach an immutable initial Free, Solo, or Studio grant to a new-account invitation.
+
+Protected previews return `executeTool: "execute_confirmation"`. After explicit user approval,
+call `execute_confirmation` with the single-use ID; pending payloads and handlers stay in memory,
+expire after ten minutes, and are bound to the account, endpoint, active profile, and write
+precondition. Repeating the original tool with unchanged arguments and `confirmationId` remains
+compatible through 1.0. API errors keep the legacy text fields while structured output adds status,
+code, message, request ID, Retry-After seconds, remediation, and redacted data.
 
 Plugin 0.7.0 adds owner-scoped FeedbackKit waitlist tools for stable listing/search, detail with
 internal notes, preconditioned lifecycle updates, note append, and explicitly confirmed permanent

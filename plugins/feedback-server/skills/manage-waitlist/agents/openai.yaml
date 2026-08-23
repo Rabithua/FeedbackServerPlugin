@@ -1,0 +1,12 @@
+interface:
+  display_name: "Manage Waitlist"
+  short_description: "Follow up, organize, and delete waitlist signups"
+  default_prompt: "Use $manage-waitlist to summarize new waitlist signups and identify follow-ups."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "feedback-server"
+      description: "FeedbackServer owner-scoped waitlist tools"
+      transport: "stdio"
+policy:
+  allow_implicit_invocation: true

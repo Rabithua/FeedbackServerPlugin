@@ -1,0 +1,21 @@
+schema_version: "1.1"
+name: "unrelated-ui-feedback-negative"
+description: "Avoids triggering FeedbackServer for unrelated UI feedback."
+tags: ["negative"]
+execution:
+  prompt: "Review this generic SwiftUI animation idea: when a button is tapped, show subtle visual feedback. I am not asking about FeedbackServer, app feedback records, waitlists, or release management. Give only a short design opinion."
+  max_turns: 3
+  timeout_seconds: 120
+  allowed_tools: []
+runs: 1
+graders:
+  - type: "regex"
+    name: "no-feedback-server-tools"
+    target: "trace"
+    pattern: "mcp__plugin_feedback-server"
+    match: "not_contains"
+  - type: "llm"
+    name: "stays-on-ui-topic"
+    focus: "last_message"
+    criteria: "The answer gives a brief SwiftUI interaction-design opinion and does not redirect into FeedbackServer setup, triage, waitlists, or releases."
+expected_outcome: "Answer the unrelated UI question without invoking FeedbackServer."

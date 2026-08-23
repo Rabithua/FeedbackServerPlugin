@@ -525,7 +525,10 @@ describe('credentials and API client', () => {
         Promise.resolve(
         Response.json(
           { code: 'admin_scope_required', message: 'Missing scope', data: null },
-          { status: 403 },
+          {
+            status: 403,
+            headers: { 'X-Request-ID': 'request-abc', 'Retry-After': '12' },
+          },
         ),
         )) as unknown as typeof fetch,
     );
@@ -538,6 +541,8 @@ describe('credentials and API client', () => {
         status: 403,
         code: 'admin_scope_required',
         message: 'Missing scope',
+        requestId: 'request-abc',
+        retryAfterSeconds: 12,
       });
     }
   });

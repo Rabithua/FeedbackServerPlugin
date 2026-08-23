@@ -4,12 +4,16 @@ import { StringDecoder } from 'node:string_decoder';
 import {
   addPendingTokenRevocation,
   deleteKeychainCredentials,
+  deleteKeychainProfileCredentials,
   normalizeBaseUrl,
   readPendingTokenRevocations,
   readKeychainCredentials,
+  readKeychainProfileCredentials,
   removePendingTokenRevocation,
   resumeKeychainCredentialCleanup,
+  resumeKeychainProfileCredentialCleanup,
   writeKeychainCredentials,
+  writeKeychainProfileCredentials,
   type PendingTokenRevocation,
   type StoredCredentials,
 } from './credentials.js';
@@ -234,19 +238,29 @@ export async function logout(baseUrl: string, refreshToken: string): Promise<voi
   });
 }
 
-const defaultConfigurationDependencies: ConfigurationDependencies = {
-  readCredentials: readKeychainCredentials,
-  resumeCredentialCleanup: resumeKeychainCredentialCleanup,
-  writeCredentials: writeKeychainCredentials,
-  deleteCredentials: deleteKeychainCredentials,
-  login,
-  createToken: createAgentToken,
-  revokeToken: revokeAgentToken,
-  logout,
-  readPendingRevocations: readPendingTokenRevocations,
-  addPendingRevocation: addPendingTokenRevocation,
-  removePendingRevocation: removePendingTokenRevocation,
-};
+function defaultConfigurationDependencies(profile?: string): ConfigurationDependencies {
+  return {
+    readCredentials: profile
+      ? () => readKeychainProfileCredentials(profile)
+      : readKeychainCredentials,
+    resumeCredentialCleanup: profile
+      ? () => resumeKeychainProfileCredentialCleanup(profile)
+      : resumeKeychainCredentialCleanup,
+    writeCredentials: profile
+      ? (credentials) => writeKeychainProfileCredentials(credentials, profile)
+      : writeKeychainCredentials,
+    deleteCredentials: profile
+      ? () => deleteKeychainProfileCredentials(profile)
+      : deleteKeychainCredentials,
+    login,
+    createToken: createAgentToken,
+    revokeToken: revokeAgentToken,
+    logout,
+    readPendingRevocations: readPendingTokenRevocations,
+    addPendingRevocation: addPendingTokenRevocation,
+    removePendingRevocation: removePendingTokenRevocation,
+  };
+}
 
 function isAlreadyRevoked(error: unknown): boolean {
   return error instanceof ConfigurationApiError && error.status === 404;
@@ -341,7 +355,8 @@ export async function configureAgent(input: {
   baseUrl: string;
   username: string;
   password: string;
-}, dependencies: ConfigurationDependencies = defaultConfigurationDependencies): Promise<StoredCredentials> {
+  profile?: string;
+}, dependencies: ConfigurationDependencies = defaultConfigurationDependencies(input.profile)): Promise<StoredCredentials> {
   const baseUrl = normalizeBaseUrl(input.baseUrl);
   const previous = await dependencies.readCredentials();
   if (previous && normalizeBaseUrl(previous.baseUrl) !== baseUrl) {
@@ -423,7 +438,8 @@ export async function configureAgent(input: {
 export async function disconnectAgent(input: {
   username: string;
   password: string;
-}, dependencies: ConfigurationDependencies = defaultConfigurationDependencies): Promise<boolean> {
+  profile?: string;
+}, dependencies: ConfigurationDependencies = defaultConfigurationDependencies(input.profile)): Promise<boolean> {
   if (await dependencies.resumeCredentialCleanup()) return true;
   const stored = await dependencies.readCredentials();
   if (!stored) return false;
@@ -460,7 +476,7 @@ export async function revokeAgentTokenById(input: {
   username: string;
   password: string;
   tokenId: string;
-}, dependencies: ConfigurationDependencies = defaultConfigurationDependencies): Promise<void> {
+}, dependencies: ConfigurationDependencies = defaultConfigurationDependencies()): Promise<void> {
   const baseUrl = normalizeBaseUrl(input.baseUrl);
   const session = await dependencies.login(baseUrl, input.username, input.password);
   const entry = pendingRevocation(baseUrl, input.username, input.tokenId);

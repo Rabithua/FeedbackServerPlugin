@@ -8,7 +8,16 @@ import {
 import { withAdministratorPassword } from './admin-password.js';
 import { parseCliOptions, parseIntegerOption } from './cli-arguments.js';
 import { reportCliFailure } from './cli-reporting.js';
-import { DEFAULT_BASE_URL, readKeychainCredentials } from './credentials.js';
+import {
+  DEFAULT_BASE_URL,
+  KEYCHAIN_ACCOUNT,
+  listKeychainProfiles,
+  profileIdSchema,
+  readActiveKeychainProfile,
+  readKeychainCredentials,
+  readKeychainProfileCredentials,
+  useKeychainProfile,
+} from './credentials.js';
 import { acceptInvitationAndConfigure } from './invitation-acceptance.js';
 import {
   createInvitationHandoffMessage,
@@ -31,6 +40,9 @@ export type FeedbackServerCliCommand =
   | 'agent configure'
   | 'agent disconnect'
   | 'agent revoke-token'
+  | 'profile list'
+  | 'profile use'
+  | 'profile remove'
   | 'admin invite'
   | 'admin invitations'
   | 'admin invite revoke'
@@ -45,9 +57,12 @@ export interface ParsedFeedbackServerCliCommand {
 export const usage = [
   'feedback-server doctor [--product ID_OR_SLUG] [--app-path PATH] [--format text|json]',
   'feedback-server test roundtrip --product ID_OR_SLUG --confirm PRODUCT_SLUG [--locale LOCALE]',
-  'feedback-server agent configure [--url URL] [--username USERNAME]',
-  'feedback-server agent disconnect [--username USERNAME]',
+  'feedback-server agent configure [--url URL] [--username USERNAME] [--profile NAME]',
+  'feedback-server agent disconnect [--username USERNAME] [--profile NAME]',
   'feedback-server agent revoke-token --id UUID [--url URL] [--username USERNAME]',
+  'feedback-server profile list',
+  'feedback-server profile use NAME',
+  'feedback-server profile remove NAME',
   [
     'feedback-server admin invite [--url URL] [--username USERNAME]',
     '[--expires-in-days DAYS] [--delivery stdout|clipboard] [--plan free|solo|studio]',
@@ -126,6 +141,7 @@ export function formatAppliedSubscription(
 }
 
 export interface AdminAcceptInviteDependencies {
+  readActiveProfile: typeof readActiveKeychainProfile;
   readCredentials: typeof readKeychainCredentials;
   promptText: typeof promptText;
   promptPassword: typeof promptPassword;
@@ -136,6 +152,7 @@ export interface AdminAcceptInviteDependencies {
 }
 
 const defaultAdminAcceptInviteDependencies: AdminAcceptInviteDependencies = {
+  readActiveProfile: readActiveKeychainProfile,
   readCredentials: readKeychainCredentials,
   promptText,
   promptPassword,
@@ -161,6 +178,15 @@ export function parseFeedbackServerCliCommand(argv: string[]): ParsedFeedbackSer
   }
   if (group === 'agent' && action === 'revoke-token') {
     return { command: 'agent revoke-token', options: argv.slice(2) };
+  }
+  if (group === 'profile' && action === 'list') {
+    return { command: 'profile list', options: argv.slice(2) };
+  }
+  if (group === 'profile' && action === 'use') {
+    return { command: 'profile use', options: argv.slice(2) };
+  }
+  if (group === 'profile' && action === 'remove') {
+    return { command: 'profile remove', options: argv.slice(2) };
   }
   if (group === 'admin' && action === 'invite' && nestedAction === 'revoke') {
     return { command: 'admin invite revoke', options: remaining };
@@ -208,31 +234,97 @@ async function urlAndUsername(
 }
 
 async function runAgentConfigure(options: string[]): Promise<void> {
-  const input = await urlAndUsername(options, 'Administrator username');
+  const parsed = parseCliOptions(options, ['--url', '--username', '--profile']);
+  const profile = profileIdSchema.parse(
+    parsed.get('--profile') ?? await readActiveKeychainProfile() ?? KEYCHAIN_ACCOUNT,
+  );
+  const existing = await readKeychainProfileCredentials(profile);
+  const baseUrl = parsed.get('--url')
+    ?? existing?.baseUrl
+    ?? await promptText('FeedbackServer URL', DEFAULT_BASE_URL);
+  const username = parsed.get('--username')
+    ?? existing?.username
+    ?? await promptText('Administrator username');
+  if (!username) throw new Error('Administrator username is required');
+  const active = await readActiveKeychainProfile();
+  if (active !== profile) {
+    console.error(
+      `Activating profile ${profile} affects every FeedbackServer Codex and Claude session on this Mac.`,
+    );
+  }
   const password = await promptPassword();
   const configured = await configureAgent({
-    baseUrl: input.baseUrl,
-    username: input.username,
+    baseUrl,
+    username,
     password,
+    profile,
   });
   console.error(
     agentConfigurationCompletionMessage(
-      `FeedbackServer Agent configured for ${configured.baseUrl}; token expires ${configured.expiresAt ?? 'at an unknown time'}.`,
+      `FeedbackServer Agent profile ${profile} configured for ${configured.baseUrl}; token expires ${configured.expiresAt ?? 'at an unknown time'}.`,
     ),
   );
 }
 
 async function runAgentDisconnect(options: string[]): Promise<void> {
-  const parsed = parseCliOptions(options, ['--username']);
-  const username = parsed.get('--username') ?? (await promptText('Administrator username'));
+  const parsed = parseCliOptions(options, ['--username', '--profile']);
+  const profile = profileIdSchema.parse(
+    parsed.get('--profile') ?? await readActiveKeychainProfile() ?? KEYCHAIN_ACCOUNT,
+  );
+  const existing = await readKeychainProfileCredentials(profile);
+  if (!existing) {
+    console.error(`FeedbackServer Agent profile ${profile} was not configured.`);
+    return;
+  }
+  const username = parsed.get('--username')
+    ?? existing.username
+    ?? (await promptText('Administrator username'));
   if (!username) throw new Error('Administrator username is required');
   const password = await promptPassword();
-  const removed = await disconnectAgent({ username, password });
+  const removed = await disconnectAgent({ username, password, profile });
   console.error(
     removed
-      ? 'FeedbackServer Agent token revoked and local credentials removed.'
-      : 'FeedbackServer Agent was not configured.',
+      ? `FeedbackServer Agent profile ${profile} token revoked and local credentials removed.`
+      : `FeedbackServer Agent profile ${profile} was not configured.`,
   );
+}
+
+async function runProfileList(options: string[]): Promise<void> {
+  if (options.length > 0) throw new Error('profile list does not accept arguments');
+  const profiles = await listKeychainProfiles();
+  if (profiles.length === 0) {
+    console.error('No FeedbackServer profiles are configured.');
+    return;
+  }
+  console.error('ACTIVE\tPROFILE');
+  for (const profile of profiles) {
+    console.error(`${profile.active ? '*' : ''}\t${profile.name}`);
+  }
+}
+
+async function runProfileUse(options: string[]): Promise<void> {
+  if (options.length !== 1) throw new Error('profile use requires exactly one NAME');
+  const profile = profileIdSchema.parse(options[0]);
+  console.error(
+    `Switching to profile ${profile} affects every FeedbackServer Codex and Claude session on this Mac.`,
+  );
+  await useKeychainProfile(profile);
+  console.error(`FeedbackServer profile ${profile} is now active.`);
+}
+
+async function runProfileRemove(options: string[]): Promise<void> {
+  if (options.length !== 1) throw new Error('profile remove requires exactly one NAME');
+  const profile = profileIdSchema.parse(options[0]);
+  const existing = await readKeychainProfileCredentials(profile);
+  if (!existing) throw new Error(`FeedbackServer profile ${profile} does not exist`);
+  const username = existing.username ?? await promptText('Administrator username');
+  if (!username) throw new Error('Administrator username is required');
+  console.error(
+    `Removing profile ${profile} affects every FeedbackServer Codex and Claude session on this Mac.`,
+  );
+  const password = await promptPassword();
+  await disconnectAgent({ username, password, profile });
+  console.error(`FeedbackServer profile ${profile} token revoked and local credentials removed.`);
 }
 
 async function runAgentRevokeToken(options: string[]): Promise<void> {
@@ -369,6 +461,7 @@ export async function runAdminAcceptInvite(
     '--display-name',
     '--token',
   ]);
+  const targetProfile = await dependencies.readActiveProfile() ?? KEYCHAIN_ACCOUNT;
   const existing = await dependencies.readCredentials();
   const baseUrl = parsed.get('--url')
     ?? existing?.baseUrl
@@ -442,6 +535,7 @@ export async function runAdminAcceptInvite(
     const removed = await dependencies.disconnect({
       username: existingUsername,
       password: existingPassword,
+      profile: targetProfile,
     });
     if (!removed) {
       throw new Error('Existing FeedbackServer Agent credentials changed before the switch');
@@ -460,6 +554,7 @@ export async function runAdminAcceptInvite(
       username,
       displayName,
       password,
+      profile: targetProfile,
     });
   } catch (error) {
     if (
@@ -495,6 +590,7 @@ export async function runAdminAcceptInvite(
         baseUrl: existing.baseUrl,
         username: existingUsernameForSwitch,
         password: existingPassword,
+        profile: targetProfile,
       });
       dependencies.log(
         'Invitation acceptance failed; the previous FeedbackServer Agent account was restored '
@@ -599,6 +695,9 @@ export async function runFeedbackServerCli(argv: string[]): Promise<void> {
     case 'agent configure': return runAgentConfigure(parsed.options);
     case 'agent disconnect': return runAgentDisconnect(parsed.options);
     case 'agent revoke-token': return runAgentRevokeToken(parsed.options);
+    case 'profile list': return runProfileList(parsed.options);
+    case 'profile use': return runProfileUse(parsed.options);
+    case 'profile remove': return runProfileRemove(parsed.options);
     case 'admin invite': return runAdminInvite(parsed.options);
     case 'admin invitations': return runAdminInvitations(parsed.options);
     case 'admin invite revoke': return runAdminInviteRevoke(parsed.options);

@@ -4,11 +4,19 @@ export const CONFIRMATION_TTL_MS = 10 * 60 * 1000;
 
 interface PendingConfirmation {
   toolName: string;
+  payload: unknown;
   payloadHash: string;
   identityHash: string;
   expiresAt: number;
   executionContext?: unknown;
+  executor?: ConfirmationExecutor;
 }
+
+export type ConfirmationExecutor = (
+  payload: unknown,
+  executionContext: unknown,
+  runtimeContext: unknown,
+) => Promise<unknown>;
 
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -52,16 +60,19 @@ export class ConfirmationStore {
     identity: unknown,
     now = Date.now(),
     executionContext?: unknown,
+    executor?: ConfirmationExecutor,
   ): { confirmationId: string; expiresAt: string } {
     this.prune(now);
     const confirmationId = randomUUID();
     const expiresAt = now + CONFIRMATION_TTL_MS;
     this.pending.set(confirmationId, {
       toolName,
+      payload: structuredClone(payload),
       payloadHash: hash(payload),
       identityHash: hash(identity),
       expiresAt,
       ...(executionContext === undefined ? {} : { executionContext }),
+      ...(executor === undefined ? {} : { executor }),
     });
     return {
       confirmationId,
@@ -88,6 +99,29 @@ export class ConfirmationStore {
     }
     this.pending.delete(confirmationId);
     return pending.executionContext;
+  }
+
+  public async execute(
+    confirmationId: string,
+    identity: unknown,
+    runtimeContext: unknown,
+    now = Date.now(),
+  ): Promise<unknown> {
+    this.prune(now);
+    const pending = this.pending.get(confirmationId);
+    if (!pending) throw new Error('Confirmation is missing, expired, or already used');
+    if (pending.identityHash !== hash(identity)) {
+      throw new Error('Confirmation does not match the active account, profile, or endpoint');
+    }
+    if (!pending.executor) {
+      throw new Error('This confirmation supports only the legacy execution protocol');
+    }
+    this.pending.delete(confirmationId);
+    return pending.executor(
+      structuredClone(pending.payload),
+      pending.executionContext,
+      runtimeContext,
+    );
   }
 
   private prune(now: number): void {

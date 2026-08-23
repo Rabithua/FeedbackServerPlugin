@@ -73,6 +73,12 @@ Agent 不应在自己的进程、私有 PTY 或其他你看不到的终端中运
 
 如果当前 Agent 会话可以检查 `connection_status`，它应先展示已有账号的非敏感身份，说明切换会影响这台 Mac 上所有 FeedbackServer Agent 会话，再询问你要保留还是切换；Agent 不能替你选择。如果当前会话还不能使用该工具，CLI 会在接入命令开始时完成同样的确认。选择保留后流程立即停止；选择切换时还需要在隐藏提示中输入当前账号密码。
 
+0.9.0 起，本机凭据可以保存在全局命名 profile 中。`connection_status` 会显示当前
+`activeProfile`；`feedback-server profile list`、`profile use NAME` 和 `profile remove NAME`
+用于管理它们。切换 active profile 会同时影响这台 Mac 上所有 FeedbackServer Codex 与
+Claude Code 会话，不是当前仓库的局部设置。若使用成对环境变量，环境凭据优先，且
+`activeProfile` 为 `null`。
+
 `prepare_local_setup` 会校验服务地址、邀请码、用户名和显示名并安全转义 shell 参数。没有现有账号时，生成的接入命令会依次隐藏输入：
 
 - 你的新管理员密码
