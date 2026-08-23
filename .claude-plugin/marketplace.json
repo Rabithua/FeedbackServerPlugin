@@ -9,8 +9,8 @@
     {
       "name": "feedback-server",
       "source": "./plugins/feedback-server",
-      "description": "Manage FeedbackServer from Claude Code through a local MCP server and shared management Skill.",
-      "version": "0.8.0",
+      "description": "Manage FeedbackServer from Claude Code through a local MCP server and focused workflow Skills.",
+      "version": "0.9.0",
       "author": {
         "name": "Rabithua"
       },
@@ -22,7 +22,8 @@
         "waitlist",
         "roadmap",
         "changelog",
-        "mcp"
+        "mcp",
+        "profiles"
       ],
       "category": "productivity",
       "strict": true

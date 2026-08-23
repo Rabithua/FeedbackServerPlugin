@@ -1,7 +1,8 @@
 # FeedbackServer agent plugin
 
 This directory is the single `feedback-server` plugin source for Codex and Claude Code. It contains
-the shared MCP server, `manage-feedback-server` Skill, Keychain-backed CLI, tests, and deterministic
+the shared MCP server, six focused Skills plus the `manage-feedback-server` compatibility router,
+Keychain-backed CLI, tests, evals, and deterministic
 standalone bundles. It uses only FeedbackServer's documented `/v1/api` HTTPS surface.
 
 Platform-specific metadata is isolated under `.codex-plugin/`, `.claude-plugin/`, the inline Codex
@@ -12,9 +13,12 @@ cached distribution without cloning the repository or installing source dependen
 ```text
 feedback-server doctor
 feedback-server test roundtrip --product <id-or-slug> --confirm <product-slug>
-feedback-server agent configure
-feedback-server agent disconnect
+feedback-server agent configure [--profile <name>]
+feedback-server agent disconnect [--profile <name>]
 feedback-server agent revoke-token --id <uuid>
+feedback-server profile list
+feedback-server profile use <name>
+feedback-server profile remove <name>
 feedback-server admin invite --plan free
 feedback-server admin invite --plan solo --subscription-term month
 feedback-server admin invite --plan studio --subscription-term year
@@ -70,6 +74,10 @@ and token ID for recoverable PAT revocation. CI and non-macOS MCP processes may 
 `FEEDBACK_SERVER_BASE_URL` and `FEEDBACK_SERVER_API_TOKEN` environment values.
 The canonical default endpoint is `https://api.feedkit.cn/v1/api`; credentials saved with the former
 production hostname are normalized to this endpoint while preserving the existing PAT.
+Named profiles are global to all local FeedbackServer Codex and Claude sessions. Each profile keeps
+the existing split PAT/metadata record format and adds only profile and active-profile pointers.
+The legacy `default` pointer migrates without PAT rotation and resumes safely after interruption.
+Environment credentials remain higher priority and intentionally have no active profile.
 Legacy username-only administrator-password items are read only as migration candidates. The
 plugin moves one to the server-scoped account only after that password authenticates successfully
 against the selected server, preventing cross-server credential reuse.
@@ -81,6 +89,12 @@ the plugin automatically, and fails silently when GitHub is unavailable.
 The same successful result may also contain one process-local `setupNotice` when live Server state
 shows a required setup action, a missing read scope, or no effective notification channel. Status
 check failures are ignored, and unchecked local-App or roundtrip stages alone do not trigger it.
+
+Protected actions now prefer the generic `execute_confirmation` tool. Its process-local payload and
+handler expire after ten minutes, are single-use, and are bound to connection identity and mutation
+preconditions. The original same-tool confirmation call remains accepted through 1.0. Error
+structured content includes request IDs, Retry-After seconds, remediation, and redacted server data
+without removing the legacy text fields.
 
 If Agent credentials already exist, `accept-invite` shows their non-secret username and service URL
 and asks whether to keep or switch accounts. Keeping is the default and stops without consuming the

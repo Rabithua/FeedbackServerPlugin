@@ -13,8 +13,10 @@ import {
   normalizeBaseUrl,
   readPendingTokenRevocations,
   readKeychainCredentials,
+  readKeychainProfileCredentials,
   removePendingTokenRevocation,
   writeKeychainCredentials,
+  writeKeychainProfileCredentials,
   type PendingTokenRevocation,
   type StoredCredentials,
 } from './credentials.js';
@@ -81,20 +83,26 @@ export interface InvitationAcceptanceDependencies {
   removePendingRevocation: (entry: PendingTokenRevocation) => Promise<void>;
 }
 
-const defaultDependencies: InvitationAcceptanceDependencies = {
-  isMacOS: () => process.platform === 'darwin',
-  readCredentials: readKeychainCredentials,
-  writeCredentials: writeKeychainCredentials,
-  acceptInvitation: acceptAdminInvitation,
-  login,
-  listProducts: listOwnedProducts,
-  createToken: createAgentToken,
-  revokeToken: revokeAgentToken,
-  logout,
-  readPendingRevocations: readPendingTokenRevocations,
-  addPendingRevocation: addPendingTokenRevocation,
-  removePendingRevocation: removePendingTokenRevocation,
-};
+function defaultDependencies(profile?: string): InvitationAcceptanceDependencies {
+  return {
+    isMacOS: () => process.platform === 'darwin',
+    readCredentials: profile
+      ? () => readKeychainProfileCredentials(profile)
+      : readKeychainCredentials,
+    writeCredentials: profile
+      ? (credentials) => writeKeychainProfileCredentials(credentials, profile)
+      : writeKeychainCredentials,
+    acceptInvitation: acceptAdminInvitation,
+    login,
+    listProducts: listOwnedProducts,
+    createToken: createAgentToken,
+    revokeToken: revokeAgentToken,
+    logout,
+    readPendingRevocations: readPendingTokenRevocations,
+    addPendingRevocation: addPendingTokenRevocation,
+    removePendingRevocation: removePendingTokenRevocation,
+  };
+}
 
 function verifyIdentity(session: LoginResponse | AcceptedInvitation, username: string): void {
   if (session.admin?.role !== 'admin' || session.admin.username !== username) {
@@ -189,8 +197,9 @@ export async function acceptInvitationAndConfigure(
     username: string;
     displayName: string;
     password: string;
+    profile?: string;
   },
-  dependencies: InvitationAcceptanceDependencies = defaultDependencies,
+  dependencies: InvitationAcceptanceDependencies = defaultDependencies(input.profile),
 ): Promise<ConfiguredInvitationAccount> {
   if (!dependencies.isMacOS()) {
     throw new Error('Invitation acceptance with automatic Agent configuration requires macOS Keychain');

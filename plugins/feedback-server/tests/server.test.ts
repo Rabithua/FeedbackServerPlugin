@@ -392,7 +392,35 @@ function resultData(result: { structuredContent?: unknown }) {
   return (result.structuredContent as { data: Record<string, unknown> }).data;
 }
 
-describe('MCP server 0.8.0', () => {
+function missingParameterDescriptions(schema: unknown, path = 'input'): string[] {
+  if (schema === null || typeof schema !== 'object') return [];
+  const value = schema as Record<string, unknown>;
+  const missing: string[] = [];
+  if (value.properties && typeof value.properties === 'object') {
+    for (const [name, property] of Object.entries(value.properties as Record<string, unknown>)) {
+      const propertyPath = `${path}.${name}`;
+      if (
+        property === null
+        || typeof property !== 'object'
+        || typeof (property as Record<string, unknown>).description !== 'string'
+      ) missing.push(propertyPath);
+      missing.push(...missingParameterDescriptions(property, propertyPath));
+    }
+  }
+  for (const keyword of ['items', 'anyOf', 'oneOf', 'allOf'] as const) {
+    const nested = value[keyword];
+    if (Array.isArray(nested)) {
+      nested.forEach((entry, index) => {
+        missing.push(...missingParameterDescriptions(entry, `${path}.${keyword}[${index}]`));
+      });
+    } else if (nested) {
+      missing.push(...missingParameterDescriptions(nested, `${path}.${keyword}`));
+    }
+  }
+  return missing;
+}
+
+describe('MCP server 0.9.0', () => {
   const originalFetch = globalThis.fetch;
   let client: Client;
   let server: ReturnType<typeof createServer>;
@@ -441,8 +469,9 @@ describe('MCP server 0.8.0', () => {
   test('exposes the new surface and removes legacy Feedback and Item fields', async () => {
     const tools = (await client.listTools()).tools;
     const names = tools.map(({ name }) => name);
-    expect(names).toHaveLength(68);
+    expect(names).toHaveLength(69);
     expect(names).toContain('prepare_local_setup');
+    expect(names).toContain('execute_confirmation');
     expect(names).toContain('get_subscription');
     expect(names).toContain('get_onboarding_status');
     expect(names).toContain('set_primary_product');
@@ -463,6 +492,23 @@ describe('MCP server 0.8.0', () => {
     expect(names).not.toContain('create_admin');
     const releaseTranslationTool = tools.find(({ name }) => name === 'set_release_translation');
     expect(JSON.stringify(releaseTranslationTool?.inputSchema)).not.toContain('title');
+    const createProduct = tools.find(({ name }) => name === 'create_product');
+    expect(JSON.stringify(createProduct?.inputSchema)).toContain('Stable lowercase Product slug');
+    expect(tools.find(({ name }) => name === 'list_products')?.annotations?.openWorldHint).toBe(false);
+    expect(createProduct?.annotations?.openWorldHint).toBe(false);
+    expect(tools.find(({ name }) => name === 'test_bark_channel')?.annotations?.openWorldHint).toBe(true);
+    expect(tools.find(({ name }) => name === 'delete_waitlist_entry')?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+    });
+    expect(tools.find(({ name }) => name === 'remove_product_app_store_binding')?.annotations)
+      .toMatchObject({ destructiveHint: false, idempotentHint: true });
+    expect(tools.find(({ name }) => name === 'add_waitlist_note')?.annotations)
+      .toMatchObject({ destructiveHint: false, idempotentHint: false, openWorldHint: false });
+    const missingDescriptions = tools.flatMap((tool) =>
+      missingParameterDescriptions(tool.inputSchema, tool.name));
+    expect(missingDescriptions).toEqual([]);
   });
 
   test('prepares local setup without loading Agent credentials', async () => {
@@ -478,6 +524,21 @@ describe('MCP server 0.8.0', () => {
       flow: 'configure_account',
       requiresVisibleTerminal: true,
       executesCommand: false,
+    });
+  });
+
+  test('reports environment credentials without an active Keychain profile', async () => {
+    globalThis.fetch = ((input: string | URL | Request) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      const data = url.pathname.endsWith('/admin/products') ? [] : { status: 'ok' };
+      return Promise.resolve(Response.json({ code: 'ok', message: 'success', data }));
+    }) as typeof fetch;
+    const result = await client.callTool({ name: 'connection_status', arguments: {} });
+    expect(resultData(result)).toMatchObject({
+      credentialSource: 'environment',
+      activeProfile: null,
+      endpoint: 'https://feedback.example.com/v1/api',
+      authenticated: true,
     });
   });
 
@@ -827,6 +888,7 @@ describe('MCP server 0.8.0', () => {
     });
     expect(resultData(preview)).toMatchObject({
       status: 'confirmation_required',
+      executeTool: 'execute_confirmation',
       preview: {
         entryId: productId,
         appName: 'Example App',
@@ -855,6 +917,55 @@ describe('MCP server 0.8.0', () => {
     });
     expect(replay.isError).toBe(true);
     expect(requests.map(({ method }) => method)).toEqual(['GET', 'DELETE']);
+  });
+
+  test('executes a prepared deletion through the generic confirmation tool', async () => {
+    const requests: Request[] = [];
+    globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init);
+      requests.push(request);
+      const data = request.method === 'GET'
+        ? {
+            entry: {
+              id: productId,
+              appName: 'Example App',
+              platform: 'web',
+              createdAt: '2026-08-24T00:00:00.000Z',
+            },
+            notes: [],
+          }
+        : null;
+      return Promise.resolve(Response.json({ code: 'ok', message: 'success', data }));
+    }) as typeof fetch;
+
+    const preview = await client.callTool({
+      name: 'delete_waitlist_entry',
+      arguments: { entryId: productId },
+    });
+    const confirmationId = resultData(preview).confirmationId as string;
+
+    process.env.FEEDBACK_SERVER_API_TOKEN = `fspat_${'c'.repeat(64)}`;
+    const wrongAccount = await client.callTool({
+      name: 'execute_confirmation',
+      arguments: { confirmationId },
+    });
+    process.env.FEEDBACK_SERVER_API_TOKEN = token;
+    expect(wrongAccount.isError).toBe(true);
+    expect(requests.map(({ method }) => method)).toEqual(['GET']);
+
+    const executed = await client.callTool({
+      name: 'execute_confirmation',
+      arguments: { confirmationId },
+    });
+    expect(executed.isError).not.toBe(true);
+    expect(requests.map(({ method }) => method)).toEqual(['GET', 'DELETE']);
+
+    const replay = await client.callTool({
+      name: 'execute_confirmation',
+      arguments: { confirmationId },
+    });
+    expect(replay.isError).toBe(true);
+    expect(requests).toHaveLength(2);
   });
 
   test('binds primary Product confirmation to target, identity, and precondition', async () => {
@@ -951,8 +1062,8 @@ describe('MCP server 0.8.0', () => {
     const payload = { productId: secondId };
     const preview = await client.callTool({ name: 'set_primary_product', arguments: payload });
     const result = await client.callTool({
-      name: 'set_primary_product',
-      arguments: { ...payload, confirmationId: resultData(preview).confirmationId },
+      name: 'execute_confirmation',
+      arguments: { confirmationId: resultData(preview).confirmationId },
     });
 
     expect(result.isError).toBe(true);
@@ -1324,7 +1435,10 @@ describe('MCP server 0.8.0', () => {
             message: 'Administrator API token requires scope feedback:write',
             data: null,
           },
-          { status: 403 },
+          {
+            status: 403,
+            headers: { 'X-Request-ID': 'request-test-123', 'Retry-After': '17' },
+          },
         ),
       )) as unknown as typeof fetch;
     const result = await client.callTool({
@@ -1334,6 +1448,16 @@ describe('MCP server 0.8.0', () => {
     expect(result.isError).toBe(true);
     const serialized = JSON.stringify(result);
     expect(serialized).toContain('admin_scope_required');
+    expect(result.structuredContent).toMatchObject({
+      error: {
+        status: 403,
+        code: 'admin_scope_required',
+        requestId: 'request-test-123',
+        retryAfterSeconds: 17,
+        remediation: expect.any(String),
+        data: null,
+      },
+    });
     expect(serialized).not.toContain(token);
     expect(result.structuredContent).not.toHaveProperty('updateNotice');
     expect(result.structuredContent).not.toHaveProperty('setupNotice');

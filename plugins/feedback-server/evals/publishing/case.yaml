@@ -1,0 +1,16 @@
+schema_version: "1.1"
+name: "release-publication-review"
+description: "Routes release publication requests through draft review and generic confirmation."
+tags: ["publishing"]
+execution:
+  prompt: "请审阅 FeedbackServer 中 2.0 的 Release 发布流程。现在只做发布前检查，不要发布；说明 locale、Item 关联和最终确认该怎么处理。"
+  max_turns: 4
+  timeout_seconds: 180
+  allowed_tools: []
+runs: 1
+graders:
+  - type: "llm"
+    name: "release-review-only"
+    focus: "last_message"
+    criteria: "The response treats the request as review-only, resolves Product/Release/Item IDs, explains Release body localization, and reserves execute_confirmation for a later explicit publication approval."
+expected_outcome: "Review the Release workflow without publishing."

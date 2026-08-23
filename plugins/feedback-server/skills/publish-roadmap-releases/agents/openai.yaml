@@ -1,0 +1,12 @@
+interface:
+  display_name: "Publish Roadmap Releases"
+  short_description: "Manage Activity posts, roadmaps, changelogs, and Releases"
+  default_prompt: "Use $publish-roadmap-releases to review my draft release and prepare a publication preview."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "feedback-server"
+      description: "FeedbackServer Activity, roadmap, and Release tools"
+      transport: "stdio"
+policy:
+  allow_implicit_invocation: true

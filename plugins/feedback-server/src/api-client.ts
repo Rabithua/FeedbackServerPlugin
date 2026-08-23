@@ -13,10 +13,21 @@ export class FeedbackServerApiError extends Error {
     public readonly code: string,
     message: string,
     public readonly data: unknown,
+    public readonly requestId: string | null = null,
+    public readonly retryAfterSeconds: number | null = null,
   ) {
     super(message);
     this.name = 'FeedbackServerApiError';
   }
+}
+
+function retryAfterSeconds(value: string | null, now = Date.now()): number | null {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
+  const date = Date.parse(value);
+  if (Number.isNaN(date)) return null;
+  return Math.max(0, Math.ceil((date - now) / 1000));
 }
 
 export interface ApiRequestOptions {
@@ -74,6 +85,9 @@ export class FeedbackServerApiClient {
     }
 
     let envelope: ApiEnvelope<T>;
+    const requestId = response.headers.get('x-request-id')
+      ?? response.headers.get('request-id');
+    const retryAfter = retryAfterSeconds(response.headers.get('retry-after'));
     try {
       envelope = (await response.json()) as ApiEnvelope<T>;
     } catch {
@@ -82,6 +96,8 @@ export class FeedbackServerApiClient {
         'invalid_response',
         'FeedbackServer returned a non-JSON response',
         null,
+        requestId,
+        retryAfter,
       );
     }
     if (!response.ok || envelope.code !== 'ok') {
@@ -90,6 +106,8 @@ export class FeedbackServerApiClient {
         envelope.code || 'request_failed',
         envelope.message || `FeedbackServer request failed with HTTP ${response.status}`,
         envelope.data,
+        requestId,
+        retryAfter,
       );
     }
     return envelope.data;

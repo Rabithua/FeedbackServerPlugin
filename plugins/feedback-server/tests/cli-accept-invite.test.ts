@@ -34,6 +34,7 @@ function dependencies(
   overrides: Partial<AdminAcceptInviteDependencies> = {},
 ): AdminAcceptInviteDependencies {
   return {
+    readActiveProfile: () => Promise.resolve('default'),
     readCredentials: () => {
       events.push('read-credentials');
       return Promise.resolve(existingCredentials);

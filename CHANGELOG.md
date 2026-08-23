@@ -2,6 +2,14 @@
 
 All notable changes to FeedbackServer Plugin are documented here.
 
+## 0.9.0 - 2026-08-24
+
+- Add global named Keychain profiles with resumable migration of the legacy default pointer.
+- Split FeedbackServer guidance into six focused Skills plus a compatibility router.
+- Add single-use `execute_confirmation` execution while retaining the legacy confirmation protocol through 1.0.
+- Return request IDs, Retry-After guidance, remediation, semantic parameter descriptions, and calibrated tool annotations.
+- Add Claude Code routing evals for setup, triage, waitlists, publishing, errors, profiles, and negative triggers.
+
 ## 0.8.0 - 2026-08-24
 
 - Accept FeedbackKit 0.2's fixed endpoint, bundle-derived visitor Keychain service, and follow-host language defaults in `doctor`.

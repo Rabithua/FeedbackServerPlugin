@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import { normalizeBaseUrl } from './credentials.js';
+import { normalizeBaseUrl, profileIdSchema } from './credentials.js';
 
 const invitationToken = z
   .string()
@@ -33,6 +33,9 @@ export const localSetupInputSchema = z.object({
     .max(160)
     .optional()
     .describe('New administrator display name. Required only for accept_invitation.'),
+  profile: profileIdSchema
+    .optional()
+    .describe('Global Keychain profile to configure; valid only for configure_account. Example: work.'),
 }).superRefine((input, context) => {
   const invitationFields = ['baseUrl', 'invitationToken', 'username', 'displayName'] as const;
   if (input.flow === 'accept_invitation') {
@@ -44,6 +47,13 @@ export const localSetupInputSchema = z.object({
           message: `${field} is required for accept_invitation`,
         });
       }
+    }
+    if (input.profile !== undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['profile'],
+        message: 'profile is only valid for configure_account',
+      });
     }
     return;
   }
@@ -83,7 +93,12 @@ export function prepareLocalSetup(
   const input = localSetupInputSchema.parse(rawInput);
   let arguments_: string[];
   if (input.flow === 'configure_account') {
-    arguments_ = [executablePath, 'agent', 'configure'];
+    arguments_ = [
+      executablePath,
+      'agent',
+      'configure',
+      ...(input.profile ? ['--profile', input.profile] : []),
+    ];
   } else {
     const { baseUrl, invitationToken: token, username, displayName } = input;
     if (!baseUrl || !token || !username || !displayName) {

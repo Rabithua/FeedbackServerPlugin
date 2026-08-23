@@ -19,6 +19,16 @@ describe('local setup preparation', () => {
     );
   });
 
+  test('prepares an explicit global profile without exposing credentials', () => {
+    const result = prepareLocalSetup(
+      { flow: 'configure_account', profile: 'work.production' },
+      '/tmp/plugin/bin/feedback-server',
+    );
+    expect(result.command).toBe(
+      "'/tmp/plugin/bin/feedback-server' 'agent' 'configure' '--profile' 'work.production'",
+    );
+  });
+
   test('validates and shell-quotes an invitation acceptance command', () => {
     const result = prepareLocalSetup({
       flow: 'accept_invitation',
@@ -43,5 +53,13 @@ describe('local setup preparation', () => {
       flow: 'configure_account',
       username: 'unexpected',
     }, '/tmp/plugin/bin/feedback-server')).toThrow('username is only valid');
+    expect(() => prepareLocalSetup({
+      flow: 'accept_invitation',
+      baseUrl: 'https://feedback.example.com',
+      invitationToken: `fsinv_${'x'.repeat(48)}`,
+      username: 'invited-admin',
+      displayName: 'Invited Admin',
+      profile: 'work',
+    }, '/tmp/plugin/bin/feedback-server')).toThrow('profile is only valid');
   });
 });

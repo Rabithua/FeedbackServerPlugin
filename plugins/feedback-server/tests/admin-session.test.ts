@@ -303,6 +303,25 @@ describe('Agent configuration lifecycle', () => {
     ]);
   });
 
+  test('keeps profile credentials recoverable when PAT revocation fails', async () => {
+    const events: string[] = [];
+    const failure = new Error('simulated PAT revocation outage');
+    const error = await capturedError(
+      disconnectAgent(
+        { username: 'owner', password: 'not-logged', profile: 'work' },
+        dependencies(events, {
+          revokeToken: (_url, _accessToken, tokenId) => {
+            events.push(`revoke:${tokenId}`);
+            return Promise.reject(failure);
+          },
+        }),
+      ),
+    );
+    expect(error).toBe(failure);
+    expect(events).toEqual(['login', `revoke:${oldTokenId}`, 'logout']);
+    expect(events).not.toContain('delete');
+  });
+
   test('disconnect retries retained revocations before removing the active token', async () => {
     const events: string[] = [];
     const retained: StoredCredentials = {

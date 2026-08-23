@@ -1,0 +1,12 @@
+interface:
+  display_name: "Configure Notifications"
+  short_description: "Configure Bark and Webhook notifications and deliveries"
+  default_prompt: "Use $configure-notifications to inspect notification health for my app without changing it."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "feedback-server"
+      description: "FeedbackServer Bark and Webhook tools"
+      transport: "stdio"
+policy:
+  allow_implicit_invocation: true

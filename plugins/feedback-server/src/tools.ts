@@ -8,7 +8,11 @@ import {
 import { z } from 'zod';
 import { FeedbackServerApiClient, FeedbackServerApiError } from './api-client.js';
 import { ConfirmationStore, redactPreview } from './confirmation.js';
-import { loadCredentials, type StoredCredentials } from './credentials.js';
+import {
+  loadCredentialsWithSource,
+  type LoadedCredentials,
+  type StoredCredentials,
+} from './credentials.js';
 import {
   createSetupNoticeProvider,
   deriveOnboardingStatus,
@@ -22,7 +26,9 @@ import {
 } from './release-updates.js';
 import { localSetupInputSchema, prepareLocalSetup } from './local-setup.js';
 
-const uuid = z.uuid();
+const uuid = z.uuid().describe(
+  'UUID identifying the exact FeedbackServer resource; example: 123e4567-e89b-42d3-a456-426614174000.',
+);
 const confirmation = {
   confirmationId: z
     .uuid()
@@ -138,14 +144,130 @@ const waitlistPlatform = z.enum(['ios_ipados', 'macos', 'android', 'web', 'other
 
 interface ToolContext {
   credentials: StoredCredentials;
+  credentialSource: LoadedCredentials['credentialSource'];
+  activeProfile: string | null;
   client: FeedbackServerApiClient;
   identity: {
     baseUrl: string;
     tokenIdentity: string;
+    activeProfile: string | null;
   };
 }
 
 type ObjectSchema = z.ZodObject<z.ZodRawShape>;
+
+const PARAMETER_DESCRIPTIONS: Record<string, string> = {
+  productId: 'UUID of the exact Product (app) to read or change.',
+  feedbackId: 'UUID of the exact Feedback record to read or change.',
+  postId: 'UUID of the exact Developer Post to read or change.',
+  itemId: 'UUID of the exact roadmap Item to read or change.',
+  itemIds: 'Ordered UUIDs of roadmap Items associated with this Release; use an empty array for none.',
+  releaseId: 'UUID of the exact Release to read or change.',
+  translationId: 'UUID of the exact localized translation to change or delete.',
+  attachmentId: 'UUID of the exact private attachment whose short-lived URL is requested.',
+  outboxId: 'UUID of the exact failed notification delivery to retry.',
+  entryId: 'UUID of the exact owner-scoped waitlist entry.',
+  confirmationId: 'Single-use confirmation ID returned by a protected preview; example: 123e4567-e89b-42d3-a456-426614174000.',
+  cursor: 'Opaque nextCursor from the preceding page; omit for the first page.',
+  limit: 'Maximum number of records in this page within the documented numeric bounds.',
+  locale: 'Explicit BCP-47 locale; examples: en, en-US, zh-Hans.',
+  defaultLocale: 'Default BCP-47 locale used when localized content is unavailable; example: en.',
+  storefront: 'Two-letter App Store storefront code; example: US. This does not imply a locale.',
+  appStoreId: 'Numeric App Store application ID; example: 1234567890.',
+  releasedAt: 'ISO 8601 date-time with an explicit UTC offset; example: 2026-08-24T12:00:00Z.',
+  status: 'Lifecycle status. Use one of the enum values published in this schema.',
+  visibility: 'Audience visibility. Use one of the enum values published in this schema.',
+  platform: 'Client platform. Use one of the enum values published in this schema.',
+  search: 'Case-insensitive text search across the fields documented by this tool.',
+  query: 'Search text used to narrow results; omit to list without text filtering.',
+  body: 'User-visible or administrator-only body text according to this tool context.',
+  title: 'Human-readable title displayed for this resource.',
+  name: 'Human-readable name displayed for this resource.',
+  slug: 'Stable lowercase Product slug used in URLs and explicit confirmations; example: my-ios-app.',
+  url: 'Absolute HTTPS URL controlled by the Product owner.',
+  endpoint: 'Absolute HTTPS Webhook endpoint controlled by the Product owner.',
+  enabled: 'Whether this configuration or delivery behavior is enabled.',
+  productIds: 'UUIDs of the exact Products included in this operation.',
+  products: 'Explicit Product associations and their Product-specific roadmap settings.',
+  type: 'Action or content type. Use one of the enum values published in this schema.',
+};
+
+interface ZodDefinitionView {
+  type?: string;
+  shape?: Record<string, z.ZodType>;
+  innerType?: z.ZodType;
+  element?: z.ZodType;
+  options?: z.ZodType[];
+  items?: z.ZodType[];
+  valueType?: z.ZodType;
+}
+
+function humanizeParameter(name: string): string {
+  return name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replaceAll('_', ' ').toLowerCase();
+}
+
+function describeSchemaParameters(schema: z.ZodType): void {
+  const definition = (schema as unknown as { _zod?: { def?: ZodDefinitionView } })._zod?.def;
+  if (!definition) return;
+  if (definition.shape) {
+    for (const [name, child] of Object.entries(definition.shape)) {
+      if (!child.description) {
+        z.globalRegistry.add(child, {
+          description: PARAMETER_DESCRIPTIONS[name]
+            ?? `Value for the ${humanizeParameter(name)} parameter in this FeedbackServer operation.`,
+        });
+      }
+      describeSchemaParameters(child);
+    }
+  }
+  if (definition.innerType) describeSchemaParameters(definition.innerType);
+  if (definition.element) describeSchemaParameters(definition.element);
+  if (definition.valueType) describeSchemaParameters(definition.valueType);
+  for (const option of definition.options ?? []) describeSchemaParameters(option);
+  for (const item of definition.items ?? []) describeSchemaParameters(item);
+}
+
+const OPEN_WORLD_EFFECT_TOOLS = new Set([
+  'update_product',
+  'set_feedback_visibility',
+  'set_feedback_pinned',
+  'reply_to_feedback',
+  'update_developer_post',
+  'set_developer_post_translation',
+  'set_developer_post_publication',
+  'delete_developer_post_translation',
+  'delete_developer_post',
+  'create_item',
+  'update_item',
+  'set_item_translation',
+  'delete_item_translation',
+  'delete_item',
+  'preview_latest_app_store_release',
+  'import_latest_app_store_release',
+  'create_release',
+  'update_release',
+  'set_release_translation',
+  'delete_release_translation',
+  'delete_release',
+  'update_global_bark_config',
+  'update_product_bark_config',
+  'test_bark_channel',
+  'retry_bark_delivery',
+  'update_product_webhook_config',
+  'test_product_webhook',
+  'retry_webhook_delivery',
+  'execute_confirmation',
+]);
+
+const IDEMPOTENT_DIRECT_WRITE_TOOLS = new Set([
+  'configure_product_app_store_binding',
+  'remove_product_app_store_binding',
+  'link_feedback_item',
+  'unlink_feedback_item',
+  'import_latest_app_store_release',
+  'update_global_bark_config',
+  'update_product_bark_config',
+]);
 
 export function productUpdateProtectedEffects(input: {
   statusChanges: boolean;
@@ -176,6 +298,7 @@ const setupNoticeProviders = new WeakMap<McpServer, SetupNoticeProvider>();
 
 function toolRegistrar(server: McpServer): RegisterToolBridge {
   return (name, config, callback) => {
+    describeSchemaParameters(config.inputSchema);
     return server.registerTool(name, config, async (input) => {
       const result = await callback(input);
       if (result.isError) return result;
@@ -225,6 +348,25 @@ function normalizeReleasedAt(value: string | null | undefined): string | null | 
   return typeof value === 'string' ? new Date(value).toISOString() : value;
 }
 
+function remediationFor(error: FeedbackServerApiError): string {
+  if (error.status === 401) {
+    return 'Reconnect the active FeedbackServer profile in a visible terminal, then retry.';
+  }
+  if (error.status === 403) {
+    return 'Check the active account, Product access, and PAT scopes before retrying.';
+  }
+  if (error.status === 409 || error.status === 412) {
+    return 'Read the current resource again, review the changed state, and prepare a new confirmation.';
+  }
+  if (error.status === 429) {
+    return error.retryAfterSeconds === null
+      ? 'Wait briefly before retrying.'
+      : `Retry after at least ${error.retryAfterSeconds} seconds.`;
+  }
+  if (error.status >= 500) return 'Retry later; if the problem persists, check FeedbackServer health.';
+  return 'Review the request arguments and the returned error data before retrying.';
+}
+
 function failure(error: unknown): CallToolResult {
   const payload =
     error instanceof FeedbackServerApiError
@@ -232,30 +374,42 @@ function failure(error: unknown): CallToolResult {
           status: error.status,
           code: error.code,
           message: error.message,
+          requestId: error.requestId,
+          retryAfterSeconds: error.retryAfterSeconds,
+          remediation: remediationFor(error),
           data: redactPreview(error.data),
         }
       : {
           status: 500,
           code: 'agent_tool_error',
           message: error instanceof Error ? error.message : 'Unknown FeedbackServer Agent error',
+          requestId: null,
+          retryAfterSeconds: null,
+          remediation: 'Review the error, correct local configuration or arguments, and retry.',
           data: null,
         };
+  const structuredContent = JSON.parse(JSON.stringify({ error: payload })) as JSONObject;
   return {
     isError: true,
     content: [{ type: 'text', text: JSON.stringify(payload) }],
+    structuredContent,
   };
 }
 
 async function context(): Promise<ToolContext> {
-  const credentials = await loadCredentials();
+  const loaded = await loadCredentialsWithSource();
+  const { credentials } = loaded;
   const tokenIdentity =
     credentials.tokenId ?? createHash('sha256').update(credentials.token).digest('hex');
   return {
     credentials,
+    credentialSource: loaded.credentialSource,
+    activeProfile: loaded.activeProfile,
     client: new FeedbackServerApiClient(credentials),
     identity: {
       baseUrl: credentials.baseUrl,
       tokenIdentity,
+      activeProfile: loaded.activeProfile,
     },
   };
 }
@@ -276,7 +430,7 @@ function registerRead<T extends ObjectSchema>(
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
-        openWorldHint: true,
+        openWorldHint: OPEN_WORLD_EFFECT_TOOLS.has(name),
       },
     },
     async (input) => {
@@ -333,8 +487,8 @@ function registerDirectWrite<T extends ObjectSchema>(
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
-        idempotentHint: false,
-        openWorldHint: true,
+        idempotentHint: IDEMPOTENT_DIRECT_WRITE_TOOLS.has(name),
+        openWorldHint: OPEN_WORLD_EFFECT_TOOLS.has(name),
       },
     },
     async (input) => {
@@ -371,13 +525,13 @@ function registerRiskAwareWrite<T extends ObjectSchema>(
   toolRegistrar(server)(
     name,
     {
-      description: `${description} Executes immediately when the current change has no protected effect; otherwise returns a confirmation preview.`,
+      description: `${description} Executes immediately when the current change has no protected effect; otherwise returns a confirmation preview. After explicit approval, call execute_confirmation with the returned ID. Repeating this tool with unchanged arguments and confirmationId remains supported until 1.0.`,
       inputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: annotations.destructiveHint,
         idempotentHint: annotations.idempotentHint,
-        openWorldHint: true,
+        openWorldHint: OPEN_WORLD_EFFECT_TOOLS.has(name),
       },
     },
     async (input) => {
@@ -413,10 +567,19 @@ function registerRiskAwareWrite<T extends ObjectSchema>(
           toolContext.identity,
           Date.now(),
           { precondition: assessment.precondition },
+          async (storedPayload, executionContext, runtimeContext) => {
+            const stored = executionContext as { precondition?: string } | undefined;
+            return handler(
+              storedPayload as Omit<z.infer<T>, 'confirmationId'>,
+              runtimeContext as ToolContext,
+              stored?.precondition,
+            );
+          },
         );
         return success({
           status: 'confirmation_required',
           action: name,
+          executeTool: 'execute_confirmation',
           preview: redactPreview(assessment.preview),
           ...prepared,
         });
@@ -442,13 +605,13 @@ function registerConfirmedWrite<T extends ObjectSchema>(
   toolRegistrar(server)(
     name,
     {
-      description: `${description} Without confirmationId this only prepares a redacted preview. Execute only after explicit user confirmation.`,
+      description: `${description} Without confirmationId this only prepares a redacted preview. After explicit user confirmation, call execute_confirmation with the returned ID. Repeating this tool with unchanged arguments and confirmationId remains supported until 1.0.`,
       inputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: annotations.destructiveHint,
         idempotentHint: annotations.idempotentHint,
-        openWorldHint: true,
+        openWorldHint: OPEN_WORLD_EFFECT_TOOLS.has(name),
       },
     },
     async (input) => {
@@ -459,10 +622,21 @@ function registerConfirmedWrite<T extends ObjectSchema>(
           confirmationId?: string;
         };
         if (!confirmationId) {
-          const prepared = confirmations.prepare(name, payload, toolContext.identity);
+          const prepared = confirmations.prepare(
+            name,
+            payload,
+            toolContext.identity,
+            Date.now(),
+            undefined,
+            async (storedPayload, _executionContext, runtimeContext) => handler(
+              storedPayload as Omit<z.infer<T>, 'confirmationId'>,
+              runtimeContext as ToolContext,
+            ),
+          );
           return success({
             status: 'confirmation_required',
             action: name,
+            executeTool: 'execute_confirmation',
             preview: redactPreview(payload),
             ...prepared,
           });
@@ -502,6 +676,38 @@ export function registerFeedbackServerTools(
     localSetupInputSchema,
     (input) => prepareLocalSetup(input),
   );
+  toolRegistrar(server)(
+    'execute_confirmation',
+    {
+      description: 'Execute one previously prepared FeedbackServer action after the user explicitly approved its preview. Confirmations expire after 10 minutes and can be used only once.',
+      inputSchema: z.object({
+        confirmationId: z.uuid().describe(
+          'The confirmationId returned with status confirmation_required; example: 123e4567-e89b-42d3-a456-426614174000.',
+        ),
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+    },
+    async (input) => {
+      try {
+        const parsed = z.object({ confirmationId: z.uuid() }).parse(input);
+        const toolContext = await context();
+        return success(
+          await confirmations.execute(
+            parsed.confirmationId,
+            toolContext.identity,
+            toolContext,
+          ),
+        );
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
   registerRead(
     server,
     'health',
@@ -515,7 +721,7 @@ export function registerFeedbackServerTools(
     'connection_status',
     'Show the configured FeedbackServer endpoint and non-secret token metadata.',
     z.object({}),
-    async (_input, { client, credentials }) => {
+    async (_input, { client, credentials, credentialSource, activeProfile }) => {
       const health = await client.request('/health', { authenticated: false });
       const products = await client.request<unknown[]>('/admin/products');
       const daysUntilExpiry = credentials.expiresAt
@@ -525,6 +731,8 @@ export function registerFeedbackServerTools(
         : null;
       return {
         endpoint: credentials.baseUrl,
+        credentialSource,
+        activeProfile,
         username: credentials.username ?? null,
         tokenId: credentials.tokenId ?? null,
         scopes: credentials.scopes ?? null,
