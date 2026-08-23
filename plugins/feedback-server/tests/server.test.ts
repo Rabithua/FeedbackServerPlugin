@@ -392,7 +392,7 @@ function resultData(result: { structuredContent?: unknown }) {
   return (result.structuredContent as { data: Record<string, unknown> }).data;
 }
 
-describe('MCP server 0.7.1', () => {
+describe('MCP server 0.8.0', () => {
   const originalFetch = globalThis.fetch;
   let client: Client;
   let server: ReturnType<typeof createServer>;
@@ -441,7 +441,8 @@ describe('MCP server 0.7.1', () => {
   test('exposes the new surface and removes legacy Feedback and Item fields', async () => {
     const tools = (await client.listTools()).tools;
     const names = tools.map(({ name }) => name);
-    expect(names).toHaveLength(67);
+    expect(names).toHaveLength(68);
+    expect(names).toContain('prepare_local_setup');
     expect(names).toContain('get_subscription');
     expect(names).toContain('get_onboarding_status');
     expect(names).toContain('set_primary_product');
@@ -462,6 +463,22 @@ describe('MCP server 0.7.1', () => {
     expect(names).not.toContain('create_admin');
     const releaseTranslationTool = tools.find(({ name }) => name === 'set_release_translation');
     expect(JSON.stringify(releaseTranslationTool?.inputSchema)).not.toContain('title');
+  });
+
+  test('prepares local setup without loading Agent credentials', async () => {
+    delete process.env.FEEDBACK_SERVER_BASE_URL;
+    delete process.env.FEEDBACK_SERVER_API_TOKEN;
+    const result = await client.callTool({
+      name: 'prepare_local_setup',
+      arguments: { flow: 'configure_account' },
+    });
+    expect(result.isError).not.toBe(true);
+    expect(resultData(result)).toMatchObject({
+      status: 'ready',
+      flow: 'configure_account',
+      requiresVisibleTerminal: true,
+      executesCommand: false,
+    });
   });
 
   test('reports Product protected effects in deterministic order for combined changes', () => {
@@ -498,6 +515,14 @@ describe('MCP server 0.7.1', () => {
       latestVersion: '0.6.8',
       releaseUrl: 'https://github.com/Rabithua/FeedbackServerPlugin/releases/tag/v0.6.8',
       command: 'codex plugin marketplace upgrade feedback-server',
+      commands: {
+        codex: ['codex plugin marketplace upgrade feedback-server'],
+        claudeCode: [
+          'claude plugin marketplace update feedback-server',
+          'claude plugin update feedback-server@feedback-server',
+        ],
+      },
+      reloadRequired: true,
     };
     globalThis.fetch = (() => Promise.resolve(Response.json({
       code: 'ok',
@@ -521,6 +546,14 @@ describe('MCP server 0.7.1', () => {
       latestVersion: '0.6.11',
       releaseUrl: 'https://github.com/Rabithua/FeedbackServerPlugin/releases/tag/v0.6.11',
       command: 'codex plugin marketplace upgrade feedback-server',
+      commands: {
+        codex: ['codex plugin marketplace upgrade feedback-server'],
+        claudeCode: [
+          'claude plugin marketplace update feedback-server',
+          'claude plugin update feedback-server@feedback-server',
+        ],
+      },
+      reloadRequired: true,
     };
     setupNotice = {
       kind: 'feedback_server_setup',
@@ -1262,6 +1295,14 @@ describe('MCP server 0.7.1', () => {
       latestVersion: '0.6.11',
       releaseUrl: 'https://github.com/Rabithua/FeedbackServerPlugin/releases/tag/v0.6.11',
       command: 'codex plugin marketplace upgrade feedback-server',
+      commands: {
+        codex: ['codex plugin marketplace upgrade feedback-server'],
+        claudeCode: [
+          'claude plugin marketplace update feedback-server',
+          'claude plugin update feedback-server@feedback-server',
+        ],
+      },
+      reloadRequired: true,
     };
     setupNotice = {
       kind: 'feedback_server_setup',

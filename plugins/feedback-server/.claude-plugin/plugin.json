@@ -1,6 +1,6 @@
 {
   "name": "feedback-server",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "Manage FeedbackServer products, feedback, waitlists, activity, roadmaps, releases, attachments, Bark, Webhooks, and audit records through MCP.",
   "author": {
     "name": "Rabithua",
@@ -11,12 +11,12 @@
   "license": "MIT",
   "keywords": [
     "feedback",
+    "waitlist",
     "roadmap",
     "changelog",
     "mcp"
   ],
   "skills": [
     "./skills/manage-feedback-server"
-  ],
-  "mcpServers": "./.mcp.claude.json"
+  ]
 }

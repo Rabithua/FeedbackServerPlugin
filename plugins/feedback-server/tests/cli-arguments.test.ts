@@ -134,7 +134,8 @@ describe('CLI argument policy', () => {
     const message = agentConfigurationCompletionMessage('Agent configured.');
     expect(message).toContain('Account connection is complete');
     expect(message).toContain('app configuration is not complete yet');
-    expect(message).toContain('Open a new Agent task');
+    expect(message).toContain('Return to the current Agent task');
+    expect(message).toContain('next tool call');
     expect(message).toContain(AGENT_ONBOARDING_PROMPT);
   });
 });

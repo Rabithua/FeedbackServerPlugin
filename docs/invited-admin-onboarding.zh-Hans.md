@@ -1,6 +1,6 @@
 # FeedbackServer 受邀管理员接入指南
 
-你收到的是一个一次性管理员邀请码。它只能使用一次，并且会过期。你可以把邀请人发来的整段接入消息交给 Codex 或 Claude Code，让 Agent 安装插件、克隆仓库并准备准确的接入命令。最后的 `accept-invite` 命令需要隐藏输入新密码，因此必须由你在自己可见、可控制的交互式终端中运行。
+你收到的是一个一次性管理员邀请码。它只能使用一次，并且会过期。你可以把邀请人发来的整段接入消息交给 Codex 或 Claude Code，让 Agent 安装插件并从已安装 bundle 准备准确的接入命令。最后的 `accept-invite` 命令需要隐藏输入新密码，因此必须由你在自己可见、可控制的交互式终端中运行。
 
 请不要把你的管理员密码或之后生成的 PAT 发到聊天机器人、工单、代码仓库、截图或共享文档里。密码仍然只应该输入到终端的隐藏提示里。
 
@@ -15,7 +15,6 @@
 请确认你的机器上已经有：
 
 - macOS
-- Git
 - Bun 1.3 或更新版本
 - Codex 或 Claude Code
 
@@ -53,41 +52,28 @@ codex plugin add feedback-server@feedback-server
 如果你用 Claude Code：
 
 ```bash
-claude plugin marketplace add Rabithua/FeedbackServerPlugin
-claude plugin install feedback-server@feedback-server --scope user
+claude plugin marketplace list
+claude plugin list
 ```
 
-安装后先不用开新会话，等下面账号接入完成后再打开新的 Codex 或 Claude Code 会话。
+marketplace 缺失时运行 `claude plugin marketplace add Rabithua/FeedbackServerPlugin`，已存在时运行
+`claude plugin marketplace update feedback-server`。插件缺失时运行
+`claude plugin install feedback-server@feedback-server --scope user`，已存在时运行
+`claude plugin update feedback-server@feedback-server`。
+
+首次安装或升级后，Codex 需要打开新任务，Claude Code 需要运行 `/reload-plugins` 或重启。插件已经加载且只完成账号接入时，不需要再开任务。
 
 Codex 或 Claude Code 可能会在执行安装命令前请求授权。请在当前任务中亲自核对并批准；另一个任务或 Agent 不能代替你批准。授权完成后，原任务才会继续准备接入命令。
 
 ## 2. 接受邀请并配置本机凭据
 
-克隆公开插件仓库：
+如果邀请人发给你的是完整接入消息，把整段消息发给 Codex 或 Claude Code。插件加载后，Agent 会询问用户名和显示名，并调用 `prepare_local_setup`，从当前已安装 bundle 生成完整命令；不需要 clone 仓库，也不要猜测插件缓存路径。
 
-```bash
-git clone https://github.com/Rabithua/FeedbackServerPlugin.git
-cd FeedbackServerPlugin
-```
-
-如果邀请人发给你的是完整接入消息，最简单的方式是把整段消息发给 Codex 或 Claude Code。Agent 可以安装插件、克隆仓库、询问用户名和显示名，并根据仓库的真实绝对路径生成下面的完整命令。
-
-Agent 不应在自己的进程、私有 PTY 或其他你看不到的终端中运行 `accept-invite`。请打开自己可见、可控制的交互式终端，先进入 Agent 告诉你的仓库绝对路径，再运行它准备好的接入命令。这样 CLI 才能安全地隐藏密码输入，并且密码不会经过聊天。
+Agent 不应在自己的进程、私有 PTY 或其他你看不到的终端中运行 `accept-invite`。请打开自己可见、可控制的交互式终端，运行 Agent 展示的完整命令。这样 CLI 才能安全地隐藏密码输入，并且密码不会经过聊天。
 
 如果当前 Agent 会话可以检查 `connection_status`，它应先展示已有账号的非敏感身份，说明切换会影响这台 Mac 上所有 FeedbackServer Agent 会话，再询问你要保留还是切换；Agent 不能替你选择。如果当前会话还不能使用该工具，CLI 会在接入命令开始时完成同样的确认。选择保留后流程立即停止；选择切换时还需要在隐藏提示中输入当前账号密码。
 
-如果你不使用 Agent 准备命令，请在可见终端中执行下面两步，并把 `YOUR_INVITATION_TOKEN`、`YOUR_USERNAME` 和 `Your Display Name` 换成邀请消息里的邀请码，以及你想使用的管理员用户名和显示名：
-
-```bash
-cd "/absolute/path/to/FeedbackServerPlugin"
-plugins/feedback-server/bin/feedback-server admin accept-invite \
-  --url https://api.feedkit.cn/v1/api \
-  --token YOUR_INVITATION_TOKEN \
-  --username YOUR_USERNAME \
-  --display-name "Your Display Name"
-```
-
-不要省略第一条 `cd`，也不要从克隆目录的上一级直接运行相对路径。没有现有账号时，接入命令会依次隐藏输入：
+`prepare_local_setup` 会校验服务地址、邀请码、用户名和显示名并安全转义 shell 参数。没有现有账号时，生成的接入命令会依次隐藏输入：
 
 - 你的新管理员密码
 - 再输入一次密码确认
@@ -106,8 +92,8 @@ plugins/feedback-server/bin/feedback-server admin accept-invite \
 成功文案还会显示 Server 实际应用的套餐。固定期限会同时显示到期时间和 7 天宽限结束
 时间；这份服务端结果才是授权成功的依据，不要仅凭邀请消息里的声明判断。
 
-成功文案会明确说明“账号连接完成”不等于“应用配置完成”。按提示打开一个新的 Codex 或
-Claude Code 任务，并发送：
+成功文案会明确说明“账号连接完成”不等于“应用配置完成”。回到当前 Codex 或 Claude Code
+任务并发送：
 
 ```text
 帮我完成 FeedbackServer 初始配置
@@ -119,11 +105,7 @@ Agent 会从实时服务端状态开始，每次只引导一个下一步；不�
 
 ## 3. 验证连接
 
-先在插件仓库中运行只读预检：
-
-```bash
-plugins/feedback-server/bin/feedback-server doctor
-```
+让当前 Agent 从已安装 bundle 运行只读 `feedback-server doctor` 预检。
 
 它会检查插件版本、Agent 凭据、PAT 权限与有效期、服务健康状态和可见 Product，不会输出
 密码、PAT 或 Product Key。如果账号有多个 Product，请明确指定 ID 或 slug：
@@ -132,7 +114,7 @@ plugins/feedback-server/bin/feedback-server doctor
 plugins/feedback-server/bin/feedback-server doctor --product YOUR_PRODUCT_SLUG
 ```
 
-打开一个新的 Codex 或 Claude Code 会话，然后让 Agent 执行：
+继续当前 Codex 或 Claude Code 任务，然后让 Agent 执行：
 
 ```text
 帮我完成 FeedbackServer 初始配置

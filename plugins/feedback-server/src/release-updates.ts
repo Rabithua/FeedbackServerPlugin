@@ -16,6 +16,11 @@ export interface PluginUpdateNotice {
   latestVersion: string;
   releaseUrl: string;
   command: string;
+  commands: {
+    codex: string[];
+    claudeCode: string[];
+  };
+  reloadRequired: true;
 }
 
 export interface UpdateNoticeProvider {
@@ -116,6 +121,14 @@ class GitHubPluginUpdateNoticeProvider implements UpdateNoticeProvider {
       latestVersion: latest.version,
       releaseUrl: latest.url,
       command: 'codex plugin marketplace upgrade feedback-server',
+      commands: {
+        codex: ['codex plugin marketplace upgrade feedback-server'],
+        claudeCode: [
+          'claude plugin marketplace update feedback-server',
+          'claude plugin update feedback-server@feedback-server',
+        ],
+      },
+      reloadRequired: true,
     };
   }
 }

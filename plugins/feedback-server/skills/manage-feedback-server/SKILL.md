@@ -44,14 +44,19 @@ CLI exceptions; do not reproduce their HTTP calls manually.
   `feedback-server admin invite revoke --id <uuid>` to revoke an unaccepted invitation.
 - The recipient uses `feedback-server admin accept-invite` in a visible, user-controlled interactive
   terminal because the command requires hidden password input. An Agent may install the plugin,
-  clone the repository, collect the non-secret username and display name, and prepare the exact
-  command. It must include `cd` to the repository's real absolute path, must not execute
+  collect the non-secret username and display name, and call `prepare_local_setup` with flow
+  `accept_invitation` to prepare the exact installed-bundle command. It must not clone the repository,
+  guess a cache path, or execute
   `accept-invite` itself, and must never open a private PTY or ask for a password in chat.
 - In Codex, inspect `codex plugin marketplace list --json` and `codex plugin list --json` before
   installation. Add the FeedbackServer marketplace only when absent; otherwise upgrade it with
   `codex plugin marketplace upgrade feedback-server`. Run `codex plugin add
   feedback-server@feedback-server` only when the plugin is missing. If Codex requests command
   approval, the user must approve it in that same task; another Agent or task cannot do so.
+- In Claude Code, inspect marketplaces and installed plugins first. Add a missing marketplace or
+  update the existing `feedback-server` marketplace; install a missing plugin or run `claude plugin
+  update feedback-server@feedback-server` for an installed one. Reload plugins only after an
+  installation or update, not after the CLI writes a new Keychain credential.
 - When Agent credentials already exist, show only the current non-secret username and service URL,
   then ask whether the user wants to keep the existing account or switch to the invited account.
   Explain that this Keychain account is shared by every FeedbackServer-enabled Codex and Claude
@@ -76,7 +81,10 @@ CLI exceptions; do not reproduce their HTTP calls manually.
 ## Guide initial app onboarding
 
 - When the user asks to set up FeedbackServer, complete initial configuration, or act on a
-  `setupNotice`, start with `get_onboarding_status`. Show the current stage and only the first
+  `setupNotice`, first call `connection_status`. If credentials are absent, call
+  `prepare_local_setup` with `configure_account`, show its exact command, and require the user to
+  run it in a visible terminal. After success, continue in this task with `get_onboarding_status`.
+  Show the current stage and only the first
   applicable `nextActions` item. Do not dump the whole setup checklist or claim app setup is
   complete merely because the account connection succeeded.
 - With no Product, ask for an app name, slug, and explicit default language, then create the first
@@ -114,7 +122,7 @@ CLI exceptions; do not reproduce their HTTP calls manually.
   a PAT or Product key. Treat usage at or above 80% and read-only Products as warnings. Pass
   `--product <id-or-slug>` whenever more than one Product is visible.
 - A successful tool result may include `updateNotice` when a newer stable plugin release exists.
-  Briefly tell the user which version is available and show the supplied manual upgrade command.
+  Briefly tell the user which version is available and show the command list for the current host.
   Never upgrade automatically or repeat a notice that is absent from later results.
 - A successful tool result may also include one process-local `setupNotice`. State its single next
   action and offer to continue with the fixed prompt `帮我完成 FeedbackServer 初始配置`. It is
@@ -122,8 +130,10 @@ CLI exceptions; do not reproduce their HTTP calls manually.
   skipped step was stored.
 - For an iOS host, pass `--app-path <absolute-path>` and an explicit Product. Doctor checks the
   resolved FeedbackKit version against both the minimum and latest stable GitHub Release, server
-  URL and Product binding, explicit visitor Keychain service, and `.followHost` or `.fixed(Locale)`
-  language policy. Treat warnings as decisions to review and failures as integration blockers.
+  URL and Product binding, visitor Keychain service, and language policy. FeedbackKit 0.2 or newer
+  passes when it uses the fixed production endpoint, bundle-derived visitor service, and default
+  follow-host language; 0.1.x retains explicit checks. Treat warnings as decisions to review and
+  failures as integration blockers.
 - Run `feedback-server test roundtrip --product <id-or-slug> --confirm <product-slug>` only when the
   user explicitly asks for a live end-to-end test and a brief harmless test post is acceptable for
   that Product. The repeated slug is mandatory and must not be inferred for the user. The CLI uses
