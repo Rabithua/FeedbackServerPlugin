@@ -42,10 +42,12 @@ Start from [`examples/opencode.json`](../examples/opencode.json):
 }
 ```
 
-On macOS the server automatically reads the same `dev.rote.feedback-server.mcp` Keychain
-credential used by Codex and Claude Code. On other platforms, inject both
-`FEEDBACK_SERVER_BASE_URL` and `FEEDBACK_SERVER_API_TOKEN` through the client's secure environment
-configuration. Use `https://api.feedkit.cn/v1/api` as the base URL. Never commit those values.
+The server reads the active FeedbackKit profile from macOS Keychain, Windows Credential Manager, or
+Linux Secret Service. Use `feedbackkit accept-invite` to create it; no plaintext credential file is
+supported. A controlled headless runtime may instead inject the complete
+`FEEDBACK_SERVER_BASE_URL`, `FEEDBACK_SERVER_ADMIN_ID`, `FEEDBACK_SERVER_ADMIN_EMAIL`,
+`FEEDBACK_SERVER_API_TOKEN_ID`, `FEEDBACK_SERVER_API_TOKEN`, `FEEDBACK_SERVER_API_SCOPES`, and
+`FEEDBACK_SERVER_API_TOKEN_EXPIRES_AT` set through its secret environment. Never commit those values.
 
 ## Check the transport
 
@@ -55,6 +57,6 @@ From the repository root, run:
 bun --cwd=plugins/feedback-server run test
 ```
 
-The contract tests initialize the stdio server, verify its 54-tool surface, and exercise request
+The tests initialize the stdio server, verify its 71-tool surface, and exercise request
 routing. After client configuration, start a fresh client session and call `connection_status`
 before making changes.

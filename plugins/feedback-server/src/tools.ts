@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import {
   type CallToolResult,
   type JSONObject,
@@ -24,7 +23,6 @@ import {
   type PluginUpdateNotice,
   type UpdateNoticeProvider,
 } from './release-updates.js';
-import { localSetupInputSchema, prepareLocalSetup } from './local-setup.js';
 
 const uuid = z.uuid().describe(
   'UUID identifying the exact FeedbackServer resource; example: 123e4567-e89b-42d3-a456-426614174000.',
@@ -141,14 +139,6 @@ const appStoreBindingFields = {
 
 const waitlistStatus = z.enum(['new', 'contacted', 'invited', 'converted', 'archived']);
 const waitlistPlatform = z.enum(['ios_ipados', 'macos', 'android', 'web', 'other']);
-const invitationSubscriptionGrant = z.discriminatedUnion('plan', [
-  z.object({ plan: z.literal('free') }).strict(),
-  z.object({
-    plan: z.enum(['solo', 'studio']),
-    term: z.enum(['month', 'year', 'perpetual']),
-  }).strict(),
-]);
-
 interface ToolContext {
   credentials: StoredCredentials;
   credentialSource: LoadedCredentials['credentialSource'];
@@ -175,7 +165,6 @@ const PARAMETER_DESCRIPTIONS: Record<string, string> = {
   outboxId: 'UUID of the exact failed notification delivery to retry.',
   entryId: 'UUID of the exact owner-scoped waitlist entry.',
   invitationId: 'UUID of the exact administrator invitation.',
-  subscriptionGrant: 'Initial account plan granted when the invitation is accepted.',
   confirmationId: 'Single-use confirmation ID returned by a protected preview; example: 123e4567-e89b-42d3-a456-426614174000.',
   cursor: 'Opaque nextCursor from the preceding page; omit for the first page.',
   limit: 'Maximum number of records in this page within the documented numeric bounds.',
@@ -411,8 +400,7 @@ function failure(error: unknown): CallToolResult {
 async function context(): Promise<ToolContext> {
   const loaded = await loadCredentialsWithSource();
   const { credentials } = loaded;
-  const tokenIdentity =
-    credentials.tokenId ?? createHash('sha256').update(credentials.token).digest('hex');
+  const tokenIdentity = credentials.tokenId;
   return {
     credentials,
     credentialSource: loaded.credentialSource,
@@ -448,35 +436,6 @@ function registerRead<T extends ObjectSchema>(
     async (input) => {
       try {
         return success(await handler(inputSchema.parse(input), await context()));
-      } catch (error) {
-        return failure(error);
-      }
-    },
-  );
-}
-
-function registerLocalRead<T extends ObjectSchema>(
-  server: McpServer,
-  name: string,
-  description: string,
-  inputSchema: T,
-  handler: (input: z.infer<T>) => unknown,
-): void {
-  toolRegistrar(server)(
-    name,
-    {
-      description,
-      inputSchema,
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
-    async (input) => {
-      try {
-        return success(await handler(inputSchema.parse(input)));
       } catch (error) {
         return failure(error);
       }
@@ -681,13 +640,6 @@ export function registerFeedbackServerTools(
 ): void {
   updateNoticeProviders.set(server, updateNotices);
   setupNoticeProviders.set(server, setupNotices);
-  registerLocalRead(
-    server,
-    'prepare_local_setup',
-    'Prepare, but never execute, the exact installed FeedbackServer CLI command for account configuration or invitation acceptance. Passwords and PATs must still be entered only in the visible terminal opened by the user.',
-    localSetupInputSchema,
-    (input) => prepareLocalSetup(input),
-  );
   toolRegistrar(server)(
     'execute_confirmation',
     {
@@ -739,21 +691,19 @@ export function registerFeedbackServerTools(
       const email = await client.request<{ email: string | null; verifiedAt: string | null }>(
         '/admin/auth/email',
       );
-      const daysUntilExpiry = credentials.expiresAt
-        ? Math.floor(
-            (new Date(credentials.expiresAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000),
-          )
-        : null;
+      const daysUntilExpiry = Math.floor(
+        (new Date(credentials.expiresAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000),
+      );
       return {
         endpoint: credentials.baseUrl,
         credentialSource,
         activeProfile,
-        username: credentials.username ?? null,
-        tokenId: credentials.tokenId ?? null,
-        scopes: credentials.scopes ?? null,
-        expiresAt: credentials.expiresAt ?? null,
+        accountEmail: credentials.email,
+        tokenId: credentials.tokenId,
+        scopes: credentials.scopes,
+        expiresAt: credentials.expiresAt,
         daysUntilExpiry,
-        rotationRecommended: daysUntilExpiry !== null && daysUntilExpiry <= 30,
+        rotationRecommended: daysUntilExpiry <= 30,
         authenticated: true,
         visibleProductCount: Array.isArray(products) ? products.length : null,
         email: email.email,
@@ -793,7 +743,7 @@ export function registerFeedbackServerTools(
     async ({ productId }, { client, credentials }) => deriveOnboardingStatus({
       client,
       endpoint: credentials.baseUrl,
-      username: credentials.username,
+      email: credentials.email,
       scopes: credentials.scopes,
       productId,
     }),
@@ -865,11 +815,10 @@ export function registerFeedbackServerTools(
     z.object({
       entryId: uuid,
       expiresInDays: z.number().int().min(1).max(30).default(7),
-      subscriptionGrant: invitationSubscriptionGrant.default({ plan: 'free' }),
       ...confirmation,
     }),
     { destructiveHint: false, idempotentHint: false },
-    async ({ entryId, expiresInDays, subscriptionGrant }, { client }) => {
+    async ({ entryId, expiresInDays }, { client }) => {
       const current = await client.request<{
         entry: {
           id: string;
@@ -889,19 +838,19 @@ export function registerFeedbackServerTools(
           appName: current.entry.appName,
           locale: current.entry.locale,
           currentStatus: current.entry.status,
-          subscriptionGrant,
+          subscriptionGrant: { plan: 'free' },
           expiresInDays,
           emailSummary: current.entry.locale === 'zh-CN'
-            ? `批准 ${current.entry.appName} 的 FeedbackKit 早期访问；包含一次性邀请码、所选套餐、有效期和 Agent 接入指南。`
-            : `Approves FeedbackKit early access for ${current.entry.appName}; includes a one-time invitation, selected plan, expiry, and Agent onboarding guide.`,
+            ? `批准 ${current.entry.appName} 的 FeedbackKit 早期访问；包含一次性邀请、Free 套餐、有效期和 Agent 接入指南。`
+            : `Approves FeedbackKit early access for ${current.entry.appName}; includes a one-time invitation, Free plan, expiry, and Agent onboarding guide.`,
           effect: 'Sends one transactional invitation email. The waitlist status changes to invited only after Cloudflare accepts delivery.',
         },
       };
     },
-    async ({ entryId, expiresInDays, subscriptionGrant }, { client }, precondition) =>
+    async ({ entryId, expiresInDays }, { client }, precondition) =>
       client.request(`/admin/waitlist/${encodeURIComponent(entryId)}/invitations`, {
         method: 'POST',
-        body: { expiresInDays, subscriptionGrant },
+        body: { expiresInDays },
         ...(precondition ? { ifMatch: precondition } : {}),
       }),
   );

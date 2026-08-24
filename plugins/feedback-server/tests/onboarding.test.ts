@@ -93,7 +93,7 @@ function completeOptionalRoutes(overrides: Record<string, unknown> = {}) {
 
 const baseOptions = {
   endpoint: 'https://feedback.example.com/v1/api',
-  username: 'owner',
+  email: 'owner@example.com',
   scopes: ['products:read', 'bark:read', 'webhooks:read'],
 };
 
@@ -298,7 +298,7 @@ describe('guided onboarding status', () => {
     const failed = new FeedbackServerApiError(503, 'connection_failed', 'unavailable', null);
     const status = await deriveOnboardingStatus({
       endpoint: baseOptions.endpoint,
-      username: baseOptions.username,
+      email: baseOptions.email,
       client: client(completeOptionalRoutes({
         '/admin/bark/global': forbidden,
         [`/admin/bark/products/${productId}`]: forbidden,
@@ -326,9 +326,12 @@ describe('guided onboarding status', () => {
 describe('setup notice', () => {
   const credentials: StoredCredentials = {
     baseUrl: baseOptions.endpoint,
+    adminId: '11111111-1111-4111-8111-111111111110',
+    tokenId: '11111111-1111-4111-8111-111111111112',
     token: `fspat_${'a'.repeat(64)}`,
-    username: baseOptions.username,
+    email: baseOptions.email,
     scopes: baseOptions.scopes,
+    expiresAt: '2027-08-07T00:00:00.000Z',
   };
 
   test('returns at most one non-secret notice when notification setup is missing', async () => {

@@ -90,7 +90,7 @@ export interface FeedbackServerOnboardingStatus {
   connection: {
     status: 'complete';
     endpoint: string;
-    username: string | null;
+    email: string | null;
   };
   subscription: {
     declaredPlan: OnboardingSubscription['declaredPlan'];
@@ -157,7 +157,7 @@ export interface OnboardingApiClient {
 export interface DeriveOnboardingOptions {
   client: OnboardingApiClient;
   endpoint: string;
-  username?: string | undefined;
+  email?: string | undefined;
   scopes?: string[] | undefined;
   productId?: string | undefined;
   products?: OnboardingProductRecord[] | undefined;
@@ -565,7 +565,7 @@ export async function deriveOnboardingStatus(
     connection: {
       status: 'complete',
       endpoint: options.endpoint,
-      username: options.username ?? null,
+      email: options.email ?? null,
     },
     subscription: {
       declaredPlan: subscription.declaredPlan,
@@ -675,7 +675,7 @@ class DerivedSetupNoticeProvider implements SetupNoticeProvider {
       const status = await deriveOnboardingStatus({
         client: this.createClient(credentials),
         endpoint: credentials.baseUrl,
-        username: credentials.username,
+        email: credentials.email,
         scopes: credentials.scopes,
       });
       if (!shouldTriggerSetupNotice(status)) return undefined;

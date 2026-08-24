@@ -7,7 +7,7 @@ interface ApiEnvelope<T> {
   data: T;
 }
 
-export type CredentialSource = 'environment' | 'keychain';
+export type CredentialSource = 'environment' | 'keyring';
 
 export class FeedbackServerApiError extends Error {
   public constructor(

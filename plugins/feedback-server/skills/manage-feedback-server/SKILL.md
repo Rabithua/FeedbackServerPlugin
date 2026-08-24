@@ -15,7 +15,7 @@ Use the smallest focused skill that covers the request:
 - `$administer-feedback-server` for Products, subscriptions, access, invitations, keys, audit, and attachments outside triage.
 
 Use only the documented `feedback-server` MCP tools. The focused setup and administration skills
-document the few Keychain-backed CLI exceptions. Never use direct SQL, production shell access, or
+document the few native-keyring CLI exceptions. Never use direct SQL, production shell access, or
 undocumented HTTP routes. Resolve explicit IDs instead of guessing. Do not mutate for requests that
 only ask to inspect, draft, preview, plan, or summarize.
 
