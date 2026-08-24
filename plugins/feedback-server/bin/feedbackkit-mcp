@@ -11,5 +11,4 @@ if (ensureRuntimeDependencies()) {
   });
   process.exit(relaunched.exitCode);
 }
-const { main } = await import('../dist/cli.mjs');
-await main(Bun.argv.slice(2));
+await import('../dist/server.mjs');

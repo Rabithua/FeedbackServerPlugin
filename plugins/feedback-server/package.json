@@ -1,6 +1,6 @@
 {
   "name": "@feedback-server/agent-plugin",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -18,7 +18,8 @@
   },
   "bin": {
     "feedbackkit": "./bin/feedbackkit",
-    "feedback-server": "./bin/feedback-server"
+    "feedback-server": "./bin/feedback-server",
+    "feedbackkit-mcp": "./bin/feedbackkit-mcp"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",

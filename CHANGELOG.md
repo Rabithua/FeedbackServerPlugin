@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.1 - 2026-08-25
+
+- Bootstrap locked production dependencies before loading the CLI or MCP server when a marketplace
+  install does not contain `node_modules`.
+- Route Codex and Claude Code through the dependency-aware MCP launcher and cover the first-run
+  bootstrap without weakening native Keyring requirements.
+
 ## 0.11.0 - 2026-08-25
 
 - Replace username/password onboarding with verified-email accounts, one-time Agent enrollment, and

@@ -6,6 +6,7 @@ const pluginRoot = new URL('../plugins/feedback-server/', import.meta.url);
 const codexManifestPath = new URL('.codex-plugin/plugin.json', pluginRoot);
 const codexMarketplacePath = new URL('../.agents/plugins/marketplace.json', import.meta.url);
 const claudeManifestPath = new URL('.claude-plugin/plugin.json', pluginRoot);
+const claudeMcpPath = new URL('.mcp.json', pluginRoot);
 const claudeMarketplacePath = new URL('../.claude-plugin/marketplace.json', import.meta.url);
 const packagePath = new URL('package.json', pluginRoot);
 const cursorExamplePath = new URL('../examples/cursor.mcp.json', import.meta.url);
@@ -13,6 +14,10 @@ const openCodeExamplePath = new URL('../examples/opencode.json', import.meta.url
 
 const codexManifest = await Bun.file(codexManifestPath).json() as Record<string, unknown>;
 const claudeManifest = await Bun.file(claudeManifestPath).json() as Record<string, unknown>;
+const claudeMcp = await Bun.file(claudeMcpPath).json() as Record<string, {
+  command?: unknown;
+  args?: unknown;
+}>;
 const pluginPackage = await Bun.file(packagePath).json() as Record<string, unknown>;
 const cursorExample = await Bun.file(cursorExamplePath).json() as Record<string, unknown>;
 const openCodeExample = await Bun.file(openCodeExamplePath).json() as Record<string, unknown>;
@@ -56,6 +61,16 @@ requireCondition(
   'Codex MCP configuration is invalid',
 );
 requireCondition(!('mcpServers' in claudeManifest), 'Claude must use the canonical root .mcp.json');
+const codexMcp = (codexManifest.mcpServers as Record<string, { args?: unknown }>)['feedback-server'];
+requireCondition(
+  Array.isArray(codexMcp?.args) && codexMcp.args.includes('./bin/feedbackkit-mcp'),
+  'Codex must use the dependency-aware MCP launcher',
+);
+requireCondition(
+  Array.isArray(claudeMcp['feedback-server']?.args)
+  && claudeMcp['feedback-server']!.args.includes('${CLAUDE_PLUGIN_ROOT}/bin/feedbackkit-mcp'),
+  'Claude must use the dependency-aware MCP launcher',
+);
 requireCondition(codexMarketplace.name === 'feedback-server', 'Codex marketplace name is invalid');
 requireCondition(codexMarketplace.plugins?.length === 1, 'Codex marketplace must contain exactly one plugin');
 const entry = codexMarketplace.plugins[0]!;
@@ -87,6 +102,7 @@ for (const relativePath of [
   '.mcp.json',
   'bin/feedback-server',
   'bin/feedbackkit',
+  'bin/feedbackkit-mcp',
   'dist/server.mjs',
   'dist/cli.mjs',
 ]) {
