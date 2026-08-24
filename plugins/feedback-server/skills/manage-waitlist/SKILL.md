@@ -14,6 +14,19 @@ include it only when the task needs it.
 entry. Valid status values are `new`, `contacted`, `invited`, `converted`, and `archived`. Do not
 substitute archive for a requested permanent deletion or vice versa.
 
+Invitation email is a protected external effect. Use `invite_waitlist_entry` to preview the exact
+recipient, language, App, subscription grant, invitation expiry, and email summary. The default
+grant is Free; never infer Solo or Studio. Show that preview, wait for explicit approval, then call
+`execute_confirmation` with the returned ID. Apply the same confirmation gate to
+`retry_waitlist_invitation_email`. Use `revoke_waitlist_invitation` when the user asks to cancel a
+pending invite; revocation prevents acceptance but cannot recall mail already accepted by the
+provider. These tools require both the PAT scope `waitlist:invite` and a current database
+`super_admin` role. Never reproduce the invitation token or rendered email body in Agent text.
+
+An invited signup cannot be permanently deleted until its pending invitation is revoked. Acceptance
+atomically creates the account, verifies the signup email, applies the selected grant, and changes
+the signup to `converted`.
+
 Permanent deletion requires confirmation. Show the returned App, platform, and note-count preview,
 wait for explicit approval, then call `execute_confirmation` with the returned ID. Confirmation is
 single-use and expires after ten minutes. For stale state, reread and prepare a new preview; never

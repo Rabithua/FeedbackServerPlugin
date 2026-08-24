@@ -2,6 +2,13 @@
 
 All notable changes to FeedbackServer Plugin are documented here.
 
+## 0.10.0 - 2026-08-24
+
+- Add explicitly confirmed waitlist invitation send, retry, and revoke tools with typed Free/Solo/Studio grants.
+- Show the connected administrator's own verified-email status without exposing other accounts' addresses.
+- Add visible-terminal email binding/change and password-reset commands with hidden password and code input.
+- Accept username or verified email in administrator login prompts and document that reset preserves sessions, PATs, and Passkeys.
+
 ## 0.9.2 - 2026-08-24
 
 - Recognize `FeedbackConfiguration.init(...)` and typed `.init(...)` syntax, including `try`, `try?`, and `try!`, in Doctor.

@@ -11,6 +11,12 @@ Never ask for a password or PAT in chat, open a private PTY, clone the repositor
 cache path. Continue in the current task after the CLI succeeds; the running MCP process reloads
 Keychain credentials on its next call.
 
+Administrator login accepts a username or verified email. If the user needs to bind/change account
+email or recover a password, provide the installed bundle's `feedback-server admin email bind` or
+`feedback-server admin password-reset` command for a visible terminal. Passwords and emailed codes
+must remain hidden terminal input and never enter Agent context. A password reset preserves existing
+sessions, PATs, and Passkeys by current Server policy.
+
 Automatic setup requires macOS Keychain. On another platform, do not present the CLI account setup
 as runnable; require both `FEEDBACK_SERVER_BASE_URL` and `FEEDBACK_SERVER_API_TOKEN` in the MCP
 process environment and restart that process. Never ask the user to paste either value into chat.

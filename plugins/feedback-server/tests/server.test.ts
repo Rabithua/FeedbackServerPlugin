@@ -28,7 +28,7 @@ const productAssociation = {
 
 const toolScenarios: ToolScenario[] = [
   { name: 'health', arguments: {}, path: '/v1/api/health' },
-  { name: 'connection_status', arguments: {}, path: '/v1/api/admin/products' },
+  { name: 'connection_status', arguments: {}, path: '/v1/api/admin/auth/email' },
   { name: 'list_products', arguments: {}, path: '/v1/api/admin/products' },
   { name: 'get_product', arguments: { productId }, path: `/v1/api/admin/products/${productId}` },
   { name: 'get_subscription', arguments: {}, path: '/v1/api/admin/subscription' },
@@ -108,6 +108,27 @@ const toolScenarios: ToolScenario[] = [
     name: 'delete_waitlist_entry',
     arguments: { entryId: productId },
     path: `/v1/api/admin/waitlist/${productId}`,
+    method: 'DELETE',
+    confirmation: 'risk',
+  },
+  {
+    name: 'invite_waitlist_entry',
+    arguments: { entryId: productId, subscriptionGrant: { plan: 'free' }, expiresInDays: 7 },
+    path: `/v1/api/admin/waitlist/${productId}/invitations`,
+    method: 'POST',
+    confirmation: 'risk',
+  },
+  {
+    name: 'retry_waitlist_invitation_email',
+    arguments: { entryId: productId, invitationId: secondId },
+    path: `/v1/api/admin/waitlist/${productId}/invitations/${secondId}/retry`,
+    method: 'POST',
+    confirmation: 'risk',
+  },
+  {
+    name: 'revoke_waitlist_invitation',
+    arguments: { entryId: productId, invitationId: secondId },
+    path: `/v1/api/admin/waitlist/${productId}/invitations/${secondId}`,
     method: 'DELETE',
     confirmation: 'risk',
   },
@@ -422,7 +443,7 @@ function missingParameterDescriptions(schema: unknown, path = 'input'): string[]
   return missing;
 }
 
-describe('MCP server 0.9.2', () => {
+describe('MCP server 0.10.0', () => {
   const originalFetch = globalThis.fetch;
   let client: Client;
   let server: ReturnType<typeof createServer>;
@@ -471,7 +492,7 @@ describe('MCP server 0.9.2', () => {
   test('exposes the new surface and removes legacy Feedback and Item fields', async () => {
     const tools = (await client.listTools()).tools;
     const names = tools.map(({ name }) => name);
-    expect(names).toHaveLength(69);
+    expect(names).toHaveLength(72);
     expect(names).toContain('prepare_local_setup');
     expect(names).toContain('execute_confirmation');
     expect(names).toContain('get_subscription');
@@ -485,6 +506,9 @@ describe('MCP server 0.9.2', () => {
     expect(names).toContain('retry_webhook_delivery');
     expect(names).toContain('list_waitlist_entries');
     expect(names).toContain('delete_waitlist_entry');
+    expect(names).toContain('invite_waitlist_entry');
+    expect(names).toContain('retry_waitlist_invitation_email');
+    expect(names).toContain('revoke_waitlist_invitation');
     const serialized = JSON.stringify(tools);
     expect(serialized).toContain('conversation');
     expect(serialized).toContain('roadmapStage');
@@ -728,7 +752,25 @@ describe('MCP server 0.9.2', () => {
       requests.push(request);
       const url = new URL(request.url);
       let data: unknown = {};
-      if (url.pathname.endsWith('/update-context')) {
+      if (url.pathname.endsWith('/invite-context')) {
+        data = {
+          entry: {
+            id: productId,
+            appName: 'Example App',
+            platform: 'ios_ipados',
+            email: 'owner@example.com',
+            locale: 'en',
+            status: 'new',
+          },
+          precondition: mutationPrecondition,
+          invitation: {
+            id: secondId,
+            status: 'failed',
+            subscriptionGrant: { plan: 'free' },
+            expiresAt: '2026-09-01T00:00:00.000Z',
+          },
+        };
+      } else if (url.pathname.endsWith('/update-context')) {
         if (url.pathname.includes('/subscription/primary-product/')) {
           data = {
             currentPrimaryProductId: productId,
@@ -800,6 +842,21 @@ describe('MCP server 0.9.2', () => {
       requests.length = 0;
       let result = await client.callTool({ name: scenario.name, arguments: scenario.arguments });
       if (scenario.confirmation) {
+        if (
+          scenario.name === 'invite_waitlist_entry'
+          || scenario.name === 'retry_waitlist_invitation_email'
+        ) {
+          expect(resultData(result)).toMatchObject({
+            status: 'confirmation_required',
+            preview: {
+              recipient: 'owner@example.com',
+              locale: 'en',
+              subscriptionGrant: { plan: 'free' },
+            },
+          });
+          expect(resultData(result).preview).toHaveProperty('emailSummary');
+          expect(requests.every(({ method }) => method === 'GET')).toBe(true);
+        }
         const confirmationId = resultData(result).confirmationId as string;
         expect(confirmationId, scenario.name).toBeString();
         result = await client.callTool({
@@ -832,6 +889,13 @@ describe('MCP server 0.9.2', () => {
       }
       if (scenario.name === 'add_waitlist_note') {
         expect(await request!.clone().json()).toEqual({ body: 'Followed up.' });
+      }
+      if (scenario.name === 'invite_waitlist_entry') {
+        expect(request!.headers.get('if-match')).toBe(mutationPrecondition);
+        expect(await request!.clone().json()).toEqual({
+          expiresInDays: 7,
+          subscriptionGrant: { plan: 'free' },
+        });
       }
     }
   });

@@ -29,6 +29,7 @@ export const AGENT_SCOPES = [
   'feedback:write',
   'waitlist:read',
   'waitlist:write',
+  'waitlist:invite',
   'waitlist:dangerous',
   'catalog:read',
   'catalog:write',
@@ -200,12 +201,12 @@ export async function promptPassword(label = 'Administrator password'): Promise<
 
 export async function login(
   baseUrl: string,
-  username: string,
+  identifier: string,
   password: string,
 ): Promise<LoginResponse> {
   return adminSessionRequest<LoginResponse>(baseUrl, '/admin/auth/login', {
     method: 'POST',
-    body: { username, password },
+    body: { identifier, password },
   });
 }
 
