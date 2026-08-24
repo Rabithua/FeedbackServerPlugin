@@ -3,6 +3,7 @@ import { createInterface } from 'node:readline/promises';
 import { StringDecoder } from 'node:string_decoder';
 import {
   addPendingTokenRevocation,
+  CredentialPersistenceIndeterminateError,
   deleteKeychainCredentials,
   deleteKeychainProfileCredentials,
   KEYCHAIN_ACCOUNT,
@@ -420,6 +421,7 @@ export async function configureAgent(input: {
     try {
       await dependencies.writeCredentials(credentials);
     } catch (error) {
+      if (error instanceof CredentialPersistenceIndeterminateError) throw error;
       return await compensateUncommittedToken(
         error,
         createdEntry,

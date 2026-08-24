@@ -82,6 +82,20 @@ export interface LoadedCredentials {
   activeProfile: string | null;
 }
 
+export class CredentialPersistenceIndeterminateError extends Error {
+  public constructor(
+    public readonly profile: string,
+    cause: unknown,
+  ) {
+    super(
+      `FeedbackServer profile ${profile} may already reference the new PAT, but its Keychain transaction did not finish. `
+      + `Do not revoke the PAT; retry feedback-server profile use ${profile} or rerun Agent configuration for this profile.`,
+      { cause },
+    );
+    this.name = 'CredentialPersistenceIndeterminateError';
+  }
+}
+
 export function normalizeBaseUrl(value: string): string {
   const url = new URL(value.trim());
   if (url.username || url.password) {
@@ -517,6 +531,29 @@ async function readCredentialPointer(
   return normalizeStoredCredentials({ ...metadata, token });
 }
 
+async function readCredentialTokenIdPointer(
+  service: string,
+  account: string,
+  runner: SecurityCommandRunner,
+): Promise<string | undefined> {
+  const pointer = await readKeychainValue(service, account, runner);
+  if (!pointer) return undefined;
+
+  const recordId = keychainRecordIdSchema.safeParse(pointer);
+  if (!recordId.success) {
+    return normalizeStoredCredentials(JSON.parse(pointer)).tokenId;
+  }
+  const metadataValue = await readKeychainValue(
+    KEYCHAIN_METADATA_SERVICE,
+    recordId.data,
+    runner,
+  );
+  if (!metadataValue) {
+    throw new Error('FeedbackServer credential metadata in Keychain is incomplete');
+  }
+  return credentialMetadataSchema.parse(JSON.parse(metadataValue)).tokenId;
+}
+
 export async function readKeychainCredentialRecord(
   runner: SecurityCommandRunner,
 ): Promise<StoredCredentials | undefined> {
@@ -567,14 +604,11 @@ export async function readKeychainReferencedTokenIds(
   if (process.platform !== 'darwin') return new Set();
   await migrateLegacyDefaultProfile(runner);
   const profiles = await readProfileIndex(runner);
-  const credentials = await Promise.all(
+  const tokenIds = await Promise.all(
     profiles.map((profile) =>
-      readCredentialPointer(KEYCHAIN_PROFILE_POINTER_SERVICE, profile, runner)),
+      readCredentialTokenIdPointer(KEYCHAIN_PROFILE_POINTER_SERVICE, profile, runner)),
   );
-  return new Set(
-    credentials
-      .flatMap((entry) => entry?.tokenId ? [entry.tokenId] : []),
-  );
+  return new Set(tokenIds.flatMap((tokenId) => tokenId ? [tokenId] : []));
 }
 
 export async function useKeychainProfile(
@@ -872,6 +906,7 @@ export async function writeKeychainProfileCredentials(
     await setActiveProfile(parsedProfile, runner);
   } catch (error) {
     const rollbackErrors: unknown[] = [error];
+    let pointerState: 'away' | 'record' | 'unknown' = 'unknown';
     try {
       if (previousPointer) {
         await writeKeychainValue(
@@ -879,16 +914,47 @@ export async function writeKeychainProfileCredentials(
           `the previous FeedbackServer profile ${parsedProfile}`,
           runner,
         );
+        pointerState = 'away';
       } else if (!(await deleteKeychainItem(
         KEYCHAIN_PROFILE_POINTER_SERVICE,
         parsedProfile,
         runner,
       ))) {
         throw new Error(`Unable to remove the incomplete FeedbackServer profile ${parsedProfile}`);
+      } else {
+        pointerState = 'away';
       }
     } catch (rollbackError) {
       rollbackErrors.push(rollbackError);
+      try {
+        const currentPointer = await readKeychainValue(
+          KEYCHAIN_PROFILE_POINTER_SERVICE,
+          parsedProfile,
+          runner,
+        );
+        pointerState = currentPointer === recordId ? 'record' : 'away';
+      } catch (readError) {
+        rollbackErrors.push(readError);
+      }
     }
+
+    if (pointerState !== 'away') {
+      if (!wasIndexed) {
+        try {
+          await writeProfileIndex([...profiles, parsedProfile], runner);
+        } catch (repairError) {
+          rollbackErrors.push(repairError);
+        }
+      }
+      throw new CredentialPersistenceIndeterminateError(
+        parsedProfile,
+        new AggregateError(
+          rollbackErrors,
+          `Unable to finish committing FeedbackServer profile ${parsedProfile}`,
+        ),
+      );
+    }
+
     if (!wasIndexed) {
       try {
         await writeProfileIndex(profiles, runner);

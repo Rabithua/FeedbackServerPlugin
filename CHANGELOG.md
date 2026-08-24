@@ -2,6 +2,12 @@
 
 All notable changes to FeedbackServer Plugin are documented here.
 
+## 0.9.2 - 2026-08-24
+
+- Recognize `FeedbackConfiguration.init(...)` and typed `.init(...)` syntax, including `try`, `try?`, and `try!`, in Doctor.
+- Protect cross-profile PAT references using non-secret metadata without reading unrelated token items.
+- Preserve credential records, profile indexes, and their PATs when pointer rollback cannot be verified.
+
 ## 0.9.1 - 2026-08-24
 
 - Prevent pending PAT recovery for one profile from revoking credentials still used by another profile.

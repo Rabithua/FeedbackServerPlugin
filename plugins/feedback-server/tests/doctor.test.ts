@@ -258,6 +258,54 @@ describe('feedback-server doctor', () => {
     expect(JSON.stringify(checks)).not.toContain(credentials.token);
   });
 
+  test('recognizes explicit Swift type.init and typed .init configuration with try variants', () => {
+    const checks = inspectHostAppFiles([
+      {
+        path: '/App/Package.resolved',
+        content: JSON.stringify({
+          pins: [{ identity: 'feedbackkit', state: { version: '0.2.0' } }],
+        }),
+      },
+      {
+        path: '/App/FeedbackCenter.swift',
+        content: `
+          let first = FeedbackConfiguration.init(
+            baseURL: URL(string: "https://feedback.example.com/v1/api")!,
+            productKey: "${product.publishableKey}",
+            keychainService: "com.example.feedback.visitor",
+            languagePolicy: .followHost
+          )
+          let second: FeedbackConfiguration = try .init(
+            baseURL: URL(string: "https://feedback.example.com/v1/api")!,
+            productKey: "${product.publishableKey}",
+            keychainService: "com.example.feedback.visitor",
+            languagePolicy: .followHost
+          )
+          let third: FeedbackCenterConfiguration? = try? .init(
+            baseURL: URL(string: "https://feedback.example.com/v1/api")!,
+            productKey: "${product.publishableKey}",
+            keychainService: "com.example.feedback.visitor",
+            languagePolicy: .followHost
+          )
+          let fourth: FeedbackConfiguration = try! .init(
+            baseURL: URL(string: "https://feedback.example.com/v1/api")!,
+            productKey: "${product.publishableKey}",
+            keychainService: "com.example.feedback.visitor",
+            languagePolicy: .followHost
+          )
+          let fifth: FeedbackConfiguration! = try? .init(
+            baseURL: URL(string: "https://feedback.example.com/v1/api")!,
+            productKey: "${product.publishableKey}",
+            keychainService: "com.example.feedback.visitor",
+            languagePolicy: .followHost
+          )
+        `,
+      },
+    ], credentials, product);
+
+    expect(checks.every(({ status }) => status === 'pass')).toBe(true);
+  });
+
   test('ignores unrelated API endpoints outside FeedbackKit configuration', () => {
     const checks = inspectHostAppFiles([
       {

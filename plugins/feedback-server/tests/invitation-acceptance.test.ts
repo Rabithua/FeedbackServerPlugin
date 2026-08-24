@@ -3,7 +3,10 @@ import {
   AGENT_SCOPES,
   ConfigurationApiError,
 } from '../src/admin-session.js';
-import type { StoredCredentials } from '../src/credentials.js';
+import {
+  CredentialPersistenceIndeterminateError,
+  type StoredCredentials,
+} from '../src/credentials.js';
 import {
   AgentAlreadyConfiguredError,
   CommittedInvitationAcceptanceError,
@@ -282,6 +285,30 @@ describe('invitation acceptance and Agent configuration', () => {
       'logout:verified-refresh',
       'logout:accepted-refresh',
     ]);
+  });
+
+  test('does not revoke a PAT when the profile pointer may already reference it', async () => {
+    const events: string[] = [];
+    const persistenceError = new CredentialPersistenceIndeterminateError(
+      'work',
+      new Error('simulated rollback interruption'),
+    );
+    const error = await capturedError(
+      acceptInvitationAndConfigure(
+        { ...input, profile: 'work' },
+        dependencies(events, {
+          writeCredentials: () => {
+            events.push('write-credentials');
+            return Promise.reject(persistenceError);
+          },
+        }),
+      ),
+    );
+
+    expect(error).toBeInstanceOf(CommittedInvitationAcceptanceError);
+    expect((error as Error).message).toContain('may already reference the new PAT');
+    expect(events).not.toContain('revoke-token:22222222-2222-4222-8222-222222222222');
+    expect(events).not.toContain('remove-pending:22222222-2222-4222-8222-222222222222');
   });
 
   test('surfaces recoverable token identification when Keychain and revocation both fail', async () => {
