@@ -218,7 +218,7 @@ function swiftFeedbackConfigurationArguments(content: string): string[] {
   const arguments_: string[] = [];
   const patterns = [
     /\bFeedback(?:Center)?Configuration(?:\.init)?\s*\(/g,
-    /:\s*Feedback(?:Center)?Configuration\s*=\s*(?:try[?!]?\s+)?\.init\s*\(/g,
+    /:\s*Feedback(?:Center)?Configuration\s*[?!]?\s*=\s*(?:try[?!]?\s+)?\.init\s*\(/g,
   ];
   for (const pattern of patterns) {
     for (const match of content.matchAll(pattern)) {

@@ -281,13 +281,19 @@ describe('feedback-server doctor', () => {
             keychainService: "com.example.feedback.visitor",
             languagePolicy: .followHost
           )
-          let third: FeedbackCenterConfiguration = try? .init(
+          let third: FeedbackCenterConfiguration? = try? .init(
             baseURL: URL(string: "https://feedback.example.com/v1/api")!,
             productKey: "${product.publishableKey}",
             keychainService: "com.example.feedback.visitor",
             languagePolicy: .followHost
           )
           let fourth: FeedbackConfiguration = try! .init(
+            baseURL: URL(string: "https://feedback.example.com/v1/api")!,
+            productKey: "${product.publishableKey}",
+            keychainService: "com.example.feedback.visitor",
+            languagePolicy: .followHost
+          )
+          let fifth: FeedbackConfiguration! = try? .init(
             baseURL: URL(string: "https://feedback.example.com/v1/api")!,
             productKey: "${product.publishableKey}",
             keychainService: "com.example.feedback.visitor",
