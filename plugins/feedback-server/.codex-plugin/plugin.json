@@ -1,7 +1,7 @@
 {
   "name": "feedback-server",
-  "version": "0.10.3",
-  "description": "Agent-first management for FeedbackServer products, public feedback, waitlists, activity, roadmaps, releases, attachments, Bark, Webhooks, and audit records.",
+  "version": "0.11.0",
+  "description": "Agent-first setup and management for FeedbackKit products, feedback, waitlists, activity, roadmaps, releases, and notifications.",
   "author": {
     "name": "Rabithua",
     "url": "https://github.com/Rabithua"
@@ -12,15 +12,15 @@
   "keywords": ["feedback", "waitlist", "roadmap", "changelog", "bark", "agent", "profiles"],
   "skills": "./skills/",
   "interface": {
-    "displayName": "Feedback Server",
-    "shortDescription": "Manage app feedback without an admin GUI.",
-    "longDescription": "Connect Codex to FeedbackServer through a shared local MCP process with scoped administrator API tokens, waitlist management, and risk-based confirmations.",
+    "displayName": "FeedbackKit",
+    "shortDescription": "Onboard and manage app feedback with your Agent.",
+    "longDescription": "Connect Codex to FeedbackKit for guided app setup, Feedback service management, waitlist invitations, and risk-based confirmations.",
     "developerName": "Rabithua",
     "category": "Productivity",
     "capabilities": ["Read", "Write", "Interactive"],
     "websiteURL": "https://github.com/Rabithua/FeedbackServerPlugin",
     "defaultPrompt": [
-      "Set up FeedbackServer for my app and guide me through the next step.",
+      "Set up FeedbackKit for my app and guide me through the next step.",
       "List my apps and summarize unresolved feedback.",
       "Review recent waitlist signups and identify the next follow-up actions.",
       "Draft a reply to recent feedback and show me before sending.",
@@ -30,7 +30,7 @@
   "mcpServers": {
     "feedback-server": {
       "title": "Feedback Server",
-      "description": "Manage FeedbackServer products and feedback through a local MCP server with risk-based confirmations.",
+      "description": "Manage FeedbackKit products and feedback through a local MCP server with risk-based confirmations.",
       "cwd": ".",
       "command": "bun",
       "args": [

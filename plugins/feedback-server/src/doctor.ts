@@ -47,7 +47,7 @@ export interface DoctorReport {
   ok: boolean;
   pluginVersion: string;
   endpoint: string | null;
-  username: string | null;
+  email: string | null;
   product: Pick<DoctorProduct, 'id' | 'slug' | 'name' | 'defaultLocale' | 'status'> | null;
   subscription: DoctorSubscription | null;
   onboarding: FeedbackServerOnboardingStatus | null;
@@ -540,7 +540,7 @@ export async function diagnoseFeedbackServer(
       'credentials',
       'Agent credentials',
       'pass',
-      `Configured for ${credentials.username ?? 'an administrator'} at ${credentials.baseUrl}.`,
+      `Configured for ${credentials.email} at ${credentials.baseUrl}.`,
     ));
   } catch (error) {
     checks.push(check('credentials', 'Agent credentials', 'fail', safeMessage(error)));
@@ -548,7 +548,7 @@ export async function diagnoseFeedbackServer(
       ok: false,
       pluginVersion: PLUGIN_VERSION,
       endpoint: null,
-      username: null,
+      email: null,
       product: null,
       subscription: null,
       onboarding: null,
@@ -572,41 +572,27 @@ export async function diagnoseFeedbackServer(
     'waitlist:invite',
     'waitlist:dangerous',
   ];
-  if (credentials.scopes) {
-    const scopes = credentials.scopes;
-    const missing = requiredScopes.filter((scope) => !scopes.includes(scope));
-    checks.push(check(
-      'scopes',
-      'PAT scopes',
-      missing.length === 0 ? 'pass' : 'warn',
-      missing.length === 0
-        ? 'PAT includes Product, Feedback round-trip, and waitlist invitation management scopes.'
-        : `PAT is missing recommended scopes: ${missing.join(', ')}.`,
-    ));
-  } else {
-    checks.push(check(
-      'scopes',
-      'PAT scopes',
-      'warn',
-      'Stored credentials do not include scope metadata; live authorization is checked below.',
-    ));
-  }
+  const missing = requiredScopes.filter((scope) => !credentials.scopes.includes(scope));
+  checks.push(check(
+    'scopes',
+    'PAT scopes',
+    missing.length === 0 ? 'pass' : 'warn',
+    missing.length === 0
+      ? 'PAT includes Product, Feedback round-trip, and waitlist invitation management scopes.'
+      : `PAT is missing recommended scopes: ${missing.join(', ')}.`,
+  ));
 
-  if (credentials.expiresAt) {
-    const days = Math.floor(
-      (new Date(credentials.expiresAt).getTime() - dependencies.now()) / 86_400_000,
-    );
-    checks.push(check(
-      'expiry',
-      'PAT expiry',
-      days < 0 ? 'fail' : days <= 30 ? 'warn' : 'pass',
-      days < 0
-        ? 'The configured PAT has expired.'
-        : `The configured PAT expires in ${days} day${days === 1 ? '' : 's'}.`,
-    ));
-  } else {
-    checks.push(check('expiry', 'PAT expiry', 'warn', 'No PAT expiry metadata is stored.'));
-  }
+  const days = Math.floor(
+    (new Date(credentials.expiresAt).getTime() - dependencies.now()) / 86_400_000,
+  );
+  checks.push(check(
+    'expiry',
+    'PAT expiry',
+    days < 0 ? 'fail' : days <= 30 ? 'warn' : 'pass',
+    days < 0
+      ? 'The configured PAT has expired.'
+      : `The configured PAT expires in ${days} day${days === 1 ? '' : 's'}.`,
+  ));
 
   try {
     const pending = await dependencies.readPendingRevocations();
@@ -665,7 +651,7 @@ export async function diagnoseFeedbackServer(
       onboarding = await deriveOnboardingStatus({
         client,
         endpoint: credentials.baseUrl,
-        username: credentials.username,
+        email: credentials.email,
         scopes: credentials.scopes,
         productId: selectedProduct?.id,
         products,
@@ -733,7 +719,7 @@ export async function diagnoseFeedbackServer(
     ok: !checks.some(({ status }) => status === 'fail'),
     pluginVersion: PLUGIN_VERSION,
     endpoint: credentials.baseUrl,
-    username: credentials.username ?? null,
+    email: credentials.email,
     product: selectedProduct ? publicProduct(selectedProduct) : null,
     subscription: subscription ?? null,
     onboarding: onboarding ?? null,

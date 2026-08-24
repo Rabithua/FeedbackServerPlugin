@@ -1,34 +1,28 @@
 {
   "name": "@feedback-server/agent-plugin",
-  "version": "0.10.3",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "bun build ./src/server.ts --target=bun --format=esm --minify --outfile=./dist/server.mjs && bun build ./src/cli.ts --target=bun --format=esm --minify --outfile=./dist/cli.mjs && bun run ./scripts/normalize-build.ts",
+    "build": "bun build ./src/server.ts --target=bun --format=esm --minify --external @napi-rs/keyring --outfile=./dist/server.mjs && bun build ./src/cli.ts --target=bun --format=esm --minify --external @napi-rs/keyring --outfile=./dist/cli.mjs && bun run ./scripts/normalize-build.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src scripts tests --max-warnings=0",
     "test": "bun test --timeout 10000",
     "test:stdio": "bun run ./scripts/stdio-smoke.ts",
-    "test:contract": "bun run ./scripts/contract-test.ts",
+    "test:keyring": "bun run ./scripts/native-keyring-smoke.ts",
     "test:roundtrip": "bun run ./bin/feedback-server test roundtrip",
     "check": "bun run typecheck && bun run lint && bun run test && bun run build && bun run test:stdio",
-    "admin:create-local": "bun run ./bin/feedback-server admin create-local",
-    "admin:invite": "bun run ./bin/feedback-server admin invite",
-    "admin:invitations": "bun run ./bin/feedback-server admin invitations",
-    "admin:invite:revoke": "bun run ./bin/feedback-server admin invite revoke",
-    "admin:accept-invite": "bun run ./bin/feedback-server admin accept-invite",
-    "admin:email:bind": "bun run ./bin/feedback-server admin email bind",
-    "admin:password-reset": "bun run ./bin/feedback-server admin password-reset",
-    "configure": "bun run ./bin/feedback-server agent configure",
-    "disconnect": "bun run ./bin/feedback-server agent disconnect",
-    "agent:revoke-token": "bun run ./bin/feedback-server agent revoke-token",
-    "doctor": "bun run ./bin/feedback-server doctor"
+    "accept-invite": "bun run ./bin/feedbackkit accept-invite",
+    "onboarding": "bun run ./bin/feedbackkit onboarding status",
+    "doctor": "bun run ./bin/feedbackkit doctor"
   },
   "bin": {
+    "feedbackkit": "./bin/feedbackkit",
     "feedback-server": "./bin/feedback-server"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
+    "@napi-rs/keyring": "1.3.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

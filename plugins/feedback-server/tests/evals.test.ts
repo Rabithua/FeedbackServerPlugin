@@ -28,7 +28,9 @@ const allowedGraderTypes = new Set([
 describe('Claude Code plugin eval suite', () => {
   test('defines the required workflow and negative cases with bounded execution', async () => {
     const root = resolve(import.meta.dir, '../evals');
-    const files = [...new Bun.Glob('**/case.yaml').scanSync({ cwd: root })].sort();
+    const files = [...new Bun.Glob('**/case.yaml').scanSync({ cwd: root })]
+      .map((file) => file.replaceAll('\\', '/'))
+      .sort();
     expect(files).toHaveLength(7);
     expect(files).toEqual(expect.arrayContaining([
       'setup/case.yaml',

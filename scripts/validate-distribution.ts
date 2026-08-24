@@ -86,6 +86,7 @@ for (const relativePath of [
   '.claude-plugin/plugin.json',
   '.mcp.json',
   'bin/feedback-server',
+  'bin/feedbackkit',
   'dist/server.mjs',
   'dist/cli.mjs',
 ]) {

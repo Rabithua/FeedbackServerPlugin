@@ -1,101 +1,79 @@
 import { randomUUID } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
+import { AsyncEntry } from '@napi-rs/keyring';
 import { z } from 'zod';
 
 export const DEFAULT_BASE_URL = 'https://api.feedkit.cn/v1/api';
 export const LEGACY_DEFAULT_BASE_URL = 'https://feedbackserver.rote.ink/v1/api';
-export const KEYCHAIN_SERVICE = 'dev.rote.feedback-server.mcp';
+export const KEYRING_SERVICE = 'cc.feedkit.agent';
+export const KEYCHAIN_SERVICE = KEYRING_SERVICE;
 export const KEYCHAIN_ACCOUNT = 'default';
-export const KEYCHAIN_TOKEN_SERVICE = `${KEYCHAIN_SERVICE}.token`;
-export const KEYCHAIN_METADATA_SERVICE = `${KEYCHAIN_SERVICE}.metadata`;
-export const KEYCHAIN_PROFILE_POINTER_SERVICE = `${KEYCHAIN_SERVICE}.profile`;
-export const KEYCHAIN_PROFILE_INDEX_SERVICE = `${KEYCHAIN_SERVICE}.profiles`;
-export const KEYCHAIN_ACTIVE_PROFILE_SERVICE = `${KEYCHAIN_SERVICE}.active-profile`;
-export const KEYCHAIN_ACTIVE_PROFILE_ACCOUNT = 'active';
-export const KEYCHAIN_PENDING_REVOCATIONS_SERVICE = `${KEYCHAIN_SERVICE}.pending-revocations`;
-export const KEYCHAIN_ADMIN_PASSWORD_SERVICE = 'dev.rote.feedback-server.admin';
-export const SECURITY_EXECUTABLE = '/usr/bin/security';
-export const SECURITY_EXECUTABLE_FALLBACK = 'security';
-export const SECURITY_SHELL_EXECUTABLE = '/bin/sh';
-export const SECURITY_EXPECT_EXECUTABLE = '/usr/bin/expect';
-export const SECURITY_LAUNCH_FAILURE_MARKER = 'feedback-server-security-launch-failed:';
 export const MAX_KEYCHAIN_PROFILES = 100;
-export const SECURITY_SECRET_PROMPT_SCRIPT = fileURLToPath(
-  new URL('../scripts/keychain-secret.exp', import.meta.url),
-);
 
-const credentialSchema = z.object({
-  baseUrl: z.url(),
-  token: z
-    .string()
-    .startsWith('fspat_')
-    .min(40)
-    .max(120)
-    .regex(/^fspat_[A-Za-z0-9_-]+$/),
-  tokenId: z.uuid().optional(),
-  pendingRevocationTokenIds: z.array(z.uuid()).max(32).optional(),
-  username: z.string().min(1).max(80).optional(),
-  scopes: z.array(z.string()).optional(),
-  expiresAt: z.iso.datetime().optional(),
-});
+const PROFILE_SERVICE = `${KEYRING_SERVICE}.profile`;
+const ACTIVE_PROFILE_SERVICE = `${KEYRING_SERVICE}.active`;
+const PROFILE_INDEX_SERVICE = `${KEYRING_SERVICE}.profiles`;
+const ACTIVE_ACCOUNT = 'active';
+const INDEX_ACCOUNT = 'index';
 
-const credentialMetadataSchema = credentialSchema
-  .omit({ token: true })
-  .extend({ version: z.literal(1) });
-const keychainRecordIdSchema = z.uuid();
 export const profileIdSchema = z
   .string()
   .min(1)
   .max(40)
-  .regex(/^[a-z0-9._-]+$/, 'Profile IDs may contain only lowercase letters, numbers, dots, underscores, and hyphens');
-const profileIndexSchema = z.object({
-  version: z.literal(1),
-  profiles: z
-    .array(profileIdSchema)
-    .max(MAX_KEYCHAIN_PROFILES)
-    .transform((profiles) => [...new Set(profiles)].sort()),
-});
-const pendingTokenRevocationSchema = z.object({
+  .regex(
+    /^[a-z0-9._-]+$/,
+    'Profile IDs may contain only lowercase letters, numbers, dots, underscores, and hyphens',
+  );
+
+const credentialSchema = z.object({
   baseUrl: z.url(),
-  username: z.string().min(1).max(80),
+  adminId: z.uuid(),
+  email: z.email(),
   tokenId: z.uuid(),
-  profile: profileIdSchema.optional(),
-});
-const pendingTokenRevocationLedgerSchema = z.object({
-  version: z.literal(1),
-  entries: z.array(pendingTokenRevocationSchema).max(64),
-});
+  token: z.string().startsWith('fspat_').min(40).max(120).regex(/^fspat_[A-Za-z0-9_-]+$/),
+  scopes: z.array(z.string()).min(1),
+  expiresAt: z.iso.datetime(),
+}).strict();
+
+const profileIndexSchema = z.object({
+  version: z.literal(2),
+  profiles: z.array(profileIdSchema).max(MAX_KEYCHAIN_PROFILES),
+}).strict();
 
 export type StoredCredentials = z.infer<typeof credentialSchema>;
-export type PendingTokenRevocation = z.infer<typeof pendingTokenRevocationSchema>;
-export type SecurityCommandResult = {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-};
-export type SecurityCommandRunner = (
-  args: string[],
-  input?: string,
-) => Promise<SecurityCommandResult>;
-export interface KeychainAdminPasswordCandidate {
-  password: string;
-  legacy: boolean;
+export interface PendingTokenRevocation {
+  baseUrl: string;
+  tokenId: string;
+  email: string;
+  profile?: string;
 }
-
 export interface LoadedCredentials {
   credentials: StoredCredentials;
-  credentialSource: 'environment' | 'keychain';
+  credentialSource: 'environment' | 'keyring';
   activeProfile: string | null;
 }
 
+export interface NativeEntry {
+  setPassword(password: string): Promise<void>;
+  getPassword(): Promise<string | undefined>;
+  deleteCredential(): Promise<boolean>;
+}
+
+export type NativeEntryFactory = (service: string, account: string) => NativeEntry;
+
+const nativeEntry: NativeEntryFactory = (service, account) => {
+  const entry = new AsyncEntry(service, account);
+  return {
+    setPassword: (password) => entry.setPassword(password),
+    getPassword: () => entry.getPassword(),
+    deleteCredential: () => entry.deleteCredential(),
+  };
+};
+
 export class CredentialPersistenceIndeterminateError extends Error {
-  public constructor(
-    public readonly profile: string,
-    cause: unknown,
-  ) {
+  public constructor(public readonly profile: string, cause: unknown) {
     super(
-      `FeedbackServer profile ${profile} may already reference the new PAT, but its Keychain transaction did not finish. `
-      + `Do not revoke the PAT; retry feedback-server profile use ${profile} or rerun Agent configuration for this profile.`,
+      `FeedbackKit profile ${profile} may already contain the new Agent credential. `
+      + 'Inspect onboarding status before accepting another invitation.',
       { cause },
     );
     this.name = 'CredentialPersistenceIndeterminateError';
@@ -104,14 +82,11 @@ export class CredentialPersistenceIndeterminateError extends Error {
 
 export function normalizeBaseUrl(value: string): string {
   const url = new URL(value.trim());
-  if (url.username || url.password) {
-    throw new Error('FeedbackServer URL must not include user information');
-  }
-  const isLoopbackHttp =
-    url.protocol === 'http:'
-    && (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]');
-  if (url.protocol !== 'https:' && !isLoopbackHttp) {
-    throw new Error('FeedbackServer URL must use HTTPS; HTTP is allowed only for localhost development');
+  if (url.username || url.password) throw new Error('FeedbackKit URL must not include user information');
+  const loopbackHttp = url.protocol === 'http:'
+    && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  if (url.protocol !== 'https:' && !loopbackHttp) {
+    throw new Error('FeedbackKit URL must use HTTPS; HTTP is allowed only for localhost development');
   }
   url.hash = '';
   url.search = '';
@@ -123,1056 +98,215 @@ export function normalizeBaseUrl(value: string): string {
   return normalized === LEGACY_DEFAULT_BASE_URL ? DEFAULT_BASE_URL : normalized;
 }
 
-function normalizeStoredCredentials(value: unknown): StoredCredentials {
-  const credentials = credentialSchema.parse(value);
-  return {
-    ...credentials,
-    baseUrl: normalizeBaseUrl(credentials.baseUrl),
-  };
-}
-
-async function runSecurity(
-  args: string[],
-  input?: string,
-): Promise<SecurityCommandResult> {
-  return runSecurityCandidateChain(
-    securityCommandCandidates(args),
-    input,
-    runSecurityCommand,
-  );
-}
-
-export async function runSecurityCandidateChain(
-  commands: string[][],
-  input: string | undefined,
-  runner: SecurityCommandRunner,
-): Promise<SecurityCommandResult> {
-  const launchErrors: string[] = [];
-
-  for (const command of commands) {
-    try {
-      const result = await runner(command, input);
-      const wrappedLaunchError = wrappedExecutableMissingError(result);
-      if (!wrappedLaunchError) return result;
-      launchErrors.push(wrappedLaunchError);
-    } catch (error) {
-      if (!isExecutableMissingError(error)) throw error;
-      launchErrors.push(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  throw new Error(
-    `Unable to start macOS Keychain command. Tried security executable fallbacks: ${
-      launchErrors.join('; ')
-    }`,
-  );
-}
-
-function wrappedExecutableMissingError(result: SecurityCommandResult): string | undefined {
-  if (result.exitCode !== 127) return undefined;
-  const markerIndex = result.stderr.indexOf(SECURITY_LAUNCH_FAILURE_MARKER);
-  if (markerIndex < 0) return undefined;
-  const detail = result.stderr
-    .slice(markerIndex + SECURITY_LAUNCH_FAILURE_MARKER.length)
-    .split(/\r?\n/u, 1)[0]
-    ?.trim();
-  return detail || 'Wrapped Keychain executable could not be started';
-}
-
-export function securityCommandCandidates(
-  args: string[],
-  environment: NodeJS.ProcessEnv = process.env,
-): string[][] {
-  const directCommands = [
-    [environment.FEEDBACK_SERVER_SECURITY_EXECUTABLE, ...args],
-    [SECURITY_EXECUTABLE, ...args],
-    [SECURITY_EXECUTABLE_FALLBACK, ...args],
-  ].filter((command): command is string[] => Boolean(command[0]));
-  return [
-    ...directCommands,
-    [SECURITY_SHELL_EXECUTABLE, '-lc', 'exec security "$@"', 'security', ...args],
-  ];
-}
-
-function isExecutableMissingError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  const code = (error as NodeJS.ErrnoException).code;
-  return code === 'ENOENT' || error.message.includes('ENOENT');
-}
-
-async function runSecurityCommand(
-  command: string[],
-  input?: string,
-): Promise<SecurityCommandResult> {
-  const invokedCommand = input === undefined
-    ? command
-    : securitySecretPromptCommand(command);
-  const subprocess = Bun.spawn({
-    cmd: invokedCommand,
-    stdin: input === undefined ? 'ignore' : 'pipe',
-    stdout: 'pipe',
-    stderr: 'pipe',
+function normalizeCredentials(value: unknown): StoredCredentials {
+  const parsed = credentialSchema.parse(value);
+  return credentialSchema.parse({
+    ...parsed,
+    baseUrl: normalizeBaseUrl(parsed.baseUrl),
+    email: parsed.email.trim().toLowerCase(),
   });
-  if (input !== undefined) {
-    const stdin = subprocess.stdin;
-    if (!stdin) throw new Error('Unable to open Keychain input pipe');
-    await stdin.write(input);
-    await stdin.end();
-  }
-  const [exitCode, stdout, stderr] = await Promise.all([
-    subprocess.exited,
-    new Response(subprocess.stdout).text(),
-    new Response(subprocess.stderr).text(),
-  ]);
-  return { exitCode, stdout, stderr };
 }
 
-export function securitySecretPromptCommand(command: string[]): string[] {
-  return [SECURITY_EXPECT_EXECUTABLE, '-f', SECURITY_SECRET_PROMPT_SCRIPT, ...command];
-}
-
-function hexadecimalValue(value: string): string {
-  return Buffer.from(value, 'utf8').toString('hex');
-}
-
-export function keychainTokenWriteArguments(recordId: string): string[] {
-  return [
-    'add-generic-password',
-    '-a',
-    keychainRecordIdSchema.parse(recordId),
-    '-s',
-    KEYCHAIN_TOKEN_SERVICE,
-    '-l',
-    'FeedbackServer MCP API token',
-    '-w',
-  ];
-}
-
-export function keychainMetadataWriteArguments(
-  recordId: string,
-  credentials: StoredCredentials,
-): string[] {
-  const value = JSON.stringify(
-    credentialMetadataSchema.parse({ version: 1, ...credentialSchema.parse(credentials) }),
-  );
-  const encodedValue = Buffer.from(value, 'utf8').toString('hex');
-  return [
-    'add-generic-password',
-    '-a',
-    keychainRecordIdSchema.parse(recordId),
-    '-s',
-    KEYCHAIN_METADATA_SERVICE,
-    '-l',
-    'FeedbackServer MCP credential metadata',
-    '-X',
-    encodedValue,
-  ];
-}
-
-export function keychainPointerWriteArguments(recordId: string): string[] {
-  return [
-    'add-generic-password',
-    '-U',
-    '-a',
-    KEYCHAIN_ACCOUNT,
-    '-s',
-    KEYCHAIN_SERVICE,
-    '-l',
-    'FeedbackServer MCP credential pointer',
-    '-X',
-    hexadecimalValue(keychainRecordIdSchema.parse(recordId)),
-  ];
-}
-
-export function keychainProfilePointerWriteArguments(
-  profile: string,
-  pointer: string,
-): string[] {
-  return [
-    'add-generic-password',
-    '-U',
-    '-a',
-    profileIdSchema.parse(profile),
-    '-s',
-    KEYCHAIN_PROFILE_POINTER_SERVICE,
-    '-l',
-    `FeedbackServer MCP credential pointer for profile ${profile}`,
-    '-X',
-    hexadecimalValue(pointer),
-  ];
-}
-
-export function keychainActiveProfileWriteArguments(profile: string): string[] {
-  return [
-    'add-generic-password',
-    '-U',
-    '-a',
-    KEYCHAIN_ACTIVE_PROFILE_ACCOUNT,
-    '-s',
-    KEYCHAIN_ACTIVE_PROFILE_SERVICE,
-    '-l',
-    'FeedbackServer active MCP profile',
-    '-X',
-    hexadecimalValue(profileIdSchema.parse(profile)),
-  ];
-}
-
-export function keychainProfileIndexWriteArguments(profiles: string[]): string[] {
-  const value = JSON.stringify(profileIndexSchema.parse({ version: 1, profiles }));
-  return [
-    'add-generic-password',
-    '-U',
-    '-a',
-    KEYCHAIN_ACCOUNT,
-    '-s',
-    KEYCHAIN_PROFILE_INDEX_SERVICE,
-    '-l',
-    'FeedbackServer MCP profile index',
-    '-X',
-    hexadecimalValue(value),
-  ];
-}
-
-function keychainReadArguments(service: string, account: string): string[] {
-  return ['find-generic-password', '-a', account, '-s', service, '-w'];
-}
-
-function keychainDeleteArguments(service: string, account: string): string[] {
-  return ['delete-generic-password', '-a', account, '-s', service];
-}
-
-export function keychainPendingRevocationsWriteArguments(
-  entries: PendingTokenRevocation[],
-): string[] {
-  const value = JSON.stringify(
-    pendingTokenRevocationLedgerSchema.parse({ version: 1, entries }),
-  );
-  return [
-    'add-generic-password',
-    '-U',
-    '-a',
-    KEYCHAIN_ACCOUNT,
-    '-s',
-    KEYCHAIN_PENDING_REVOCATIONS_SERVICE,
-    '-l',
-    'FeedbackServer pending PAT revocations',
-    '-X',
-    hexadecimalValue(value),
-  ];
-}
-
-export function keychainAdminPasswordAccount(baseUrl: string, username: string): string {
-  return `${new URL(normalizeBaseUrl(baseUrl)).origin}|${username}`;
-}
-
-export function keychainAdminPasswordWriteArguments(
-  baseUrl: string,
-  username: string,
-): string[] {
-  return [
-    'add-generic-password',
-    '-U',
-    '-a',
-    keychainAdminPasswordAccount(baseUrl, username),
-    '-s',
-    KEYCHAIN_ADMIN_PASSWORD_SERVICE,
-    '-l',
-    `FeedbackServer administrator password for ${username} at ${new URL(normalizeBaseUrl(baseUrl)).origin}`,
-    '-w',
-  ];
-}
-
-function isMissingKeychainItem(result: SecurityCommandResult): boolean {
-  return result.exitCode === 44 || result.stderr.includes('could not be found');
-}
-
-async function readKeychainValue(
+async function readValue(
   service: string,
   account: string,
-  runner: SecurityCommandRunner,
+  factory: NativeEntryFactory,
 ): Promise<string | undefined> {
-  const result = await runner(keychainReadArguments(service, account));
-  if (result.exitCode === 0) return result.stdout.trim();
-  if (isMissingKeychainItem(result)) return undefined;
-  throw new Error(`Unable to read FeedbackServer credentials from Keychain: ${result.stderr.trim()}`);
+  return factory(service, account).getPassword();
 }
 
-async function deleteKeychainItem(
+async function deleteValue(
   service: string,
   account: string,
-  runner: SecurityCommandRunner,
-): Promise<boolean> {
-  const result = await runner(keychainDeleteArguments(service, account));
-  if (result.exitCode === 0 || isMissingKeychainItem(result)) return true;
-  return false;
-}
-
-async function deleteKeychainRecord(
-  recordId: string,
-  runner: SecurityCommandRunner,
-): Promise<boolean> {
-  if (!(await deleteKeychainItem(KEYCHAIN_TOKEN_SERVICE, recordId, runner))) {
-    return false;
-  }
-  return deleteKeychainItem(KEYCHAIN_METADATA_SERVICE, recordId, runner);
-}
-
-async function writeKeychainValue(
-  args: string[],
-  label: string,
-  runner: SecurityCommandRunner,
+  factory: NativeEntryFactory,
 ): Promise<void> {
-  const result = await runner(args);
-  if (result.exitCode !== 0) {
-    throw new Error(`Unable to store ${label} in Keychain: ${result.stderr.trim()}`);
-  }
+  await factory(service, account).deleteCredential();
 }
 
-async function readProfileIndex(runner: SecurityCommandRunner): Promise<string[]> {
-  const value = await readKeychainValue(
-    KEYCHAIN_PROFILE_INDEX_SERVICE,
-    KEYCHAIN_ACCOUNT,
-    runner,
-  );
-  if (!value) return [];
-  return profileIndexSchema.parse(JSON.parse(value)).profiles;
+async function readProfileIndex(factory: NativeEntryFactory): Promise<string[]> {
+  const stored = await readValue(PROFILE_INDEX_SERVICE, INDEX_ACCOUNT, factory);
+  if (!stored) return [];
+  return [...new Set(profileIndexSchema.parse(JSON.parse(stored)).profiles)].sort();
 }
 
-async function writeProfileIndex(
-  profiles: string[],
-  runner: SecurityCommandRunner,
+async function writeProfileIndex(profiles: string[], factory: NativeEntryFactory): Promise<void> {
+  const normalized = [...new Set(profiles.map((profile) => profileIdSchema.parse(profile)))].sort();
+  await factory(PROFILE_INDEX_SERVICE, INDEX_ACCOUNT).setPassword(JSON.stringify({
+    version: 2,
+    profiles: normalized,
+  }));
+}
+
+export async function preflightNativeCredentialStore(
+  factory: NativeEntryFactory = nativeEntry,
 ): Promise<void> {
-  const normalized = profileIndexSchema.parse({ version: 1, profiles }).profiles;
-  if (normalized.length === 0) {
-    if (!(await deleteKeychainItem(KEYCHAIN_PROFILE_INDEX_SERVICE, KEYCHAIN_ACCOUNT, runner))) {
-      throw new Error('Unable to clear the FeedbackServer profile index from Keychain');
+  const account = `preflight-${randomUUID()}`;
+  const probe = randomUUID();
+  const entry = factory(`${KEYRING_SERVICE}.preflight`, account);
+  try {
+    await entry.setPassword(probe);
+    if (await entry.getPassword() !== probe) {
+      throw new Error('Native credential store did not return the value it accepted');
     }
-    return;
-  }
-  await writeKeychainValue(
-    keychainProfileIndexWriteArguments(normalized),
-    'FeedbackServer profile index',
-    runner,
-  );
-}
-
-async function setActiveProfile(profile: string, runner: SecurityCommandRunner): Promise<void> {
-  await writeKeychainValue(
-    keychainActiveProfileWriteArguments(profile),
-    'the active FeedbackServer profile',
-    runner,
-  );
-}
-
-async function migrateLegacyDefaultProfile(
-  runner: SecurityCommandRunner,
-): Promise<string | undefined> {
-  const activeValue = await readKeychainValue(
-    KEYCHAIN_ACTIVE_PROFILE_SERVICE,
-    KEYCHAIN_ACTIVE_PROFILE_ACCOUNT,
-    runner,
-  );
-  const activeProfile = activeValue ? profileIdSchema.parse(activeValue) : undefined;
-  const legacyPointer = await readKeychainValue(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, runner);
-
-  if (activeProfile) {
-    const activePointer = await readKeychainValue(
-      KEYCHAIN_PROFILE_POINTER_SERVICE,
-      activeProfile,
-      runner,
+  } catch (error) {
+    throw new Error(
+      'The native credential store is unavailable. Unlock macOS Keychain, Windows Credential Manager, or Linux Secret Service before accepting the invitation.',
+      { cause: error },
     );
-    if (!activePointer) {
-      const profiles = (await readProfileIndex(runner)).filter((name) => name !== activeProfile);
-      const fallback = profiles.includes(KEYCHAIN_ACCOUNT) ? KEYCHAIN_ACCOUNT : profiles[0];
-      if (fallback) await setActiveProfile(fallback, runner);
-      else if (!(await deleteKeychainItem(
-        KEYCHAIN_ACTIVE_PROFILE_SERVICE,
-        KEYCHAIN_ACTIVE_PROFILE_ACCOUNT,
-        runner,
-      ))) {
-        throw new Error(`Unable to recover missing active FeedbackServer profile ${activeProfile}`);
-      }
-      await writeProfileIndex(profiles, runner);
-      return fallback;
-    }
-    const profiles = await readProfileIndex(runner);
-    const repairedProfiles = [...profiles];
-    if (!repairedProfiles.includes(activeProfile)) repairedProfiles.push(activeProfile);
-    if (legacyPointer) {
-      const defaultPointer = await readKeychainValue(
-        KEYCHAIN_PROFILE_POINTER_SERVICE,
-        KEYCHAIN_ACCOUNT,
-        runner,
-      );
-      if (!defaultPointer) {
-        await writeKeychainValue(
-          keychainProfilePointerWriteArguments(KEYCHAIN_ACCOUNT, legacyPointer),
-          'the migrated FeedbackServer default profile pointer',
-          runner,
-        );
-      }
-      if (!repairedProfiles.includes(KEYCHAIN_ACCOUNT)) repairedProfiles.push(KEYCHAIN_ACCOUNT);
-    }
-    if (repairedProfiles.length !== profiles.length) {
-      await writeProfileIndex(repairedProfiles, runner);
-    }
-    if (legacyPointer) {
-      if (!(await deleteKeychainItem(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, runner))) {
-        throw new Error('Unable to finish migrating legacy FeedbackServer credentials');
-      }
-    }
-    return activeProfile;
+  } finally {
+    await entry.deleteCredential().catch(() => false);
   }
-
-  const defaultPointer = await readKeychainValue(
-    KEYCHAIN_PROFILE_POINTER_SERVICE,
-    KEYCHAIN_ACCOUNT,
-    runner,
-  );
-  if (!defaultPointer && !legacyPointer) return undefined;
-  if (!defaultPointer && legacyPointer) {
-    await writeKeychainValue(
-      keychainProfilePointerWriteArguments(KEYCHAIN_ACCOUNT, legacyPointer),
-      'the migrated FeedbackServer default profile pointer',
-      runner,
-    );
-  }
-  const profiles = await readProfileIndex(runner);
-  if (!profiles.includes(KEYCHAIN_ACCOUNT)) {
-    await writeProfileIndex([...profiles, KEYCHAIN_ACCOUNT], runner);
-  }
-  await setActiveProfile(KEYCHAIN_ACCOUNT, runner);
-  if (legacyPointer && !(await deleteKeychainItem(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, runner))) {
-    throw new Error('Unable to finish migrating legacy FeedbackServer credentials');
-  }
-  return KEYCHAIN_ACCOUNT;
-}
-
-async function readCredentialPointer(
-  service: string,
-  account: string,
-  runner: SecurityCommandRunner,
-): Promise<StoredCredentials | undefined> {
-  const pointer = await readKeychainValue(service, account, runner);
-  if (!pointer) return undefined;
-
-  const recordId = keychainRecordIdSchema.safeParse(pointer);
-  if (!recordId.success) return normalizeStoredCredentials(JSON.parse(pointer));
-
-  const [token, metadataValue] = await Promise.all([
-    readKeychainValue(KEYCHAIN_TOKEN_SERVICE, recordId.data, runner),
-    readKeychainValue(KEYCHAIN_METADATA_SERVICE, recordId.data, runner),
-  ]);
-  if (!token || !metadataValue) {
-    throw new Error('FeedbackServer credentials in Keychain are incomplete');
-  }
-  const metadata = credentialMetadataSchema.parse(JSON.parse(metadataValue));
-  return normalizeStoredCredentials({ ...metadata, token });
-}
-
-async function readCredentialTokenIdPointer(
-  service: string,
-  account: string,
-  runner: SecurityCommandRunner,
-): Promise<string | undefined> {
-  const pointer = await readKeychainValue(service, account, runner);
-  if (!pointer) return undefined;
-
-  const recordId = keychainRecordIdSchema.safeParse(pointer);
-  if (!recordId.success) {
-    return normalizeStoredCredentials(JSON.parse(pointer)).tokenId;
-  }
-  const metadataValue = await readKeychainValue(
-    KEYCHAIN_METADATA_SERVICE,
-    recordId.data,
-    runner,
-  );
-  if (!metadataValue) {
-    throw new Error('FeedbackServer credential metadata in Keychain is incomplete');
-  }
-  return credentialMetadataSchema.parse(JSON.parse(metadataValue)).tokenId;
-}
-
-export async function readKeychainCredentialRecord(
-  runner: SecurityCommandRunner,
-): Promise<StoredCredentials | undefined> {
-  return readCredentialPointer(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, runner);
-}
-
-export async function readKeychainCredentials(
-  runner: SecurityCommandRunner = runSecurity,
-): Promise<StoredCredentials | undefined> {
-  if (process.platform !== 'darwin') return undefined;
-  const profile = await migrateLegacyDefaultProfile(runner);
-  if (!profile) return undefined;
-  return readCredentialPointer(KEYCHAIN_PROFILE_POINTER_SERVICE, profile, runner);
 }
 
 export async function readKeychainProfileCredentials(
   profile: string,
-  runner: SecurityCommandRunner = runSecurity,
+  factory: NativeEntryFactory = nativeEntry,
 ): Promise<StoredCredentials | undefined> {
-  if (process.platform !== 'darwin') return undefined;
-  await migrateLegacyDefaultProfile(runner);
-  return readCredentialPointer(
-    KEYCHAIN_PROFILE_POINTER_SERVICE,
-    profileIdSchema.parse(profile),
-    runner,
-  );
+  const stored = await readValue(PROFILE_SERVICE, profileIdSchema.parse(profile), factory);
+  return stored ? normalizeCredentials(JSON.parse(stored)) : undefined;
 }
 
 export async function readActiveKeychainProfile(
-  runner: SecurityCommandRunner = runSecurity,
+  factory: NativeEntryFactory = nativeEntry,
 ): Promise<string | undefined> {
-  if (process.platform !== 'darwin') return undefined;
-  return migrateLegacyDefaultProfile(runner);
+  const value = await readValue(ACTIVE_PROFILE_SERVICE, ACTIVE_ACCOUNT, factory);
+  return value ? profileIdSchema.parse(value) : undefined;
 }
 
-export async function listKeychainProfiles(
-  runner: SecurityCommandRunner = runSecurity,
-): Promise<Array<{ name: string; active: boolean }>> {
-  if (process.platform !== 'darwin') return [];
-  const active = await migrateLegacyDefaultProfile(runner);
-  const profiles = await readProfileIndex(runner);
-  return profiles.map((name) => ({ name, active: name === active }));
-}
-
-export async function readKeychainReferencedTokenIds(
-  runner: SecurityCommandRunner = runSecurity,
-): Promise<Set<string>> {
-  if (process.platform !== 'darwin') return new Set();
-  await migrateLegacyDefaultProfile(runner);
-  const profiles = await readProfileIndex(runner);
-  const tokenIds = await Promise.all(
-    profiles.map((profile) =>
-      readCredentialTokenIdPointer(KEYCHAIN_PROFILE_POINTER_SERVICE, profile, runner)),
-  );
-  return new Set(tokenIds.flatMap((tokenId) => tokenId ? [tokenId] : []));
-}
-
-export async function useKeychainProfile(
-  profile: string,
-  runner: SecurityCommandRunner = runSecurity,
-): Promise<void> {
-  if (process.platform !== 'darwin') {
-    throw new Error('macOS Keychain is unavailable on this platform');
-  }
-  const parsed = profileIdSchema.parse(profile);
-  await migrateLegacyDefaultProfile(runner);
-  const pointer = await readKeychainValue(KEYCHAIN_PROFILE_POINTER_SERVICE, parsed, runner);
-  if (!pointer) throw new Error(`FeedbackServer profile ${parsed} does not exist`);
-  await readCredentialPointer(KEYCHAIN_PROFILE_POINTER_SERVICE, parsed, runner);
-  await setActiveProfile(parsed, runner);
-}
-
-export async function readKeychainPendingTokenRevocations(
-  runner: SecurityCommandRunner,
-): Promise<PendingTokenRevocation[]> {
-  const value = await readKeychainValue(
-    KEYCHAIN_PENDING_REVOCATIONS_SERVICE,
-    KEYCHAIN_ACCOUNT,
-    runner,
-  );
-  if (!value) return [];
-  const ledger = pendingTokenRevocationLedgerSchema.parse(JSON.parse(value));
-  return ledger.entries.map((entry) => ({
-    ...entry,
-    baseUrl: normalizeBaseUrl(entry.baseUrl),
-  }));
-}
-
-export async function writeKeychainPendingTokenRevocations(
-  entries: PendingTokenRevocation[],
-  runner: SecurityCommandRunner,
-): Promise<void> {
-  const normalized = pendingTokenRevocationLedgerSchema.parse({
-    version: 1,
-    entries: entries.map((entry) => ({
-      ...entry,
-      baseUrl: normalizeBaseUrl(entry.baseUrl),
-    })),
-  }).entries;
-  if (normalized.length === 0) {
-    if (!(await deleteKeychainItem(
-      KEYCHAIN_PENDING_REVOCATIONS_SERVICE,
-      KEYCHAIN_ACCOUNT,
-      runner,
-    ))) {
-      throw new Error('Unable to clear pending FeedbackServer PAT revocations from Keychain');
-    }
-    return;
-  }
-  const result = await runner(keychainPendingRevocationsWriteArguments(normalized));
-  if (result.exitCode !== 0) {
-    throw new Error(
-      `Unable to store pending FeedbackServer PAT revocations in Keychain: ${result.stderr.trim()}`,
-    );
-  }
-}
-
-export async function readPendingTokenRevocations(
-  runner: SecurityCommandRunner = runSecurity,
-): Promise<PendingTokenRevocation[]> {
-  if (process.platform !== 'darwin') return [];
-  return readKeychainPendingTokenRevocations(runner);
-}
-
-export async function readKeychainAdminPassword(
-  baseUrl: string,
-  username: string,
-  runner: SecurityCommandRunner = runSecurity,
-): Promise<string | undefined> {
-  return (await readKeychainAdminPasswordCandidate(baseUrl, username, runner))?.password;
-}
-
-export async function readKeychainAdminPasswordCandidate(
-  baseUrl: string,
-  username: string,
-  runner: SecurityCommandRunner = runSecurity,
-): Promise<KeychainAdminPasswordCandidate | undefined> {
-  if (process.platform !== 'darwin') return undefined;
-  const scoped = await readKeychainValue(
-    KEYCHAIN_ADMIN_PASSWORD_SERVICE,
-    keychainAdminPasswordAccount(baseUrl, username),
-    runner,
-  );
-  if (scoped) return { password: scoped, legacy: false };
-  const legacy = await readKeychainValue(KEYCHAIN_ADMIN_PASSWORD_SERVICE, username, runner);
-  return legacy ? { password: legacy, legacy: true } : undefined;
-}
-
-export async function writeKeychainAdminPassword(
-  baseUrl: string,
-  username: string,
-  password: string,
-  runner: SecurityCommandRunner = runSecurity,
-): Promise<void> {
-  if (process.platform !== 'darwin') {
-    throw new Error('macOS Keychain is unavailable on this platform');
-  }
-  const result = await runner(
-    keychainAdminPasswordWriteArguments(baseUrl, username),
-    `${password}\n${password}\n`,
-  );
-  if (result.exitCode !== 0) {
-    throw new Error(
-      `Unable to store FeedbackServer administrator password in Keychain: ${result.stderr.trim()}`,
-    );
-  }
-}
-
-export async function deleteKeychainAdminPassword(
-  baseUrl: string,
-  username: string,
-  runner: SecurityCommandRunner = runSecurity,
-): Promise<void> {
-  if (process.platform !== 'darwin') return;
-  if (!(await deleteKeychainItem(
-    KEYCHAIN_ADMIN_PASSWORD_SERVICE,
-    keychainAdminPasswordAccount(baseUrl, username),
-    runner,
-  ))) {
-    throw new Error('Unable to remove FeedbackServer administrator password from Keychain');
-  }
-}
-
-export async function promoteLegacyKeychainAdminPassword(
-  baseUrl: string,
-  username: string,
-  candidate: KeychainAdminPasswordCandidate,
-  runner: SecurityCommandRunner = runSecurity,
-): Promise<void> {
-  if (process.platform !== 'darwin' || !candidate.legacy) return;
-  await writeKeychainAdminPassword(baseUrl, username, candidate.password, runner);
-  if (!(await deleteKeychainItem(KEYCHAIN_ADMIN_PASSWORD_SERVICE, username, runner))) {
-    throw new Error('Unable to remove the legacy FeedbackServer administrator password from Keychain');
-  }
-}
-
-export async function addPendingTokenRevocation(
-  entry: PendingTokenRevocation,
-  runner: SecurityCommandRunner = runSecurity,
-): Promise<void> {
-  if (process.platform !== 'darwin') {
-    throw new Error('macOS Keychain is unavailable on this platform');
-  }
-  const parsed = pendingTokenRevocationSchema.parse({
-    ...entry,
-    baseUrl: normalizeBaseUrl(entry.baseUrl),
-  });
-  const current = await readKeychainPendingTokenRevocations(runner);
-  const entries = current.filter((candidate) => !(
-    candidate.baseUrl === parsed.baseUrl
-    && candidate.username === parsed.username
-    && candidate.tokenId === parsed.tokenId
-    && candidate.profile === parsed.profile
-  ));
-  entries.push(parsed);
-  await writeKeychainPendingTokenRevocations(entries, runner);
-}
-
-export async function removePendingTokenRevocation(
-  entry: PendingTokenRevocation,
-  runner: SecurityCommandRunner = runSecurity,
-): Promise<void> {
-  if (process.platform !== 'darwin') return;
-  const parsed = pendingTokenRevocationSchema.parse({
-    ...entry,
-    baseUrl: normalizeBaseUrl(entry.baseUrl),
-  });
-  const current = await readKeychainPendingTokenRevocations(runner);
-  await writeKeychainPendingTokenRevocations(
-    current.filter((candidate) => !(
-      candidate.baseUrl === parsed.baseUrl
-      && candidate.username === parsed.username
-      && candidate.tokenId === parsed.tokenId
-      && candidate.profile === parsed.profile
-    )),
-    runner,
-  );
-}
-
-export async function writeKeychainCredentialRecord(
-  credentials: StoredCredentials,
-  runner: SecurityCommandRunner,
-  createRecordId: () => string = randomUUID,
-): Promise<void> {
-  const parsed = normalizeStoredCredentials(credentials);
-  const previousPointer = await readKeychainValue(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, runner);
-  const previousRecordId = keychainRecordIdSchema.safeParse(previousPointer);
-  const recordId = keychainRecordIdSchema.parse(createRecordId());
-
-  const tokenResult = await runner(
-    keychainTokenWriteArguments(recordId),
-    `${parsed.token}\n${parsed.token}\n`,
-  );
-  if (tokenResult.exitCode !== 0) {
-    throw new Error(
-      `Unable to store FeedbackServer token in Keychain: ${tokenResult.stderr.trim()}`,
-    );
-  }
-
-  const metadataResult = await runner(keychainMetadataWriteArguments(recordId, parsed));
-  if (metadataResult.exitCode !== 0) {
-    await deleteKeychainRecord(recordId, runner);
-    throw new Error(
-      `Unable to store FeedbackServer metadata in Keychain: ${metadataResult.stderr.trim()}`,
-    );
-  }
-
-  const pointerResult = await runner(keychainPointerWriteArguments(recordId));
-  if (pointerResult.exitCode !== 0) {
-    await deleteKeychainRecord(recordId, runner);
-    throw new Error(
-      `Unable to activate FeedbackServer credentials in Keychain: ${pointerResult.stderr.trim()}`,
-    );
-  }
-
-  if (
-    previousRecordId.success &&
-    previousRecordId.data !== recordId &&
-    !(await deleteKeychainRecord(previousRecordId.data, runner))
-  ) {
-    console.error('Warning: unable to remove obsolete FeedbackServer Keychain credentials.');
-  }
-}
-
-export async function writeKeychainCredentials(
-  credentials: StoredCredentials,
-  runner: SecurityCommandRunner = runSecurity,
-  createRecordId: () => string = randomUUID,
-): Promise<void> {
-  if (process.platform !== 'darwin') {
-    throw new Error('macOS Keychain is unavailable on this platform');
-  }
-  const profile = await migrateLegacyDefaultProfile(runner) ?? KEYCHAIN_ACCOUNT;
-  await writeKeychainProfileCredentials(credentials, profile, runner, createRecordId);
+export async function readKeychainCredentials(
+  factory: NativeEntryFactory = nativeEntry,
+): Promise<StoredCredentials | undefined> {
+  const active = await readActiveKeychainProfile(factory);
+  return active ? readKeychainProfileCredentials(active, factory) : undefined;
 }
 
 export async function writeKeychainProfileCredentials(
   credentials: StoredCredentials,
   profile: string,
-  runner: SecurityCommandRunner = runSecurity,
-  createRecordId: () => string = randomUUID,
+  factory: NativeEntryFactory = nativeEntry,
 ): Promise<void> {
-  if (process.platform !== 'darwin') {
-    throw new Error('macOS Keychain is unavailable on this platform');
-  }
   const parsedProfile = profileIdSchema.parse(profile);
-  await migrateLegacyDefaultProfile(runner);
-  const parsed = normalizeStoredCredentials(credentials);
-  const profiles = await readProfileIndex(runner);
-  const wasIndexed = profiles.includes(parsedProfile);
-  if (!wasIndexed && profiles.length >= MAX_KEYCHAIN_PROFILES) {
-    throw new Error(
-      `FeedbackServer supports at most ${MAX_KEYCHAIN_PROFILES} Keychain profiles; remove one before configuring ${parsedProfile}.`,
-    );
+  const parsed = normalizeCredentials(credentials);
+  const profiles = await readProfileIndex(factory);
+  if (!profiles.includes(parsedProfile) && profiles.length >= MAX_KEYCHAIN_PROFILES) {
+    throw new Error(`FeedbackKit supports at most ${MAX_KEYCHAIN_PROFILES} profiles`);
   }
-  const previousPointer = await readKeychainValue(
-    KEYCHAIN_PROFILE_POINTER_SERVICE,
-    parsedProfile,
-    runner,
-  );
-  const previousRecordId = keychainRecordIdSchema.safeParse(previousPointer);
-  const recordId = keychainRecordIdSchema.parse(createRecordId());
-
-  const tokenResult = await runner(
-    keychainTokenWriteArguments(recordId),
-    `${parsed.token}\n${parsed.token}\n`,
-  );
-  if (tokenResult.exitCode !== 0) {
-    throw new Error(`Unable to store FeedbackServer token in Keychain: ${tokenResult.stderr.trim()}`);
-  }
-  const metadataResult = await runner(keychainMetadataWriteArguments(recordId, parsed));
-  if (metadataResult.exitCode !== 0) {
-    await deleteKeychainRecord(recordId, runner);
-    throw new Error(
-      `Unable to store FeedbackServer metadata in Keychain: ${metadataResult.stderr.trim()}`,
-    );
-  }
-  const pointerResult = await runner(
-    keychainProfilePointerWriteArguments(parsedProfile, recordId),
-  );
-  if (pointerResult.exitCode !== 0) {
-    await deleteKeychainRecord(recordId, runner);
-    throw new Error(
-      `Unable to activate FeedbackServer profile ${parsedProfile} in Keychain: ${pointerResult.stderr.trim()}`,
-    );
-  }
-
+  await factory(PROFILE_SERVICE, parsedProfile).setPassword(JSON.stringify(parsed));
   try {
-    if (!wasIndexed) await writeProfileIndex([...profiles, parsedProfile], runner);
-    await setActiveProfile(parsedProfile, runner);
+    await writeProfileIndex([...profiles, parsedProfile], factory);
+    await factory(ACTIVE_PROFILE_SERVICE, ACTIVE_ACCOUNT).setPassword(parsedProfile);
   } catch (error) {
-    const rollbackErrors: unknown[] = [error];
-    let pointerState: 'away' | 'record' | 'unknown' = 'unknown';
-    try {
-      if (previousPointer) {
-        await writeKeychainValue(
-          keychainProfilePointerWriteArguments(parsedProfile, previousPointer),
-          `the previous FeedbackServer profile ${parsedProfile}`,
-          runner,
-        );
-        pointerState = 'away';
-      } else if (!(await deleteKeychainItem(
-        KEYCHAIN_PROFILE_POINTER_SERVICE,
-        parsedProfile,
-        runner,
-      ))) {
-        throw new Error(`Unable to remove the incomplete FeedbackServer profile ${parsedProfile}`);
-      } else {
-        pointerState = 'away';
-      }
-    } catch (rollbackError) {
-      rollbackErrors.push(rollbackError);
-      try {
-        const currentPointer = await readKeychainValue(
-          KEYCHAIN_PROFILE_POINTER_SERVICE,
-          parsedProfile,
-          runner,
-        );
-        pointerState = currentPointer === recordId ? 'record' : 'away';
-      } catch (readError) {
-        rollbackErrors.push(readError);
-      }
-    }
-
-    if (pointerState !== 'away') {
-      if (!wasIndexed) {
-        try {
-          await writeProfileIndex([...profiles, parsedProfile], runner);
-        } catch (repairError) {
-          rollbackErrors.push(repairError);
-        }
-      }
-      throw new CredentialPersistenceIndeterminateError(
-        parsedProfile,
-        new AggregateError(
-          rollbackErrors,
-          `Unable to finish committing FeedbackServer profile ${parsedProfile}`,
-        ),
-      );
-    }
-
-    if (!wasIndexed) {
-      try {
-        await writeProfileIndex(profiles, runner);
-      } catch (rollbackError) {
-        rollbackErrors.push(rollbackError);
-      }
-    }
-    if (!(await deleteKeychainRecord(recordId, runner))) {
-      rollbackErrors.push(new Error('Unable to remove the uncommitted FeedbackServer credential record'));
-    }
-    throw rollbackErrors.length === 1
-      ? error
-      : new AggregateError(
-          rollbackErrors,
-          `Unable to commit FeedbackServer profile ${parsedProfile}; rollback was incomplete`,
-        );
-  }
-
-  if (
-    previousRecordId.success
-    && previousRecordId.data !== recordId
-    && !(await deleteKeychainRecord(previousRecordId.data, runner))
-  ) {
-    console.error('Warning: unable to remove obsolete FeedbackServer Keychain credentials.');
+    throw new CredentialPersistenceIndeterminateError(parsedProfile, error);
   }
 }
 
-export async function deleteKeychainCredentialRecord(
-  runner: SecurityCommandRunner,
+export async function writeKeychainCredentials(
+  credentials: StoredCredentials,
+  factory: NativeEntryFactory = nativeEntry,
 ): Promise<void> {
-  const pointer = await readKeychainValue(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, runner);
-  const recordId = keychainRecordIdSchema.safeParse(pointer);
-  if (recordId.success && !(await deleteKeychainRecord(recordId.data, runner))) {
-    throw new Error('Unable to remove one or more FeedbackServer credentials from Keychain');
-  }
-  if (!(await deleteKeychainItem(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, runner))) {
-    throw new Error('Unable to remove one or more FeedbackServer credentials from Keychain');
-  }
+  await writeKeychainProfileCredentials(
+    credentials,
+    await readActiveKeychainProfile(factory) ?? KEYCHAIN_ACCOUNT,
+    factory,
+  );
 }
 
-export async function resumeKeychainCredentialRecordCleanup(
-  runner: SecurityCommandRunner,
-): Promise<boolean> {
-  const pointer = await readKeychainValue(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, runner);
-  const recordId = keychainRecordIdSchema.safeParse(pointer);
-  if (!recordId.success) return false;
-
-  const [token, metadata] = await Promise.all([
-    readKeychainValue(KEYCHAIN_TOKEN_SERVICE, recordId.data, runner),
-    readKeychainValue(KEYCHAIN_METADATA_SERVICE, recordId.data, runner),
+export async function listKeychainProfiles(
+  factory: NativeEntryFactory = nativeEntry,
+): Promise<Array<{ name: string; active: boolean }>> {
+  const [profiles, active] = await Promise.all([
+    readProfileIndex(factory),
+    readActiveKeychainProfile(factory),
   ]);
-  if (token && metadata) return false;
-  if (token && !metadata) {
-    throw new Error('FeedbackServer credentials in Keychain require manual repair');
-  }
-  await deleteKeychainCredentialRecord(runner);
-  return true;
+  return profiles.map((name) => ({ name, active: name === active }));
 }
 
-export async function deleteKeychainCredentials(
-  runner: SecurityCommandRunner = runSecurity,
+export async function useKeychainProfile(
+  profile: string,
+  factory: NativeEntryFactory = nativeEntry,
 ): Promise<void> {
-  if (process.platform !== 'darwin') return;
-  const profile = await migrateLegacyDefaultProfile(runner);
-  if (!profile) return;
-  await deleteKeychainProfileCredentials(profile, runner);
+  const parsed = profileIdSchema.parse(profile);
+  if (!await readKeychainProfileCredentials(parsed, factory)) {
+    throw new Error(`FeedbackKit profile ${parsed} does not exist`);
+  }
+  await factory(ACTIVE_PROFILE_SERVICE, ACTIVE_ACCOUNT).setPassword(parsed);
 }
 
 export async function deleteKeychainProfileCredentials(
   profile: string,
-  runner: SecurityCommandRunner = runSecurity,
+  factory: NativeEntryFactory = nativeEntry,
 ): Promise<void> {
-  if (process.platform !== 'darwin') return;
-  const parsedProfile = profileIdSchema.parse(profile);
-  await migrateLegacyDefaultProfile(runner);
-  const pointer = await readKeychainValue(
-    KEYCHAIN_PROFILE_POINTER_SERVICE,
-    parsedProfile,
-    runner,
-  );
-  const recordId = keychainRecordIdSchema.safeParse(pointer);
-  if (recordId.success && !(await deleteKeychainRecord(recordId.data, runner))) {
-    throw new Error('Unable to remove one or more FeedbackServer credentials from Keychain');
-  }
-  if (!(await deleteKeychainItem(KEYCHAIN_PROFILE_POINTER_SERVICE, parsedProfile, runner))) {
-    throw new Error('Unable to remove the FeedbackServer profile pointer from Keychain');
-  }
-
-  const profiles = (await readProfileIndex(runner)).filter((name) => name !== parsedProfile);
-  await writeProfileIndex(profiles, runner);
-  const active = await readKeychainValue(
-    KEYCHAIN_ACTIVE_PROFILE_SERVICE,
-    KEYCHAIN_ACTIVE_PROFILE_ACCOUNT,
-    runner,
-  );
-  if (active === parsedProfile) {
+  const parsed = profileIdSchema.parse(profile);
+  await deleteValue(PROFILE_SERVICE, parsed, factory);
+  const profiles = (await readProfileIndex(factory)).filter((candidate) => candidate !== parsed);
+  await writeProfileIndex(profiles, factory);
+  if (await readActiveKeychainProfile(factory) === parsed) {
     const next = profiles.includes(KEYCHAIN_ACCOUNT) ? KEYCHAIN_ACCOUNT : profiles[0];
-    if (next) await setActiveProfile(next, runner);
-    else if (!(await deleteKeychainItem(
-      KEYCHAIN_ACTIVE_PROFILE_SERVICE,
-      KEYCHAIN_ACTIVE_PROFILE_ACCOUNT,
-      runner,
-    ))) {
-      throw new Error('Unable to clear the active FeedbackServer profile from Keychain');
-    }
+    if (next) await factory(ACTIVE_PROFILE_SERVICE, ACTIVE_ACCOUNT).setPassword(next);
+    else await deleteValue(ACTIVE_PROFILE_SERVICE, ACTIVE_ACCOUNT, factory);
   }
 }
 
-export async function resumeKeychainCredentialCleanup(
-  runner: SecurityCommandRunner = runSecurity,
-): Promise<boolean> {
-  if (process.platform !== 'darwin') return false;
-  const profile = await migrateLegacyDefaultProfile(runner);
-  if (!profile) return false;
-  return resumeKeychainProfileCredentialCleanup(profile, runner);
+export async function deleteKeychainCredentials(
+  factory: NativeEntryFactory = nativeEntry,
+): Promise<void> {
+  const profile = await readActiveKeychainProfile(factory);
+  if (profile) await deleteKeychainProfileCredentials(profile, factory);
 }
 
-export async function resumeKeychainProfileCredentialCleanup(
-  profile: string,
-  runner: SecurityCommandRunner = runSecurity,
-): Promise<boolean> {
-  if (process.platform !== 'darwin') return false;
-  const parsedProfile = profileIdSchema.parse(profile);
-  await migrateLegacyDefaultProfile(runner);
-  const pointer = await readKeychainValue(
-    KEYCHAIN_PROFILE_POINTER_SERVICE,
-    parsedProfile,
-    runner,
+export async function readKeychainReferencedTokenIds(
+  factory: NativeEntryFactory = nativeEntry,
+): Promise<Set<string>> {
+  const credentials = await Promise.all(
+    (await readProfileIndex(factory)).map((profile) => readKeychainProfileCredentials(profile, factory)),
   );
-  const recordId = keychainRecordIdSchema.safeParse(pointer);
-  if (!recordId.success) return false;
-  const [token, metadata] = await Promise.all([
-    readKeychainValue(KEYCHAIN_TOKEN_SERVICE, recordId.data, runner),
-    readKeychainValue(KEYCHAIN_METADATA_SERVICE, recordId.data, runner),
-  ]);
-  if (token && metadata) return false;
-  if (token && !metadata) {
-    throw new Error('FeedbackServer credentials in Keychain require manual repair');
-  }
-  await deleteKeychainProfileCredentials(parsedProfile, runner);
-  return true;
+  return new Set(credentials.flatMap((value) => value ? [value.tokenId] : []));
+}
+
+export function readPendingTokenRevocations(): Promise<PendingTokenRevocation[]> {
+  return Promise.resolve([]);
+}
+
+export function addPendingTokenRevocation(): Promise<void> {
+  return Promise.reject(new Error('Legacy PAT revocation recovery is unavailable in FeedbackKit 0.11'));
+}
+
+export async function removePendingTokenRevocation(): Promise<void> {}
+
+export function resumeKeychainCredentialCleanup(): Promise<boolean> {
+  return Promise.resolve(false);
 }
 
 export async function loadCredentialsWithSource(
   environment: NodeJS.ProcessEnv = process.env,
-  runner: SecurityCommandRunner = runSecurity,
+  factory: NativeEntryFactory = nativeEntry,
 ): Promise<LoadedCredentials> {
-  const environmentBaseUrl = environment.FEEDBACK_SERVER_BASE_URL;
-  const environmentToken = environment.FEEDBACK_SERVER_API_TOKEN;
-  if (environmentBaseUrl || environmentToken) {
-    if (!environmentBaseUrl || !environmentToken) {
-      throw new Error(
-        'FEEDBACK_SERVER_BASE_URL and FEEDBACK_SERVER_API_TOKEN must be set together',
-      );
-    }
+  const environmentValues = {
+    baseUrl: environment.FEEDBACK_SERVER_BASE_URL,
+    adminId: environment.FEEDBACK_SERVER_ADMIN_ID,
+    email: environment.FEEDBACK_SERVER_ADMIN_EMAIL,
+    tokenId: environment.FEEDBACK_SERVER_API_TOKEN_ID,
+    token: environment.FEEDBACK_SERVER_API_TOKEN,
+    scopes: environment.FEEDBACK_SERVER_API_SCOPES?.split(',').map((scope) => scope.trim()).filter(Boolean),
+    expiresAt: environment.FEEDBACK_SERVER_API_TOKEN_EXPIRES_AT,
+  };
+  if (Object.values(environmentValues).some((value) => value !== undefined)) {
     return {
-      credentials: credentialSchema.parse({
-        baseUrl: normalizeBaseUrl(environmentBaseUrl),
-        token: environmentToken,
-      }),
+      credentials: normalizeCredentials(environmentValues),
       credentialSource: 'environment',
       activeProfile: null,
     };
   }
-  const activeProfile = await readActiveKeychainProfile(runner);
-  const stored = await readKeychainCredentials(runner);
-  if (!stored) {
+  const activeProfile = await readActiveKeychainProfile(factory);
+  const credentials = activeProfile
+    ? await readKeychainProfileCredentials(activeProfile, factory)
+    : undefined;
+  if (!credentials) {
     throw new Error(
-      'FeedbackServer Agent is not configured. Run feedback-server agent configure in a trusted terminal.',
+      'FeedbackKit Agent is not configured. Run feedbackkit accept-invite with the invitation token on stdin.',
     );
   }
-  return {
-    credentials: {
-      ...stored,
-      baseUrl: normalizeBaseUrl(stored.baseUrl),
-    },
-    credentialSource: 'keychain',
-    activeProfile: activeProfile ?? KEYCHAIN_ACCOUNT,
-  };
+  return { credentials, credentialSource: 'keyring', activeProfile: activeProfile ?? null };
 }
 
 export async function loadCredentials(

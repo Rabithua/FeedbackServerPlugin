@@ -1,7 +1,7 @@
 {
   "name": "feedback-server",
   "interface": {
-    "displayName": "Feedback Server"
+    "displayName": "FeedbackKit"
   },
   "plugins": [
     {

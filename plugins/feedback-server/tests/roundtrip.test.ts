@@ -9,7 +9,12 @@ import {
 
 const credentials: StoredCredentials = {
   baseUrl: 'https://feedback.example.com/v1/api',
+  adminId: '11111111-1111-4111-8111-111111111110',
+  email: 'owner@example.com',
+  tokenId: '11111111-1111-4111-8111-111111111112',
   token: `fspat_${'a'.repeat(64)}`,
+  scopes: ['products:read', 'feedback:read', 'feedback:write'],
+  expiresAt: '2027-08-07T00:00:00.000Z',
 };
 const product: DoctorProduct = {
   id: '11111111-1111-4111-8111-111111111111',

@@ -113,7 +113,7 @@ const toolScenarios: ToolScenario[] = [
   },
   {
     name: 'invite_waitlist_entry',
-    arguments: { entryId: productId, subscriptionGrant: { plan: 'free' }, expiresInDays: 7 },
+    arguments: { entryId: productId, expiresInDays: 7 },
     path: `/v1/api/admin/waitlist/${productId}/invitations`,
     method: 'POST',
     confirmation: 'risk',
@@ -443,7 +443,7 @@ function missingParameterDescriptions(schema: unknown, path = 'input'): string[]
   return missing;
 }
 
-describe('MCP server 0.10.3', () => {
+describe('MCP server 0.11.0', () => {
   const originalFetch = globalThis.fetch;
   let client: Client;
   let server: ReturnType<typeof createServer>;
@@ -455,6 +455,11 @@ describe('MCP server 0.10.3', () => {
   beforeEach(async () => {
     process.env.FEEDBACK_SERVER_BASE_URL = 'https://feedback.example.com/v1/api';
     process.env.FEEDBACK_SERVER_API_TOKEN = token;
+    process.env.FEEDBACK_SERVER_ADMIN_ID = '11111111-1111-4111-8111-111111111110';
+    process.env.FEEDBACK_SERVER_ADMIN_EMAIL = 'owner@example.com';
+    process.env.FEEDBACK_SERVER_API_TOKEN_ID = '11111111-1111-4111-8111-111111111112';
+    process.env.FEEDBACK_SERVER_API_SCOPES = 'products:read,products:write,waitlist:read,waitlist:write,waitlist:invite,waitlist:dangerous,feedback:read,feedback:write,catalog:read,catalog:write,catalog:dangerous,releases:read,releases:write,releases:dangerous,bark:read,bark:write,webhooks:read,webhooks:write,audit:read';
+    process.env.FEEDBACK_SERVER_API_TOKEN_EXPIRES_AT = '2027-08-07T00:00:00.000Z';
     updateNotice = undefined;
     updateNoticeDelivered = false;
     setupNotice = undefined;
@@ -485,6 +490,11 @@ describe('MCP server 0.10.3', () => {
     globalThis.fetch = originalFetch;
     delete process.env.FEEDBACK_SERVER_BASE_URL;
     delete process.env.FEEDBACK_SERVER_API_TOKEN;
+    delete process.env.FEEDBACK_SERVER_ADMIN_ID;
+    delete process.env.FEEDBACK_SERVER_ADMIN_EMAIL;
+    delete process.env.FEEDBACK_SERVER_API_TOKEN_ID;
+    delete process.env.FEEDBACK_SERVER_API_SCOPES;
+    delete process.env.FEEDBACK_SERVER_API_TOKEN_EXPIRES_AT;
     await client.close();
     await server.close();
   });
@@ -492,8 +502,7 @@ describe('MCP server 0.10.3', () => {
   test('exposes the new surface and removes legacy Feedback and Item fields', async () => {
     const tools = (await client.listTools()).tools;
     const names = tools.map(({ name }) => name);
-    expect(names).toHaveLength(72);
-    expect(names).toContain('prepare_local_setup');
+    expect(names).toHaveLength(71);
     expect(names).toContain('execute_confirmation');
     expect(names).toContain('get_subscription');
     expect(names).toContain('get_onboarding_status');
@@ -535,28 +544,6 @@ describe('MCP server 0.10.3', () => {
     const missingDescriptions = tools.flatMap((tool) =>
       missingParameterDescriptions(tool.inputSchema, tool.name));
     expect(missingDescriptions).toEqual([]);
-  });
-
-  test('prepares local setup without loading Agent credentials', async () => {
-    delete process.env.FEEDBACK_SERVER_BASE_URL;
-    delete process.env.FEEDBACK_SERVER_API_TOKEN;
-    const result = await client.callTool({
-      name: 'prepare_local_setup',
-      arguments: { flow: 'configure_account' },
-    });
-    if (process.platform === 'darwin') {
-      expect(result.isError).not.toBe(true);
-      expect(resultData(result)).toMatchObject({
-        status: 'ready',
-        flow: 'configure_account',
-        requiresVisibleTerminal: true,
-        executesCommand: false,
-      });
-    } else {
-      expect(result.isError).toBe(true);
-      expect(JSON.stringify(result)).toContain('FEEDBACK_SERVER_BASE_URL');
-      expect(JSON.stringify(result)).toContain('FEEDBACK_SERVER_API_TOKEN');
-    }
   });
 
   test('reports environment credentials without an active Keychain profile', async () => {
@@ -894,7 +881,6 @@ describe('MCP server 0.10.3', () => {
         expect(request!.headers.get('if-match')).toBe(mutationPrecondition);
         expect(await request!.clone().json()).toEqual({
           expiresInDays: 7,
-          subscriptionGrant: { plan: 'free' },
         });
       }
     }
@@ -1017,11 +1003,13 @@ describe('MCP server 0.10.3', () => {
     const confirmationId = resultData(preview).confirmationId as string;
 
     process.env.FEEDBACK_SERVER_API_TOKEN = `fspat_${'c'.repeat(64)}`;
+    process.env.FEEDBACK_SERVER_API_TOKEN_ID = '33333333-3333-4333-8333-333333333333';
     const wrongAccount = await client.callTool({
       name: 'execute_confirmation',
       arguments: { confirmationId },
     });
     process.env.FEEDBACK_SERVER_API_TOKEN = token;
+    process.env.FEEDBACK_SERVER_API_TOKEN_ID = '11111111-1111-4111-8111-111111111112';
     expect(wrongAccount.isError).toBe(true);
     expect(requests.map(({ method }) => method)).toEqual(['GET']);
 
@@ -1085,11 +1073,13 @@ describe('MCP server 0.10.3', () => {
     const confirmationId = resultData(preview).confirmationId as string;
 
     process.env.FEEDBACK_SERVER_API_TOKEN = `fspat_${'c'.repeat(64)}`;
+    process.env.FEEDBACK_SERVER_API_TOKEN_ID = '33333333-3333-4333-8333-333333333333';
     const wrongIdentity = await client.callTool({
       name: 'set_primary_product',
       arguments: { ...payload, confirmationId },
     });
     process.env.FEEDBACK_SERVER_API_TOKEN = token;
+    process.env.FEEDBACK_SERVER_API_TOKEN_ID = '11111111-1111-4111-8111-111111111112';
     expect(wrongIdentity.isError).toBe(true);
     expect(requests).toHaveLength(1);
 

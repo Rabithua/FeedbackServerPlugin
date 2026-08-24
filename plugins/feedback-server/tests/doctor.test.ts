@@ -12,8 +12,10 @@ import { DEFAULT_BASE_URL, KEYCHAIN_SERVICE } from '../src/credentials.js';
 
 const credentials: StoredCredentials = {
   baseUrl: 'https://feedback.example.com/v1/api',
+  adminId: '11111111-1111-4111-8111-111111111110',
+  email: 'owner@example.com',
+  tokenId: '11111111-1111-4111-8111-111111111112',
   token: `fspat_${'a'.repeat(64)}`,
-  username: 'owner',
   scopes: [
     'products:read',
     'feedback:read',
@@ -113,7 +115,7 @@ describe('feedback-server doctor', () => {
     const report = await diagnoseFeedbackServer({}, dependencies({
       loadCredentials: () => Promise.resolve({
         ...credentials,
-        scopes: credentials.scopes?.filter((scope) => scope !== 'waitlist:invite'),
+        scopes: credentials.scopes.filter((scope) => scope !== 'waitlist:invite'),
       }),
     }));
 

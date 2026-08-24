@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.0 - 2026-08-25
+
+- Replace username/password onboarding with verified-email accounts, one-time Agent enrollment, and
+  email-code or Passkey browser access.
+- Add `feedbackkit accept-invite`, `onboarding status`, `product create`, and `doctor` for same-task
+  onboarding without MCP hot reload.
+- Store complete named profiles through macOS Keychain, Windows Credential Manager, or Linux Secret
+  Service with no plaintext fallback or legacy username-profile migration.
+- Default every waitlist invitation to Free and provide concise branded invitation Prompts that keep
+  tokens out of arguments, logs, and output.
+
 All notable changes to FeedbackServer Plugin are documented here.
 
 ## 0.10.3 - 2026-08-24
