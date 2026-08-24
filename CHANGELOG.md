@@ -2,6 +2,10 @@
 
 All notable changes to FeedbackServer Plugin are documented here.
 
+## 0.10.2 - 2026-08-24
+
+- Write PATs and administrator passwords through a hidden pseudo-terminal so macOS Keychain never prompts the user or receives an empty secret.
+
 ## 0.10.1 - 2026-08-24
 
 - Validate and normalize account-email endpoints before transmitting passwords or verification codes.

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 export const DEFAULT_BASE_URL = 'https://api.feedkit.cn/v1/api';
@@ -16,7 +17,11 @@ export const KEYCHAIN_ADMIN_PASSWORD_SERVICE = 'dev.rote.feedback-server.admin';
 export const SECURITY_EXECUTABLE = '/usr/bin/security';
 export const SECURITY_EXECUTABLE_FALLBACK = 'security';
 export const SECURITY_SHELL_EXECUTABLE = '/bin/sh';
+export const SECURITY_EXPECT_EXECUTABLE = '/usr/bin/expect';
 export const MAX_KEYCHAIN_PROFILES = 100;
+export const SECURITY_SECRET_PROMPT_SCRIPT = fileURLToPath(
+  new URL('../scripts/keychain-secret.exp', import.meta.url),
+);
 
 const credentialSchema = z.object({
   baseUrl: z.url(),
@@ -172,8 +177,11 @@ async function runSecurityCommand(
   command: string[],
   input?: string,
 ): Promise<SecurityCommandResult> {
+  const invokedCommand = input === undefined
+    ? command
+    : securitySecretPromptCommand(command);
   const subprocess = Bun.spawn({
-    cmd: command,
+    cmd: invokedCommand,
     stdin: input === undefined ? 'ignore' : 'pipe',
     stdout: 'pipe',
     stderr: 'pipe',
@@ -190,6 +198,10 @@ async function runSecurityCommand(
     new Response(subprocess.stderr).text(),
   ]);
   return { exitCode, stdout, stderr };
+}
+
+export function securitySecretPromptCommand(command: string[]): string[] {
+  return [SECURITY_EXPECT_EXECUTABLE, '-f', SECURITY_SECRET_PROMPT_SCRIPT, ...command];
 }
 
 function hexadecimalValue(value: string): string {

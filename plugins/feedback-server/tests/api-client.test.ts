@@ -12,7 +12,9 @@ import {
   KEYCHAIN_TOKEN_SERVICE,
   LEGACY_DEFAULT_BASE_URL,
   SECURITY_EXECUTABLE,
+  SECURITY_EXPECT_EXECUTABLE,
   SECURITY_EXECUTABLE_FALLBACK,
+  SECURITY_SECRET_PROMPT_SCRIPT,
   SECURITY_SHELL_EXECUTABLE,
   deleteKeychainCredentialRecord,
   deleteKeychainAdminPassword,
@@ -27,6 +29,7 @@ import {
   readKeychainPendingTokenRevocations,
   resumeKeychainCredentialRecordCleanup,
   securityCommandCandidates,
+  securitySecretPromptCommand,
   writeKeychainAdminPassword,
   writeKeychainPendingTokenRevocations,
   writeKeychainCredentialRecord,
@@ -82,6 +85,23 @@ describe('credentials and API client', () => {
       '-s',
       KEYCHAIN_SERVICE,
     ]);
+  });
+
+  test('writes Keychain secrets through a hidden pseudo-terminal prompt', () => {
+    const command = securitySecretPromptCommand([
+      SECURITY_EXECUTABLE,
+      'add-generic-password',
+      '-s',
+      KEYCHAIN_TOKEN_SERVICE,
+      '-w',
+    ]);
+    expect(command[0]).toBe(SECURITY_EXPECT_EXECUTABLE);
+    expect(command[1]).toBe('-f');
+    expect(command[2]).toBe(SECURITY_SECRET_PROMPT_SCRIPT);
+    expect(command).toContain(SECURITY_EXECUTABLE);
+    expect(command.at(-1)).toBe('-w');
+    expect(command.join(' ')).not.toContain(token);
+    expect(SECURITY_SECRET_PROMPT_SCRIPT).toEndWith('/scripts/keychain-secret.exp');
   });
 
   test('normalizes API roots and requires paired environment credentials', async () => {
