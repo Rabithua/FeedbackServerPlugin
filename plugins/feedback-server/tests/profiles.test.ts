@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  CredentialPersistenceIndeterminateError,
   KEYCHAIN_ACCOUNT,
   KEYCHAIN_ACTIVE_PROFILE_ACCOUNT,
   KEYCHAIN_ACTIVE_PROFILE_SERVICE,
@@ -317,13 +318,67 @@ describe('global named profiles', () => {
         () => firstRecordId,
       ));
 
-      expect(error).toBeInstanceOf(AggregateError);
+      expect(error).toBeInstanceOf(CredentialPersistenceIndeterminateError);
       expect(keychain.items.get(key(KEYCHAIN_PROFILE_POINTER_SERVICE, 'work')))
         .toBe(firstRecordId);
       expect(keychain.items.get(key(KEYCHAIN_TOKEN_SERVICE, firstRecordId))).toBe(firstToken);
       expect(JSON.parse(
         keychain.items.get(key(KEYCHAIN_PROFILE_INDEX_SERVICE, KEYCHAIN_ACCOUNT)) ?? '{}',
       )).toEqual({ version: 1, profiles: ['work'] });
+      expect(await readKeychainProfileCredentials('work', keychain.runner)).toMatchObject({
+        token: firstToken,
+        tokenId: secondRecordId,
+      });
+    });
+  });
+
+  test('re-indexes a new profile when index persistence and pointer rollback both fail', async () => {
+    await withDarwin(async () => {
+      const keychain = memoryKeychain();
+      let indexWrites = 0;
+      const runner: SecurityCommandRunner = (args, input) => {
+        if (
+          args[0] === 'add-generic-password'
+          && args.includes(KEYCHAIN_PROFILE_INDEX_SERVICE)
+          && indexWrites++ === 0
+        ) {
+          return Promise.resolve({
+            exitCode: 1,
+            stdout: '',
+            stderr: 'simulated index interruption',
+          });
+        }
+        if (
+          args[0] === 'delete-generic-password'
+          && args.includes(KEYCHAIN_PROFILE_POINTER_SERVICE)
+        ) {
+          return Promise.resolve({
+            exitCode: 1,
+            stdout: '',
+            stderr: 'simulated pointer rollback interruption',
+          });
+        }
+        return keychain.runner(args, input);
+      };
+
+      const error = await capturedError(writeKeychainProfileCredentials(
+        {
+          baseUrl: 'https://work.example.com/v1/api',
+          token: firstToken,
+          tokenId: secondRecordId,
+        },
+        'work',
+        runner,
+        () => firstRecordId,
+      ));
+
+      expect(error).toBeInstanceOf(CredentialPersistenceIndeterminateError);
+      expect(await listKeychainProfiles(keychain.runner)).toEqual([
+        { name: 'work', active: false },
+      ]);
+      expect(await readKeychainReferencedTokenIds(keychain.runner)).toEqual(
+        new Set([secondRecordId]),
+      );
       expect(await readKeychainProfileCredentials('work', keychain.runner)).toMatchObject({
         token: firstToken,
         tokenId: secondRecordId,

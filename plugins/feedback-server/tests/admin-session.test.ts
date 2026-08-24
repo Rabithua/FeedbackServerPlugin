@@ -8,7 +8,10 @@ import {
   revokeAgentTokenById,
   type ConfigurationDependencies,
 } from '../src/admin-session.js';
-import type { StoredCredentials } from '../src/credentials.js';
+import {
+  CredentialPersistenceIndeterminateError,
+  type StoredCredentials,
+} from '../src/credentials.js';
 
 const baseUrl = 'https://feedback.example.com/v1/api';
 const oldTokenId = '11111111-1111-4111-8111-111111111111';
@@ -232,6 +235,30 @@ describe('Agent configuration lifecycle', () => {
       `pending:remove:${oldTokenId}`,
       'logout',
     ]);
+  });
+
+  test('does not revoke a token when Keychain reports an indeterminate committed profile', async () => {
+    const events: string[] = [];
+    const persistenceError = new CredentialPersistenceIndeterminateError(
+      'work',
+      new Error('simulated rollback interruption'),
+    );
+    const error = await capturedError(
+      configureAgent(
+        { baseUrl, username: 'owner', password: 'not-logged', profile: 'work' },
+        dependencies(events, {
+          writeCredentials: () => {
+            events.push('write');
+            return Promise.reject(persistenceError);
+          },
+        }),
+      ),
+    );
+
+    expect(error).toBe(persistenceError);
+    expect(events).not.toContain(`revoke:${newTokenId}`);
+    expect(events).not.toContain(`pending:remove:${newTokenId}`);
+    expect(events.at(-1)).toBe('logout');
   });
 
   test('retains the new token ID when persistence and compensating revocation both fail', async () => {

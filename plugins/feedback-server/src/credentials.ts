@@ -82,6 +82,20 @@ export interface LoadedCredentials {
   activeProfile: string | null;
 }
 
+export class CredentialPersistenceIndeterminateError extends Error {
+  public constructor(
+    public readonly profile: string,
+    cause: unknown,
+  ) {
+    super(
+      `FeedbackServer profile ${profile} may already reference the new PAT, but its Keychain transaction did not finish. `
+      + `Do not revoke the PAT; retry feedback-server profile use ${profile} or rerun Agent configuration for this profile.`,
+      { cause },
+    );
+    this.name = 'CredentialPersistenceIndeterminateError';
+  }
+}
+
 export function normalizeBaseUrl(value: string): string {
   const url = new URL(value.trim());
   if (url.username || url.password) {
@@ -892,7 +906,7 @@ export async function writeKeychainProfileCredentials(
     await setActiveProfile(parsedProfile, runner);
   } catch (error) {
     const rollbackErrors: unknown[] = [error];
-    let pointerMovedAwayFromRecord = false;
+    let pointerState: 'away' | 'record' | 'unknown' = 'unknown';
     try {
       if (previousPointer) {
         await writeKeychainValue(
@@ -900,7 +914,7 @@ export async function writeKeychainProfileCredentials(
           `the previous FeedbackServer profile ${parsedProfile}`,
           runner,
         );
-        pointerMovedAwayFromRecord = true;
+        pointerState = 'away';
       } else if (!(await deleteKeychainItem(
         KEYCHAIN_PROFILE_POINTER_SERVICE,
         parsedProfile,
@@ -908,19 +922,47 @@ export async function writeKeychainProfileCredentials(
       ))) {
         throw new Error(`Unable to remove the incomplete FeedbackServer profile ${parsedProfile}`);
       } else {
-        pointerMovedAwayFromRecord = true;
+        pointerState = 'away';
       }
     } catch (rollbackError) {
       rollbackErrors.push(rollbackError);
+      try {
+        const currentPointer = await readKeychainValue(
+          KEYCHAIN_PROFILE_POINTER_SERVICE,
+          parsedProfile,
+          runner,
+        );
+        pointerState = currentPointer === recordId ? 'record' : 'away';
+      } catch (readError) {
+        rollbackErrors.push(readError);
+      }
     }
-    if (pointerMovedAwayFromRecord && !wasIndexed) {
+
+    if (pointerState !== 'away') {
+      if (!wasIndexed) {
+        try {
+          await writeProfileIndex([...profiles, parsedProfile], runner);
+        } catch (repairError) {
+          rollbackErrors.push(repairError);
+        }
+      }
+      throw new CredentialPersistenceIndeterminateError(
+        parsedProfile,
+        new AggregateError(
+          rollbackErrors,
+          `Unable to finish committing FeedbackServer profile ${parsedProfile}`,
+        ),
+      );
+    }
+
+    if (!wasIndexed) {
       try {
         await writeProfileIndex(profiles, runner);
       } catch (rollbackError) {
         rollbackErrors.push(rollbackError);
       }
     }
-    if (pointerMovedAwayFromRecord && !(await deleteKeychainRecord(recordId, runner))) {
+    if (!(await deleteKeychainRecord(recordId, runner))) {
       rollbackErrors.push(new Error('Unable to remove the uncommitted FeedbackServer credential record'));
     }
     throw rollbackErrors.length === 1

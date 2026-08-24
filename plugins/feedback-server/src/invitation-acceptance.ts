@@ -10,6 +10,7 @@ import {
 } from './admin-session.js';
 import {
   addPendingTokenRevocation,
+  CredentialPersistenceIndeterminateError,
   KEYCHAIN_ACCOUNT,
   normalizeBaseUrl,
   readPendingTokenRevocations,
@@ -48,7 +49,10 @@ export class AgentAlreadyConfiguredError extends Error {
 
 export class CommittedInvitationAcceptanceError extends Error {
   public constructor(cause: unknown) {
-    const recovery = cause instanceof PendingTokenRecoveryError ? ` ${cause.message}` : '';
+    const recovery = cause instanceof PendingTokenRecoveryError
+      || cause instanceof CredentialPersistenceIndeterminateError
+      ? ` ${cause.message}`
+      : '';
     super(
       `The administrator account was created, but Agent configuration did not finish. Do not reuse the invitation; run feedback-server agent configure with the new account instead.${recovery}`,
       { cause },
@@ -279,6 +283,7 @@ export async function acceptInvitationAndConfigure(
     try {
       await dependencies.writeCredentials(credentials);
     } catch (error) {
+      if (error instanceof CredentialPersistenceIndeterminateError) throw error;
       await compensateUnstoredToken(error, pendingEntry, verified.accessToken, dependencies);
     }
     await dependencies.removePendingRevocation(pendingEntry);

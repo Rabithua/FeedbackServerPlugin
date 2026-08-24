@@ -258,7 +258,7 @@ describe('feedback-server doctor', () => {
     expect(JSON.stringify(checks)).not.toContain(credentials.token);
   });
 
-  test('recognizes explicit Swift type.init and typed .init configuration', () => {
+  test('recognizes explicit Swift type.init and typed .init configuration with try variants', () => {
     const checks = inspectHostAppFiles([
       {
         path: '/App/Package.resolved',
@@ -275,7 +275,19 @@ describe('feedback-server doctor', () => {
             keychainService: "com.example.feedback.visitor",
             languagePolicy: .followHost
           )
-          let second: FeedbackConfiguration = .init(
+          let second: FeedbackConfiguration = try .init(
+            baseURL: URL(string: "https://feedback.example.com/v1/api")!,
+            productKey: "${product.publishableKey}",
+            keychainService: "com.example.feedback.visitor",
+            languagePolicy: .followHost
+          )
+          let third: FeedbackCenterConfiguration = try? .init(
+            baseURL: URL(string: "https://feedback.example.com/v1/api")!,
+            productKey: "${product.publishableKey}",
+            keychainService: "com.example.feedback.visitor",
+            languagePolicy: .followHost
+          )
+          let fourth: FeedbackConfiguration = try! .init(
             baseURL: URL(string: "https://feedback.example.com/v1/api")!,
             productKey: "${product.publishableKey}",
             keychainService: "com.example.feedback.visitor",
