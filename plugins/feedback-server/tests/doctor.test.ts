@@ -20,6 +20,7 @@ const credentials: StoredCredentials = {
     'feedback:write',
     'waitlist:read',
     'waitlist:write',
+    'waitlist:invite',
     'waitlist:dangerous',
   ],
   expiresAt: '2027-08-07T00:00:00.000Z',
@@ -106,6 +107,20 @@ describe('feedback-server doctor', () => {
     expect(formatDoctorReport(report)).toContain('Next actions:');
     expect(formatDoctorReport(report)).not.toContain(credentials.token);
     expect(JSON.stringify(report)).not.toContain(product.publishableKey);
+  });
+
+  test('warns that a pre-0.10 PAT cannot send confirmed waitlist invitations', async () => {
+    const report = await diagnoseFeedbackServer({}, dependencies({
+      loadCredentials: () => Promise.resolve({
+        ...credentials,
+        scopes: credentials.scopes?.filter((scope) => scope !== 'waitlist:invite'),
+      }),
+    }));
+
+    expect(report.checks.find(({ id }) => id === 'scopes')).toMatchObject({
+      status: 'warn',
+      message: expect.stringContaining('waitlist:invite'),
+    });
   });
 
   test('warns about grace, near quota, and read-only Products', async () => {

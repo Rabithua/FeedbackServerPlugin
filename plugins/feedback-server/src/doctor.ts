@@ -569,6 +569,7 @@ export async function diagnoseFeedbackServer(
     'feedback:write',
     'waitlist:read',
     'waitlist:write',
+    'waitlist:invite',
     'waitlist:dangerous',
   ];
   if (credentials.scopes) {
@@ -579,7 +580,7 @@ export async function diagnoseFeedbackServer(
       'PAT scopes',
       missing.length === 0 ? 'pass' : 'warn',
       missing.length === 0
-        ? 'PAT includes Product, Feedback round-trip, and waitlist management scopes.'
+        ? 'PAT includes Product, Feedback round-trip, and waitlist invitation management scopes.'
         : `PAT is missing recommended scopes: ${missing.join(', ')}.`,
     ));
   } else {

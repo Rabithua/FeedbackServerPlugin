@@ -106,6 +106,7 @@ describe('Agent configuration lifecycle', () => {
     expect(AGENT_SCOPES).toEqual(expect.arrayContaining([
       'waitlist:read',
       'waitlist:write',
+      'waitlist:invite',
       'waitlist:dangerous',
     ]));
   });
@@ -145,6 +146,38 @@ describe('Agent configuration lifecycle', () => {
       `pending:remove:${oldTokenId}`,
       'logout',
     ]);
+  });
+
+  test('stores the canonical username returned after verified-email login', async () => {
+    const events: string[] = [];
+    const writes: StoredCredentials[] = [];
+    const configured = await configureAgent(
+      { baseUrl, username: 'owner@example.com', password: 'not-logged' },
+      dependencies(events, {
+        login: () => {
+          events.push('login');
+          return Promise.resolve({
+            accessToken: 'short-lived-access',
+            refreshToken: 'short-lived-refresh',
+            admin: {
+              id: '55555555-5555-4555-8555-555555555555',
+              username: 'owner',
+              displayName: 'Owner',
+              role: 'super_admin',
+            },
+          });
+        },
+        writeCredentials: (credentials) => {
+          events.push('write');
+          writes.push(credentials);
+          return Promise.resolve();
+        },
+      }),
+    );
+
+    expect(configured.username).toBe('owner');
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.username).toBe('owner');
   });
 
   test('retains the previous token ID when its revocation fails', async () => {
@@ -314,7 +347,7 @@ describe('Agent configuration lifecycle', () => {
     );
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain('agent disconnect');
-    expect(events).toEqual([]);
+    expect(events).toEqual(['login', 'logout']);
   });
 
   test('revokes the stored token before deleting credentials and logging out', async () => {

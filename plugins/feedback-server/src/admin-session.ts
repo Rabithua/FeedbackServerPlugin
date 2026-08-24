@@ -173,10 +173,14 @@ export class HiddenPasswordInput {
   }
 }
 
-export async function promptPassword(label = 'Administrator password'): Promise<string> {
+export function assertInteractiveTerminal(): void {
   if (!process.stdin.isTTY || !process.stderr.isTTY) {
     throw new Error('A TTY is required for hidden password input');
   }
+}
+
+export async function promptPassword(label = 'Administrator password'): Promise<string> {
+  assertInteractiveTerminal();
   process.stderr.write(`${label}: `);
   process.stdin.setRawMode(true);
   process.stdin.resume();
@@ -379,25 +383,26 @@ export async function configureAgent(input: {
       'FeedbackServer Agent is connected to a different server. Run feedback-server agent disconnect before changing the endpoint.',
     );
   }
-  if (previous?.username && previous.username !== input.username) {
-    throw new Error(
-      'FeedbackServer Agent is connected to a different administrator. Run feedback-server agent disconnect before changing accounts.',
-    );
-  }
   const session = await dependencies.login(baseUrl, input.username, input.password);
+  const username = session.admin?.username ?? input.username;
   try {
+    if (previous?.username && previous.username !== username) {
+      throw new Error(
+        'FeedbackServer Agent is connected to a different administrator. Run feedback-server agent disconnect before changing accounts.',
+      );
+    }
     await revokePendingAgentTokens(
       previous,
       baseUrl,
-      input.username,
+      username,
       profile,
       session.accessToken,
       dependencies,
     );
     const created = await dependencies.createToken(baseUrl, session.accessToken);
-    const createdEntry = pendingRevocation(baseUrl, input.username, created.id, profile);
+    const createdEntry = pendingRevocation(baseUrl, username, created.id, profile);
     const previousEntry = previous?.tokenId
-      ? pendingRevocation(baseUrl, input.username, previous.tokenId, profile)
+      ? pendingRevocation(baseUrl, username, previous.tokenId, profile)
       : undefined;
     try {
       await dependencies.addPendingRevocation(createdEntry);
@@ -415,7 +420,7 @@ export async function configureAgent(input: {
       baseUrl,
       token: created.token,
       tokenId: created.id,
-      username: input.username,
+      username,
       scopes: created.scopes,
       expiresAt: created.expiresAt,
     };
@@ -434,7 +439,7 @@ export async function configureAgent(input: {
     await revokePendingAgentTokens(
       credentials,
       baseUrl,
-      input.username,
+      username,
       profile,
       session.accessToken,
       dependencies,
