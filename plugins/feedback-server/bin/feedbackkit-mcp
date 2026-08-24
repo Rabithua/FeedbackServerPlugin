@@ -1,14 +1,11 @@
 #!/usr/bin/env bun
 
-import { ensureRuntimeDependencies } from '../scripts/ensure-runtime-dependencies.ts';
+import {
+  ensureRuntimeDependencies,
+  relaunchCurrentProcess,
+} from '../scripts/ensure-runtime-dependencies.ts';
 
 if (ensureRuntimeDependencies()) {
-  const relaunched = Bun.spawnSync({
-    cmd: [process.execPath, ...Bun.argv.slice(1)],
-    stdin: 'inherit',
-    stdout: 'inherit',
-    stderr: 'inherit',
-  });
-  process.exit(relaunched.exitCode);
+  process.exit(await relaunchCurrentProcess());
 }
 await import('../dist/server.mjs');
