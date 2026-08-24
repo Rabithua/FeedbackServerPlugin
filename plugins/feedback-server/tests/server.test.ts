@@ -520,13 +520,19 @@ describe('MCP server 0.9.1', () => {
       name: 'prepare_local_setup',
       arguments: { flow: 'configure_account' },
     });
-    expect(result.isError).not.toBe(true);
-    expect(resultData(result)).toMatchObject({
-      status: 'ready',
-      flow: 'configure_account',
-      requiresVisibleTerminal: true,
-      executesCommand: false,
-    });
+    if (process.platform === 'darwin') {
+      expect(result.isError).not.toBe(true);
+      expect(resultData(result)).toMatchObject({
+        status: 'ready',
+        flow: 'configure_account',
+        requiresVisibleTerminal: true,
+        executesCommand: false,
+      });
+    } else {
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result)).toContain('FEEDBACK_SERVER_BASE_URL');
+      expect(JSON.stringify(result)).toContain('FEEDBACK_SERVER_API_TOKEN');
+    }
   });
 
   test('reports environment credentials without an active Keychain profile', async () => {
