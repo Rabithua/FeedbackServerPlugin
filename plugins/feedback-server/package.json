@@ -1,6 +1,6 @@
 {
   "name": "@feedback-server/agent-plugin",
-  "version": "0.9.2",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -17,6 +17,8 @@
     "admin:invitations": "bun run ./bin/feedback-server admin invitations",
     "admin:invite:revoke": "bun run ./bin/feedback-server admin invite revoke",
     "admin:accept-invite": "bun run ./bin/feedback-server admin accept-invite",
+    "admin:email:bind": "bun run ./bin/feedback-server admin email bind",
+    "admin:password-reset": "bun run ./bin/feedback-server admin password-reset",
     "configure": "bun run ./bin/feedback-server agent configure",
     "disconnect": "bun run ./bin/feedback-server agent disconnect",
     "agent:revoke-token": "bun run ./bin/feedback-server agent revoke-token",

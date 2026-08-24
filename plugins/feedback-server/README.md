@@ -27,6 +27,8 @@ feedback-server admin invitations
 feedback-server admin invite revoke --id <uuid>
 feedback-server admin accept-invite
 feedback-server admin create-local --plan free
+feedback-server admin email bind
+feedback-server admin password-reset
 ```
 
 After account connection, continue the current Agent task with `帮我完成 FeedbackServer 初始配置`. The
@@ -48,8 +50,11 @@ preview, but cannot grant, renew, or downgrade a subscription. Initial invitatio
 separate Keychain-backed super-administrator CLI operation, not an MCP capability.
 Plugin 0.7.0 also manages the connected administrator's independent FeedbackKit waitlist through
 `list_waitlist_entries`, `get_waitlist_entry`, `update_waitlist_status`, `add_waitlist_note`, and
-the explicitly confirmed `delete_waitlist_entry`. Waitlist operations never require Product
-selection or consume Product plan capacity.
+the explicitly confirmed `delete_waitlist_entry`. Plugin 0.10.0 adds protected
+`invite_waitlist_entry`, `retry_waitlist_invitation_email`, and
+`revoke_waitlist_invitation`; each send preview identifies the private recipient, language, App,
+grant, expiry, and email summary before explicit confirmation. Waitlist operations never require
+Product selection or consume Product plan capacity.
 `test roundtrip` is an explicit live acceptance test: it requires the selected Product slug to be
 repeated with `--confirm`, covers submit/receive/reply/unread/read, and deletes the unique test
 Visitor and its Feedback afterward, including on intermediate failure.
@@ -81,6 +86,13 @@ Environment credentials remain higher priority and intentionally have no active 
 Legacy username-only administrator-password items are read only as migration candidates. The
 plugin moves one to the server-scoped account only after that password authenticates successfully
 against the selected server, preventing cross-server credential reuse.
+
+Verified account email is managed only in a visible terminal. `admin email bind` asks for the
+current password and mailed verification code without placing either in MCP or Agent context.
+`admin password-reset` accepts a username or verified email, then hides both the code and new
+password. By Server policy, a reset changes only the password and preserves existing refresh
+sessions, PATs, and Passkeys. Agent login prompts accept either username or verified email, and
+`connection_status` reports only the connected account's own email state.
 
 Once per MCP process, the plugin checks the latest stable FeedbackServer Plugin GitHub Release.
 When an update exists, one successful tool result includes an `updateNotice` containing the current

@@ -141,6 +141,13 @@ const appStoreBindingFields = {
 
 const waitlistStatus = z.enum(['new', 'contacted', 'invited', 'converted', 'archived']);
 const waitlistPlatform = z.enum(['ios_ipados', 'macos', 'android', 'web', 'other']);
+const invitationSubscriptionGrant = z.discriminatedUnion('plan', [
+  z.object({ plan: z.literal('free') }).strict(),
+  z.object({
+    plan: z.enum(['solo', 'studio']),
+    term: z.enum(['month', 'year', 'perpetual']),
+  }).strict(),
+]);
 
 interface ToolContext {
   credentials: StoredCredentials;
@@ -167,6 +174,8 @@ const PARAMETER_DESCRIPTIONS: Record<string, string> = {
   attachmentId: 'UUID of the exact private attachment whose short-lived URL is requested.',
   outboxId: 'UUID of the exact failed notification delivery to retry.',
   entryId: 'UUID of the exact owner-scoped waitlist entry.',
+  invitationId: 'UUID of the exact administrator invitation.',
+  subscriptionGrant: 'Initial account plan granted when the invitation is accepted.',
   confirmationId: 'Single-use confirmation ID returned by a protected preview; example: 123e4567-e89b-42d3-a456-426614174000.',
   cursor: 'Opaque nextCursor from the preceding page; omit for the first page.',
   limit: 'Maximum number of records in this page within the documented numeric bounds.',
@@ -256,6 +265,8 @@ const OPEN_WORLD_EFFECT_TOOLS = new Set([
   'update_product_webhook_config',
   'test_product_webhook',
   'retry_webhook_delivery',
+  'invite_waitlist_entry',
+  'retry_waitlist_invitation_email',
   'execute_confirmation',
 ]);
 
@@ -725,6 +736,9 @@ export function registerFeedbackServerTools(
     async (_input, { client, credentials, credentialSource, activeProfile }) => {
       const health = await client.request('/health', { authenticated: false });
       const products = await client.request<unknown[]>('/admin/products');
+      const email = await client.request<{ email: string | null; verifiedAt: string | null }>(
+        '/admin/auth/email',
+      );
       const daysUntilExpiry = credentials.expiresAt
         ? Math.floor(
             (new Date(credentials.expiresAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000),
@@ -742,6 +756,8 @@ export function registerFeedbackServerTools(
         rotationRecommended: daysUntilExpiry !== null && daysUntilExpiry <= 30,
         authenticated: true,
         visibleProductCount: Array.isArray(products) ? products.length : null,
+        email: email.email,
+        emailVerifiedAt: email.verifiedAt,
         health,
       };
     },
@@ -840,6 +856,124 @@ export function registerFeedbackServerTools(
     'Create a Product for a new app.',
     z.object(productCreateFields),
     async (body, { client }) => client.request('/admin/products', { method: 'POST', body }),
+  );
+  registerRiskAwareWrite(
+    server,
+    confirmations,
+    'invite_waitlist_entry',
+    'Send one localized FeedbackKit invitation email to the exact selected waitlist signup. This is never a bulk-send operation.',
+    z.object({
+      entryId: uuid,
+      expiresInDays: z.number().int().min(1).max(30).default(7),
+      subscriptionGrant: invitationSubscriptionGrant.default({ plan: 'free' }),
+      ...confirmation,
+    }),
+    { destructiveHint: false, idempotentHint: false },
+    async ({ entryId, expiresInDays, subscriptionGrant }, { client }) => {
+      const current = await client.request<{
+        entry: {
+          id: string;
+          email: string;
+          appName: string;
+          platform: z.infer<typeof waitlistPlatform>;
+          locale: 'zh-CN' | 'en';
+          status: z.infer<typeof waitlistStatus>;
+        };
+        precondition: string;
+      }>(`/admin/waitlist/${encodeURIComponent(entryId)}/invite-context`);
+      return {
+        precondition: current.precondition,
+        preview: {
+          entryId,
+          recipient: current.entry.email,
+          appName: current.entry.appName,
+          locale: current.entry.locale,
+          currentStatus: current.entry.status,
+          subscriptionGrant,
+          expiresInDays,
+          emailSummary: current.entry.locale === 'zh-CN'
+            ? `批准 ${current.entry.appName} 的 FeedbackKit 早期访问；包含一次性邀请码、所选套餐、有效期和 Agent 接入指南。`
+            : `Approves FeedbackKit early access for ${current.entry.appName}; includes a one-time invitation, selected plan, expiry, and Agent onboarding guide.`,
+          effect: 'Sends one transactional invitation email. The waitlist status changes to invited only after Cloudflare accepts delivery.',
+        },
+      };
+    },
+    async ({ entryId, expiresInDays, subscriptionGrant }, { client }, precondition) =>
+      client.request(`/admin/waitlist/${encodeURIComponent(entryId)}/invitations`, {
+        method: 'POST',
+        body: { expiresInDays, subscriptionGrant },
+        ...(precondition ? { ifMatch: precondition } : {}),
+      }),
+  );
+  registerRiskAwareWrite(
+    server,
+    confirmations,
+    'retry_waitlist_invitation_email',
+    'Retry one failed waitlist invitation email using the same invitation and one-time token.',
+    z.object({ entryId: uuid, invitationId: uuid, ...confirmation }),
+    { destructiveHint: false, idempotentHint: false },
+    async ({ entryId, invitationId }, { client }) => {
+      const current = await client.request<{
+        entry: { email: string; appName: string; locale: 'zh-CN' | 'en' };
+        invitation: { id: string; status: string; subscriptionGrant: unknown; expiresAt: string } | null;
+      }>(`/admin/waitlist/${encodeURIComponent(entryId)}/invite-context`);
+      if (!current.invitation || current.invitation.id !== invitationId) {
+        throw new Error('The invitation is not the current invitation for this waitlist entry');
+      }
+      return {
+        preview: {
+          entryId,
+          invitationId,
+          recipient: current.entry.email,
+          appName: current.entry.appName,
+          locale: current.entry.locale,
+          subscriptionGrant: current.invitation.subscriptionGrant,
+          expiresAt: current.invitation.expiresAt,
+          emailSummary: current.entry.locale === 'zh-CN'
+            ? `重新投递 ${current.entry.appName} 的同一封 FeedbackKit 邀请邮件和一次性邀请码。`
+            : `Redelivers the same FeedbackKit invitation and one-time token for ${current.entry.appName}.`,
+          effect: 'Retries one previously failed transactional invitation email.',
+        },
+      };
+    },
+    async ({ entryId, invitationId }, { client }) =>
+      client.request(
+        `/admin/waitlist/${encodeURIComponent(entryId)}/invitations/${encodeURIComponent(invitationId)}/retry`,
+        { method: 'POST' },
+      ),
+  );
+  registerRiskAwareWrite(
+    server,
+    confirmations,
+    'revoke_waitlist_invitation',
+    'Revoke one pending waitlist invitation so its one-time token can no longer create an account.',
+    z.object({ entryId: uuid, invitationId: uuid, ...confirmation }),
+    { destructiveHint: true, idempotentHint: true },
+    async ({ entryId, invitationId }, { client }) => {
+      const current = await client.request<{
+        entry: { email: string; appName: string };
+        invitation: { id: string; status: string; expiresAt: string } | null;
+      }>(`/admin/waitlist/${encodeURIComponent(entryId)}/invite-context`);
+      if (!current.invitation || current.invitation.id !== invitationId) {
+        throw new Error('The invitation is not the current invitation for this waitlist entry');
+      }
+      return {
+        preview: {
+          entryId,
+          invitationId,
+          appName: current.entry.appName,
+          recipient: current.entry.email,
+          currentStatus: current.invitation.status,
+          expiresAt: current.invitation.expiresAt,
+          effect: 'Revokes the invitation token and cancels delivery if it has not started.',
+        },
+      };
+    },
+    async ({ entryId, invitationId }, { client }) =>
+      client.request(
+        `/admin/waitlist/${encodeURIComponent(entryId)}/invitations/${encodeURIComponent(invitationId)}`,
+        { method: 'DELETE' },
+      ),
   );
   registerRiskAwareWrite(
     server,

@@ -33,6 +33,7 @@ import type {
 import { createLocalAdmin } from './local-admin.js';
 import { diagnoseFeedbackServer, formatDoctorReport } from './doctor.js';
 import { runFeedbackRoundTrip } from './roundtrip.js';
+import { bindAdministratorEmail, resetAdministratorPassword } from './account-email.js';
 
 export type FeedbackServerCliCommand =
   | 'doctor'
@@ -47,6 +48,8 @@ export type FeedbackServerCliCommand =
   | 'admin invitations'
   | 'admin invite revoke'
   | 'admin accept-invite'
+  | 'admin email bind'
+  | 'admin password-reset'
   | 'admin create-local';
 
 export interface ParsedFeedbackServerCliCommand {
@@ -70,6 +73,8 @@ export const usage = [
   ].join(' '),
   'feedback-server admin invitations [--url URL] [--username USERNAME]',
   'feedback-server admin invite revoke --id UUID [--url URL] [--username USERNAME]',
+  'feedback-server admin email bind [--url URL] [--username USERNAME_OR_EMAIL] [--email EMAIL]',
+  'feedback-server admin password-reset [--url URL] [--identifier USERNAME_OR_EMAIL]',
   [
     'feedback-server admin accept-invite [--url URL] [--username USERNAME]',
     '[--display-name NAME] [--token INVITATION_TOKEN]',
@@ -102,6 +107,13 @@ export function parseExistingAgentChoice(value: string): ExistingAgentChoice {
   if (normalized === '' || normalized === 'keep') return 'keep';
   if (normalized === 'switch') return 'switch';
   throw new Error('Choose keep or switch');
+}
+
+export async function promptHiddenAccountCode(
+  label: string,
+  hiddenPrompt: (prompt?: string) => Promise<string> = promptPassword,
+): Promise<string> {
+  return hiddenPrompt(label);
 }
 
 export function parseInvitationSubscriptionGrant(
@@ -200,6 +212,12 @@ export function parseFeedbackServerCliCommand(argv: string[]): ParsedFeedbackSer
   if (group === 'admin' && action === 'accept-invite') {
     return { command: 'admin accept-invite', options: argv.slice(2) };
   }
+  if (group === 'admin' && action === 'email' && nestedAction === 'bind') {
+    return { command: 'admin email bind', options: remaining };
+  }
+  if (group === 'admin' && action === 'password-reset') {
+    return { command: 'admin password-reset', options: argv.slice(2) };
+  }
   if (group === 'admin' && action === 'create-local') {
     return { command: 'admin create-local', options: argv.slice(2) };
   }
@@ -244,8 +262,8 @@ async function runAgentConfigure(options: string[]): Promise<void> {
     ?? await promptText('FeedbackServer URL', DEFAULT_BASE_URL);
   const username = parsed.get('--username')
     ?? existing?.username
-    ?? await promptText('Administrator username');
-  if (!username) throw new Error('Administrator username is required');
+    ?? await promptText('Administrator username or verified email');
+  if (!username) throw new Error('Administrator username or verified email is required');
   const active = await readActiveKeychainProfile();
   if (active !== profile) {
     console.error(
@@ -264,6 +282,55 @@ async function runAgentConfigure(options: string[]): Promise<void> {
       `FeedbackServer Agent profile ${profile} configured for ${configured.baseUrl}; token expires ${configured.expiresAt ?? 'at an unknown time'}.`,
     ),
   );
+}
+
+async function runAdminEmailBind(options: string[]): Promise<void> {
+  const input = await urlAndUsername(
+    options,
+    'Administrator username or verified email',
+    ['--email'],
+  );
+  const email = input.options.get('--email') ?? await promptText('Email to bind');
+  if (!email) throw new Error('Email to bind is required');
+  const password = await promptPassword();
+  const result = await bindAdministratorEmail({
+    baseUrl: input.baseUrl,
+    identifier: input.username,
+    password,
+    email,
+    readCode: async ({ expiresAt }) => {
+      console.error(`Verification email queued; the code expires ${expiresAt}.`);
+      return promptHiddenAccountCode('Email verification code');
+    },
+  });
+  console.error(`Verified email ${result.email} bound at ${result.verifiedAt}.`);
+}
+
+async function runAdminPasswordReset(options: string[]): Promise<void> {
+  const parsed = parseCliOptions(options, ['--url', '--identifier']);
+  const configured = await readKeychainCredentials().catch(() => undefined);
+  const baseUrl = parsed.get('--url')
+    ?? configured?.baseUrl
+    ?? await promptText('FeedbackServer URL', DEFAULT_BASE_URL);
+  const identifier = parsed.get('--identifier')
+    ?? configured?.username
+    ?? await promptText('Administrator username or verified email');
+  if (!identifier) throw new Error('Administrator username or verified email is required');
+  await resetAdministratorPassword({
+    baseUrl,
+    identifier,
+    readCode: async ({ expiresAt }) => {
+      console.error(`If the account has a verified email, a reset code was queued; it expires ${expiresAt}.`);
+      return promptHiddenAccountCode('Password reset verification code');
+    },
+    readNewPassword: async () => {
+      const password = await promptPassword('New administrator password');
+      const confirmation = await promptPassword('Confirm new administrator password');
+      if (password !== confirmation) throw new Error('Administrator passwords do not match');
+      return password;
+    },
+  });
+  console.error('Administrator password reset completed. Existing sessions, PATs, and Passkeys remain active.');
 }
 
 async function runAgentDisconnect(options: string[]): Promise<void> {
@@ -702,6 +769,8 @@ export async function runFeedbackServerCli(argv: string[]): Promise<void> {
     case 'admin invitations': return runAdminInvitations(parsed.options);
     case 'admin invite revoke': return runAdminInviteRevoke(parsed.options);
     case 'admin accept-invite': return runAdminAcceptInvite(parsed.options);
+    case 'admin email bind': return runAdminEmailBind(parsed.options);
+    case 'admin password-reset': return runAdminPasswordReset(parsed.options);
     case 'admin create-local': return runAdminCreateLocal(parsed.options);
   }
 }

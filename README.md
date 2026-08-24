@@ -86,6 +86,8 @@ feedback-server admin invitations
 feedback-server admin invite revoke --id <uuid>
 feedback-server admin accept-invite
 feedback-server admin create-local --plan free
+feedback-server admin email bind
+feedback-server admin password-reset
 ```
 
 ## Verify an integration
@@ -127,6 +129,17 @@ code, message, request ID, Retry-After seconds, remediation, and redacted data.
 Plugin 0.7.0 adds owner-scoped FeedbackKit waitlist tools for stable listing/search, detail with
 internal notes, preconditioned lifecycle updates, note append, and explicitly confirmed permanent
 deletion. Waitlist entries are independent from Products and do not consume subscription capacity.
+
+Plugin 0.10.0 adds typed waiting-list invitation email. The Agent previews the private recipient,
+language, App, Free/Solo/Studio grant, expiry, and message summary, then requires explicit approval
+before it sends or retries. It can also revoke a pending invitation. The connected PAT needs
+`waitlist:invite`, and its administrator must still be a current `super_admin` in the Server
+database.
+
+Account email binding/change and password recovery remain outside MCP. Run `feedback-server admin
+email bind` or `feedback-server admin password-reset` in a visible terminal so the current password,
+verification code, and new password never enter Agent context. Login accepts username or verified
+email. Password reset intentionally leaves existing sessions, PATs, and Passkeys valid.
 
 For a live acceptance test, explicitly select a Product and repeat its slug:
 

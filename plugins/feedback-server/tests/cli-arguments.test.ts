@@ -7,6 +7,7 @@ import {
   parseExistingAgentChoice,
   parseFeedbackServerCliCommand,
   parseInvitationSubscriptionGrant,
+  promptHiddenAccountCode,
   usage,
 } from '../src/cli.js';
 
@@ -27,6 +28,16 @@ describe('CLI argument policy', () => {
     expect(() => parseCliOptions(['--secret', 'value'], ['--url'])).toThrow(
       'Unsupported option: --secret',
     );
+  });
+
+  test('routes verification codes through hidden terminal input', async () => {
+    const labels: string[] = [];
+    const code = await promptHiddenAccountCode('Email verification code', (label) => {
+      labels.push(label ?? '');
+      return Promise.resolve('fsemail_hidden');
+    });
+    expect(code).toBe('fsemail_hidden');
+    expect(labels).toEqual(['Email verification code']);
   });
 
   test('allows invitation tokens only when a command explicitly declares them', () => {

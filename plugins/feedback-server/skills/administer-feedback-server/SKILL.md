@@ -18,6 +18,12 @@ the saved super-administrator password from macOS Keychain. The recipient calls
 Invitation tokens may appear only in that single-use acceptance command. Do not execute it, open a
 private PTY, clone source, or guess cache paths.
 
+Account email and password recovery are also trusted-terminal workflows. Use the installed
+`feedback-server admin email bind` and `feedback-server admin password-reset` commands in a visible
+terminal. Login identifiers may be a username or an already verified email. Never ask for or relay
+the current password, verification code, or new password in chat or MCP. Password reset changes
+only the password and intentionally preserves existing refresh sessions, PATs, and Passkeys.
+
 Invitation creation defaults to Free. Solo or Studio requires `month`, `year`, or `perpetual`; the
 term starts when accepted and cannot be changed on that invitation. Existing credentials are
 global profiles shared by all Codex and Claude sessions on the Mac. Never choose whether to keep or
