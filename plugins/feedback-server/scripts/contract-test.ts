@@ -73,6 +73,7 @@ const acceptanceDependencies: InvitationAcceptanceDependencies = {
   revokeToken: revokeAgentToken,
   logout,
   readPendingRevocations: () => Promise.resolve([]),
+  readReferencedTokenIds: () => Promise.resolve(new Set()),
   addPendingRevocation: () => Promise.resolve(),
   removePendingRevocation: () => Promise.resolve(),
 };

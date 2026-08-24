@@ -70,7 +70,7 @@ the Server to echo the requested grant and compensates a mismatch by revoking th
 The older macOS clipboard handoff
 remains available with `--delivery clipboard`. PAT storage uses split macOS Keychain records with
 the token passed only through stdin. A separate Keychain ledger stores only server URL, username,
-and token ID for recoverable PAT revocation. CI and non-macOS MCP processes may use paired
+profile ID, and token ID for recoverable PAT revocation. CI and non-macOS MCP processes may use paired
 `FEEDBACK_SERVER_BASE_URL` and `FEEDBACK_SERVER_API_TOKEN` environment values.
 The canonical default endpoint is `https://api.feedkit.cn/v1/api`; credentials saved with the former
 production hostname are normalized to this endpoint while preserving the existing PAT.

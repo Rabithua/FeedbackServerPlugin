@@ -5,6 +5,7 @@ import {
   DEFAULT_BASE_URL,
   KEYCHAIN_SERVICE,
   loadCredentials,
+  normalizeBaseUrl,
   readPendingTokenRevocations,
   type PendingTokenRevocation,
   type StoredCredentials,
@@ -213,6 +214,70 @@ function localeLanguage(value: string): string {
   return (value.split(/[-_]/, 1)[0] ?? value).toLowerCase();
 }
 
+function swiftFeedbackConfigurationArguments(content: string): string[] {
+  const arguments_: string[] = [];
+  for (const match of content.matchAll(/\bFeedback(?:Center)?Configuration\s*\(/g)) {
+    const openParenthesis = match.index + match[0].lastIndexOf('(');
+    let depth = 0;
+    let quoted = false;
+    let escaped = false;
+    for (let index = openParenthesis; index < content.length; index += 1) {
+      const character = content[index];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (character === '\\') escaped = true;
+        else if (character === '"') quoted = false;
+        continue;
+      }
+      if (character === '"') {
+        quoted = true;
+        continue;
+      }
+      if (character === '(') depth += 1;
+      else if (character === ')') {
+        depth -= 1;
+        if (depth === 0) {
+          arguments_.push(content.slice(openParenthesis + 1, index));
+          break;
+        }
+      }
+    }
+  }
+  return arguments_;
+}
+
+function feedbackKitConfigurationContent(files: HostAppFile[]): string {
+  const swiftArguments = files.flatMap(({ path, content }) =>
+    extname(path) === '.swift' ? swiftFeedbackConfigurationArguments(content) : []);
+  const settings = files
+    .filter(({ path, content }) =>
+      extname(path) !== '.swift'
+      && /FeedbackServerBaseURL|FeedbackProductKey/.test(content))
+    .map(({ content }) => content);
+  return [...swiftArguments, ...settings].join('\n');
+}
+
+function configuredFeedbackServerEndpoints(content: string): string[] {
+  const patterns = [
+    /\bbaseURL\s*:\s*(?:URL\s*\(\s*string\s*:\s*)?"([^"]+)"/g,
+    /<key>\s*FeedbackServerBaseURL\s*<\/key>\s*<string>\s*([^<]+?)\s*<\/string>/g,
+    /["']?FeedbackServerBaseURL["']?\s*[:=]\s*["']([^"']+)["']/g,
+  ];
+  const endpoints: string[] = [];
+  for (const pattern of patterns) {
+    for (const match of content.matchAll(pattern)) {
+      const value = match[1]?.trim();
+      if (!value || !/^https?:\/\//.test(value)) continue;
+      try {
+        endpoints.push(normalizeBaseUrl(value));
+      } catch {
+        // Invalid or unresolved values are handled as dynamic settings below.
+      }
+    }
+  }
+  return [...new Set(endpoints)];
+}
+
 export function inspectHostAppFiles(
   files: HostAppFile[],
   credentials: StoredCredentials,
@@ -220,6 +285,7 @@ export function inspectHostAppFiles(
 ): DoctorCheck[] {
   const checks: DoctorCheck[] = [];
   const combined = files.map(({ content }) => content).join('\n');
+  const configurationContent = feedbackKitConfigurationContent(files);
   const newest = newestFeedbackKitVersion(files);
   const usesCurrentDefaults = newest !== undefined
     && compareVersions(newest, FEEDBACK_KIT_DEFAULTS_VERSION) >= 0;
@@ -243,12 +309,10 @@ export function inspectHostAppFiles(
   }
 
   const normalizedEndpoint = credentials.baseUrl.replace(/\/+$/, '');
-  const endpointWithoutApi = normalizedEndpoint.replace(/\/v1\/api$/, '');
-  const hasUrl = combined.includes(normalizedEndpoint) || combined.includes(endpointWithoutApi);
-  const hasUrlSetting = combined.includes('FeedbackServerBaseURL');
-  const explicitApiEndpoints = [...combined.matchAll(/https?:\/\/[^\s"'<>]+\/v1\/api\/?/g)]
-    .map(([value]) => value.replace(/[),.;]+$/, '').replace(/\/+$/, ''));
-  const conflictingEndpoint = explicitApiEndpoints.find((value) => value !== normalizedEndpoint);
+  const configuredEndpoints = configuredFeedbackServerEndpoints(configurationContent);
+  const hasUrl = configuredEndpoints.includes(normalizedEndpoint);
+  const hasUrlSetting = /FeedbackServerBaseURL|\bbaseURL\s*:/.test(configurationContent);
+  const conflictingEndpoint = configuredEndpoints.find((value) => value !== normalizedEndpoint);
   const usesFixedProductionEndpoint = usesCurrentDefaults
     && normalizedEndpoint === DEFAULT_BASE_URL;
   checks.push(check(
@@ -294,29 +358,37 @@ export function inspectHostAppFiles(
     ));
   }
 
-  const keychainMatch = combined.match(/keychainService\s*:\s*"([^"]+)"/);
+  const keychainMatch = configurationContent.match(/keychainService\s*:\s*"([^"]+)"/);
   const keychainService = keychainMatch?.[1];
+  const hasKeychainServiceSetting = /keychainService\s*:/.test(configurationContent);
   checks.push(check(
     'app.keychain-service',
     'Keychain service',
     keychainService === KEYCHAIN_SERVICE
       ? 'fail'
-      : keychainService || usesCurrentDefaults
+      : keychainService
         ? 'pass'
-        : 'fail',
+        : hasKeychainServiceSetting
+          ? 'warn'
+          : usesCurrentDefaults
+            ? 'pass'
+            : 'fail',
     keychainService === KEYCHAIN_SERVICE
       ? `The host App reuses the Agent credential service ${KEYCHAIN_SERVICE}; configure a visitor-only service instead.`
       : keychainService
         ? `A dedicated visitor credential service is configured (${keychainService}).`
+        : hasKeychainServiceSetting
+          ? 'A FeedbackKit keychainService override exists, but its resolved value could not be verified.'
         : usesCurrentDefaults
           ? `FeedbackKit ${newest} derives a visitor-only Keychain service from the App bundle identifier.`
           : `No explicit FeedbackKit keychainService was found; do not reuse ${KEYCHAIN_SERVICE}.`,
   ));
 
-  const fixedLocale = combined.match(
+  const fixedLocale = configurationContent.match(
     /languagePolicy\s*:\s*\.fixed\(\s*Locale\(identifier\s*:\s*"([^"]+)"\)\s*\)/,
   )?.[1];
-  const followsHost = /languagePolicy\s*:\s*\.followHost\b/.test(combined);
+  const followsHost = /languagePolicy\s*:\s*\.followHost\b/.test(configurationContent);
+  const hasLanguagePolicySetting = /languagePolicy\s*:/.test(configurationContent);
   if (fixedLocale) {
     const matchesProduct = !product
       || localeLanguage(fixedLocale) === localeLanguage(product.defaultLocale);
@@ -334,6 +406,13 @@ export function inspectHostAppFiles(
       'Language policy',
       'pass',
       'FeedbackKit explicitly follows the host App language.',
+    ));
+  } else if (hasLanguagePolicySetting) {
+    checks.push(check(
+      'app.language',
+      'Language policy',
+      'warn',
+      'A FeedbackKit languagePolicy override exists, but its resolved value could not be verified.',
     ));
   } else if (usesCurrentDefaults) {
     checks.push(check(

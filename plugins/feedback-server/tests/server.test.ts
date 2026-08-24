@@ -323,6 +323,7 @@ const toolScenarios: ToolScenario[] = [
     arguments: { enabled: false },
     path: '/v1/api/admin/bark/global',
     method: 'PUT',
+    confirmation: 'always',
   },
   {
     name: 'get_product_bark_config',
@@ -334,6 +335,7 @@ const toolScenarios: ToolScenario[] = [
     arguments: { productId, mode: 'disabled' },
     path: `/v1/api/admin/bark/products/${productId}`,
     method: 'PUT',
+    confirmation: 'always',
   },
   {
     name: 'test_bark_channel',
@@ -420,7 +422,7 @@ function missingParameterDescriptions(schema: unknown, path = 'input'): string[]
   return missing;
 }
 
-describe('MCP server 0.9.0', () => {
+describe('MCP server 0.9.1', () => {
   const originalFetch = globalThis.fetch;
   let client: Client;
   let server: ReturnType<typeof createServer>;
@@ -1396,6 +1398,55 @@ describe('MCP server 0.9.0', () => {
     expect(await requests[1]!.json()).toMatchObject({
       releasedAt: '2026-08-03T08:30:00.000Z',
     });
+  });
+
+  test('previews Bark configuration safely before applying it', async () => {
+    const requests: Request[] = [];
+    globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init);
+      requests.push(request);
+      return Promise.resolve(Response.json({ code: 'ok', message: 'success', data: null }));
+    }) as typeof fetch;
+    const deviceKey = 'private-bark-device-key';
+
+    const preview = await client.callTool({
+      name: 'update_global_bark_config',
+      arguments: { enabled: true, deviceKey },
+    });
+    expect(requests).toHaveLength(0);
+    expect(resultData(preview)).toMatchObject({
+      status: 'confirmation_required',
+      executeTool: 'execute_confirmation',
+      preview: { enabled: true, deviceKey: '[REDACTED]' },
+    });
+    expect(JSON.stringify(preview)).not.toContain(deviceKey);
+
+    const executed = await client.callTool({
+      name: 'execute_confirmation',
+      arguments: { confirmationId: resultData(preview).confirmationId },
+    });
+    expect(executed.isError).not.toBe(true);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.method).toBe('PUT');
+    expect(await requests[0]!.json()).toEqual({ enabled: true, deviceKey });
+  });
+
+  test('returns environment-specific remediation for invalid environment credentials', async () => {
+    globalThis.fetch = (() => Promise.resolve(Response.json({
+      code: 'invalid_token',
+      message: 'The API token is invalid',
+      data: null,
+    }, { status: 401 }))) as unknown as typeof fetch;
+
+    const result = await client.callTool({ name: 'list_products', arguments: {} });
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      error: {
+        status: 401,
+        remediation: expect.stringContaining('FEEDBACK_SERVER_API_TOKEN'),
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('Reconnect the active FeedbackServer profile');
   });
 
   test('preserves API error codes without leaking credentials', async () => {

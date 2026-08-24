@@ -16,6 +16,7 @@ export const KEYCHAIN_ADMIN_PASSWORD_SERVICE = 'dev.rote.feedback-server.admin';
 export const SECURITY_EXECUTABLE = '/usr/bin/security';
 export const SECURITY_EXECUTABLE_FALLBACK = 'security';
 export const SECURITY_SHELL_EXECUTABLE = '/bin/sh';
+export const MAX_KEYCHAIN_PROFILES = 100;
 
 const credentialSchema = z.object({
   baseUrl: z.url(),
@@ -43,12 +44,16 @@ export const profileIdSchema = z
   .regex(/^[a-z0-9._-]+$/, 'Profile IDs may contain only lowercase letters, numbers, dots, underscores, and hyphens');
 const profileIndexSchema = z.object({
   version: z.literal(1),
-  profiles: z.array(profileIdSchema).max(100).transform((profiles) => [...new Set(profiles)].sort()),
+  profiles: z
+    .array(profileIdSchema)
+    .max(MAX_KEYCHAIN_PROFILES)
+    .transform((profiles) => [...new Set(profiles)].sort()),
 });
 const pendingTokenRevocationSchema = z.object({
   baseUrl: z.url(),
   username: z.string().min(1).max(80),
   tokenId: z.uuid(),
+  profile: profileIdSchema.optional(),
 });
 const pendingTokenRevocationLedgerSchema = z.object({
   version: z.literal(1),
@@ -556,6 +561,22 @@ export async function listKeychainProfiles(
   return profiles.map((name) => ({ name, active: name === active }));
 }
 
+export async function readKeychainReferencedTokenIds(
+  runner: SecurityCommandRunner = runSecurity,
+): Promise<Set<string>> {
+  if (process.platform !== 'darwin') return new Set();
+  await migrateLegacyDefaultProfile(runner);
+  const profiles = await readProfileIndex(runner);
+  const credentials = await Promise.all(
+    profiles.map((profile) =>
+      readCredentialPointer(KEYCHAIN_PROFILE_POINTER_SERVICE, profile, runner)),
+  );
+  return new Set(
+    credentials
+      .flatMap((entry) => entry?.tokenId ? [entry.tokenId] : []),
+  );
+}
+
 export async function useKeychainProfile(
   profile: string,
   runner: SecurityCommandRunner = runSecurity,
@@ -711,6 +732,7 @@ export async function addPendingTokenRevocation(
     candidate.baseUrl === parsed.baseUrl
     && candidate.username === parsed.username
     && candidate.tokenId === parsed.tokenId
+    && candidate.profile === parsed.profile
   ));
   entries.push(parsed);
   await writeKeychainPendingTokenRevocations(entries, runner);
@@ -731,6 +753,7 @@ export async function removePendingTokenRevocation(
       candidate.baseUrl === parsed.baseUrl
       && candidate.username === parsed.username
       && candidate.tokenId === parsed.tokenId
+      && candidate.profile === parsed.profile
     )),
     runner,
   );
@@ -805,6 +828,13 @@ export async function writeKeychainProfileCredentials(
   const parsedProfile = profileIdSchema.parse(profile);
   await migrateLegacyDefaultProfile(runner);
   const parsed = normalizeStoredCredentials(credentials);
+  const profiles = await readProfileIndex(runner);
+  const wasIndexed = profiles.includes(parsedProfile);
+  if (!wasIndexed && profiles.length >= MAX_KEYCHAIN_PROFILES) {
+    throw new Error(
+      `FeedbackServer supports at most ${MAX_KEYCHAIN_PROFILES} Keychain profiles; remove one before configuring ${parsedProfile}.`,
+    );
+  }
   const previousPointer = await readKeychainValue(
     KEYCHAIN_PROFILE_POINTER_SERVICE,
     parsedProfile,
@@ -837,15 +867,45 @@ export async function writeKeychainProfileCredentials(
     );
   }
 
-  const profiles = await readProfileIndex(runner);
-  if (!profiles.includes(parsedProfile)) {
-    await writeProfileIndex([...profiles, parsedProfile], runner).catch((error: unknown) => {
-      console.error(`Warning: unable to update the FeedbackServer profile index: ${error instanceof Error ? error.message : String(error)}`);
-    });
+  try {
+    if (!wasIndexed) await writeProfileIndex([...profiles, parsedProfile], runner);
+    await setActiveProfile(parsedProfile, runner);
+  } catch (error) {
+    const rollbackErrors: unknown[] = [error];
+    try {
+      if (previousPointer) {
+        await writeKeychainValue(
+          keychainProfilePointerWriteArguments(parsedProfile, previousPointer),
+          `the previous FeedbackServer profile ${parsedProfile}`,
+          runner,
+        );
+      } else if (!(await deleteKeychainItem(
+        KEYCHAIN_PROFILE_POINTER_SERVICE,
+        parsedProfile,
+        runner,
+      ))) {
+        throw new Error(`Unable to remove the incomplete FeedbackServer profile ${parsedProfile}`);
+      }
+    } catch (rollbackError) {
+      rollbackErrors.push(rollbackError);
+    }
+    if (!wasIndexed) {
+      try {
+        await writeProfileIndex(profiles, runner);
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError);
+      }
+    }
+    if (!(await deleteKeychainRecord(recordId, runner))) {
+      rollbackErrors.push(new Error('Unable to remove the uncommitted FeedbackServer credential record'));
+    }
+    throw rollbackErrors.length === 1
+      ? error
+      : new AggregateError(
+          rollbackErrors,
+          `Unable to commit FeedbackServer profile ${parsedProfile}; rollback was incomplete`,
+        );
   }
-  await setActiveProfile(parsedProfile, runner).catch((error: unknown) => {
-    console.error(`Warning: profile ${parsedProfile} was stored but could not be made active: ${error instanceof Error ? error.message : String(error)}`);
-  });
 
   if (
     previousRecordId.success

@@ -2,6 +2,15 @@
 
 All notable changes to FeedbackServer Plugin are documented here.
 
+## 0.9.1 - 2026-08-24
+
+- Prevent pending PAT recovery for one profile from revoking credentials still used by another profile.
+- Reject excess profiles before writing credentials and roll back incomplete profile activation.
+- Require confirmation before changing global or Product Bark configuration.
+- Limit Doctor endpoint conflicts to FeedbackKit configuration and warn for unresolved endpoint, Keychain service, or language overrides.
+- Reject automatic account setup off macOS with paired environment-variable remediation.
+- Return credential-source-aware remediation when environment credentials receive HTTP 401.
+
 ## 0.9.0 - 2026-08-24
 
 - Add global named Keychain profiles with resumable migration of the legacy default pointer.

@@ -81,6 +81,7 @@ function commandFromArguments(arguments_: string[]): string {
 export function prepareLocalSetup(
   rawInput: LocalSetupInput,
   executablePath = fileURLToPath(new URL('../bin/feedback-server', import.meta.url)),
+  platform: NodeJS.Platform = process.platform,
 ): {
   status: 'ready';
   flow: LocalSetupInput['flow'];
@@ -91,6 +92,11 @@ export function prepareLocalSetup(
   reloadAfterSuccess: false;
 } {
   const input = localSetupInputSchema.parse(rawInput);
+  if (platform !== 'darwin') {
+    throw new Error(
+      'Automatic FeedbackServer account setup requires macOS Keychain. On this platform, configure FEEDBACK_SERVER_BASE_URL and FEEDBACK_SERVER_API_TOKEN together in the MCP process environment.',
+    );
+  }
   let arguments_: string[];
   if (input.flow === 'configure_account') {
     arguments_ = [

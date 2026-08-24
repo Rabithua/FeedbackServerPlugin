@@ -62,4 +62,12 @@ describe('local setup preparation', () => {
       profile: 'work',
     }, '/tmp/plugin/bin/feedback-server')).toThrow('profile is only valid');
   });
+
+  test('rejects automatic setup on platforms without macOS Keychain', () => {
+    expect(() => prepareLocalSetup(
+      { flow: 'configure_account' },
+      '/tmp/plugin/bin/feedback-server',
+      'linux',
+    )).toThrow('FEEDBACK_SERVER_BASE_URL and FEEDBACK_SERVER_API_TOKEN together');
+  });
 });
