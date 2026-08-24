@@ -265,8 +265,6 @@ const IDEMPOTENT_DIRECT_WRITE_TOOLS = new Set([
   'link_feedback_item',
   'unlink_feedback_item',
   'import_latest_app_store_release',
-  'update_global_bark_config',
-  'update_product_bark_config',
 ]);
 
 export function productUpdateProtectedEffects(input: {
@@ -350,6 +348,9 @@ function normalizeReleasedAt(value: string | null | undefined): string | null | 
 
 function remediationFor(error: FeedbackServerApiError): string {
   if (error.status === 401) {
+    if (error.credentialSource === 'environment') {
+      return 'Replace or remove both FEEDBACK_SERVER_BASE_URL and FEEDBACK_SERVER_API_TOKEN, then restart the MCP process before retrying.';
+    }
     return 'Reconnect the active FeedbackServer profile in a visible terminal, then retry.';
   }
   if (error.status === 403) {
@@ -405,7 +406,7 @@ async function context(): Promise<ToolContext> {
     credentials,
     credentialSource: loaded.credentialSource,
     activeProfile: loaded.activeProfile,
-    client: new FeedbackServerApiClient(credentials),
+    client: new FeedbackServerApiClient(credentials, fetch, loaded.credentialSource),
     identity: {
       baseUrl: credentials.baseUrl,
       tokenIdentity,
@@ -1762,8 +1763,9 @@ export function registerFeedbackServerTools(
     z.object({}),
     async (_input, { client }) => client.request('/admin/bark/global'),
   );
-  registerDirectWrite(
+  registerConfirmedWrite(
     server,
+    confirmations,
     'update_global_bark_config',
     'Update the global Bark configuration. Device keys are always redacted.',
     z.object({
@@ -1773,7 +1775,9 @@ export function registerFeedbackServerTools(
       group: z.string().max(160).nullable().optional(),
       icon: z.url().nullable().optional(),
       sound: z.string().max(120).nullable().optional(),
+      ...confirmation,
     }),
+    { destructiveHint: false, idempotentHint: true },
     async (body, { client }) => client.request('/admin/bark/global', { method: 'PUT', body }),
   );
   registerRead(
@@ -1784,8 +1788,9 @@ export function registerFeedbackServerTools(
     async ({ productId }, { client }) =>
       client.request(`/admin/bark/products/${encodeURIComponent(productId)}`),
   );
-  registerDirectWrite(
+  registerConfirmedWrite(
     server,
+    confirmations,
     'update_product_bark_config',
     'Update one Product Bark mode or custom channel. Device keys are always redacted.',
     z.object({
@@ -1796,7 +1801,9 @@ export function registerFeedbackServerTools(
       group: z.string().max(160).nullable().optional(),
       icon: z.url().nullable().optional(),
       sound: z.string().max(120).nullable().optional(),
+      ...confirmation,
     }),
+    { destructiveHint: false, idempotentHint: true },
     async ({ productId, ...body }, { client }) =>
       client.request(`/admin/bark/products/${encodeURIComponent(productId)}`, {
         method: 'PUT',

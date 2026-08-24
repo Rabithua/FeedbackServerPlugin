@@ -7,6 +7,8 @@ interface ApiEnvelope<T> {
   data: T;
 }
 
+export type CredentialSource = 'environment' | 'keychain';
+
 export class FeedbackServerApiError extends Error {
   public constructor(
     public readonly status: number,
@@ -15,6 +17,7 @@ export class FeedbackServerApiError extends Error {
     public readonly data: unknown,
     public readonly requestId: string | null = null,
     public readonly retryAfterSeconds: number | null = null,
+    public readonly credentialSource: CredentialSource | null = null,
   ) {
     super(message);
     this.name = 'FeedbackServerApiError';
@@ -42,6 +45,7 @@ export class FeedbackServerApiClient {
   public constructor(
     private readonly credentials: StoredCredentials,
     private readonly fetcher: typeof fetch = fetch,
+    private readonly credentialSource: CredentialSource | null = null,
   ) {}
 
   public get baseUrl(): string {
@@ -81,6 +85,9 @@ export class FeedbackServerApiClient {
         'connection_failed',
         'Unable to reach FeedbackServer',
         error instanceof Error ? { cause: error.message } : null,
+        null,
+        null,
+        this.credentialSource,
       );
     }
 
@@ -98,6 +105,7 @@ export class FeedbackServerApiClient {
         null,
         requestId,
         retryAfter,
+        this.credentialSource,
       );
     }
     if (!response.ok || envelope.code !== 'ok') {
@@ -108,6 +116,7 @@ export class FeedbackServerApiClient {
         envelope.data,
         requestId,
         retryAfter,
+        this.credentialSource,
       );
     }
     return envelope.data;

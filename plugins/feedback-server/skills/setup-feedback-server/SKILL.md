@@ -11,6 +11,10 @@ Never ask for a password or PAT in chat, open a private PTY, clone the repositor
 cache path. Continue in the current task after the CLI succeeds; the running MCP process reloads
 Keychain credentials on its next call.
 
+Automatic setup requires macOS Keychain. On another platform, do not present the CLI account setup
+as runnable; require both `FEEDBACK_SERVER_BASE_URL` and `FEEDBACK_SERVER_API_TOKEN` in the MCP
+process environment and restart that process. Never ask the user to paste either value into chat.
+
 Profiles are global to this Mac, not repository-local. Environment credentials override Keychain
 and have no active profile. Before `profile use`, `profile remove`, or configuring a different
 profile, state that the change affects all FeedbackServer Codex and Claude sessions on this Mac.

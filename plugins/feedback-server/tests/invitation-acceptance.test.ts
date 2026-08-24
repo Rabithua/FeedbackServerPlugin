@@ -101,6 +101,7 @@ function dependencies(
       events.push('read-pending');
       return Promise.resolve([...pendingRevocations]);
     },
+    readReferencedTokenIds: () => Promise.resolve(new Set()),
     addPendingRevocation: (entry) => {
       events.push(`add-pending:${entry.tokenId}`);
       pendingRevocations.push(entry);

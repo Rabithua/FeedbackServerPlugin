@@ -8,12 +8,14 @@ import {
   KEYCHAIN_PROFILE_POINTER_SERVICE,
   KEYCHAIN_SERVICE,
   KEYCHAIN_TOKEN_SERVICE,
+  MAX_KEYCHAIN_PROFILES,
   deleteKeychainProfileCredentials,
   listKeychainProfiles,
   loadCredentialsWithSource,
   profileIdSchema,
   readKeychainCredentials,
   readKeychainProfileCredentials,
+  readKeychainReferencedTokenIds,
   useKeychainProfile,
   writeKeychainProfileCredentials,
   type SecurityCommandRunner,
@@ -214,6 +216,96 @@ describe('global named profiles', () => {
         activeProfile: 'work',
         credentials: { username: 'owner', token: firstToken },
       });
+    });
+  });
+
+  test('rejects a profile beyond the Keychain index limit before writing credentials', async () => {
+    await withDarwin(async () => {
+      const profiles = Array.from(
+        { length: MAX_KEYCHAIN_PROFILES },
+        (_, index) => `profile-${index.toString().padStart(3, '0')}`,
+      );
+      const active = profiles[0]!;
+      const activeCredentials: StoredCredentials = {
+        baseUrl: 'https://feedback.example.com/v1/api',
+        token: firstToken,
+        tokenId: firstRecordId,
+        username: 'owner',
+      };
+      const keychain = memoryKeychain({
+        [key(KEYCHAIN_PROFILE_INDEX_SERVICE, KEYCHAIN_ACCOUNT)]: JSON.stringify({
+          version: 1,
+          profiles,
+        }),
+        [key(KEYCHAIN_ACTIVE_PROFILE_SERVICE, KEYCHAIN_ACTIVE_PROFILE_ACCOUNT)]: active,
+        [key(KEYCHAIN_PROFILE_POINTER_SERVICE, active)]: firstRecordId,
+        [key(KEYCHAIN_TOKEN_SERVICE, firstRecordId)]: firstToken,
+        [key(KEYCHAIN_METADATA_SERVICE, firstRecordId)]: metadata(activeCredentials),
+      });
+
+      const error = await capturedError(writeKeychainProfileCredentials(
+        { baseUrl: 'https://overflow.example.com/v1/api', token: secondToken },
+        'overflow',
+        keychain.runner,
+        () => secondRecordId,
+      ));
+
+      expect(error).toMatchObject({ message: expect.stringContaining('at most 100') });
+      expect(keychain.items.has(key(KEYCHAIN_PROFILE_POINTER_SERVICE, 'overflow'))).toBe(false);
+      expect(keychain.items.has(key(KEYCHAIN_TOKEN_SERVICE, secondRecordId))).toBe(false);
+      expect(keychain.items.get(
+        key(KEYCHAIN_ACTIVE_PROFILE_SERVICE, KEYCHAIN_ACTIVE_PROFILE_ACCOUNT),
+      )).toBe(active);
+    });
+  });
+
+  test('rolls back a new profile when its index cannot be committed', async () => {
+    await withDarwin(async () => {
+      const keychain = memoryKeychain();
+      keychain.failNext((args) =>
+        args[0] === 'add-generic-password' && args.includes(KEYCHAIN_PROFILE_INDEX_SERVICE));
+
+      const error = await capturedError(writeKeychainProfileCredentials(
+        { baseUrl: 'https://work.example.com/v1/api', token: firstToken },
+        'work',
+        keychain.runner,
+        () => firstRecordId,
+      ));
+
+      expect(error).toMatchObject({ message: expect.stringContaining('simulated interruption') });
+      expect(keychain.items.has(key(KEYCHAIN_PROFILE_POINTER_SERVICE, 'work'))).toBe(false);
+      expect(keychain.items.has(key(KEYCHAIN_TOKEN_SERVICE, firstRecordId))).toBe(false);
+      expect(await listKeychainProfiles(keychain.runner)).toEqual([]);
+    });
+  });
+
+  test('reports every PAT token ID still referenced by a profile', async () => {
+    await withDarwin(async () => {
+      const keychain = memoryKeychain();
+      await writeKeychainProfileCredentials(
+        {
+          baseUrl: 'https://first.example.com/v1/api',
+          token: firstToken,
+          tokenId: firstRecordId,
+        },
+        'first',
+        keychain.runner,
+        () => firstRecordId,
+      );
+      await writeKeychainProfileCredentials(
+        {
+          baseUrl: 'https://second.example.com/v1/api',
+          token: secondToken,
+          tokenId: secondRecordId,
+        },
+        'second',
+        keychain.runner,
+        () => secondRecordId,
+      );
+
+      expect(await readKeychainReferencedTokenIds(keychain.runner)).toEqual(
+        new Set([firstRecordId, secondRecordId]),
+      );
     });
   });
 

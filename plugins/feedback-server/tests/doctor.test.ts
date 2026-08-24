@@ -245,8 +245,8 @@ describe('feedback-server doctor', () => {
       {
         path: '/App/FeedbackCenter.swift',
         content: `
-          let endpoint = URL(string: "https://other.example.com/v1/api")!
           let configuration = try FeedbackConfiguration(
+            baseURL: URL(string: "https://other.example.com/v1/api")!,
             productKey: "${product.publishableKey}",
             keychainService: "${KEYCHAIN_SERVICE}"
           )
@@ -256,6 +256,62 @@ describe('feedback-server doctor', () => {
     expect(checks.find(({ id }) => id === 'app.url')?.status).toBe('fail');
     expect(checks.find(({ id }) => id === 'app.keychain-service')?.status).toBe('fail');
     expect(JSON.stringify(checks)).not.toContain(credentials.token);
+  });
+
+  test('ignores unrelated API endpoints outside FeedbackKit configuration', () => {
+    const checks = inspectHostAppFiles([
+      {
+        path: '/App/Package.resolved',
+        content: JSON.stringify({
+          pins: [{ identity: 'feedbackkit', state: { version: '0.2.0' } }],
+        }),
+      },
+      {
+        path: '/App/FeedbackCenter.swift',
+        content: `
+          let appBackend = APIClient(
+            baseURL: URL(string: "https://backend.example.com/v1/api")!
+          )
+          let feedback = try FeedbackConfiguration(
+            productKey: "${product.publishableKey}"
+          )
+        `,
+      },
+    ], { ...credentials, baseUrl: DEFAULT_BASE_URL }, product);
+
+    expect(checks.find(({ id }) => id === 'app.url')).toMatchObject({ status: 'pass' });
+  });
+
+  test('warns for unresolved endpoint, Keychain, and language overrides', () => {
+    const checks = inspectHostAppFiles([
+      {
+        path: '/App/Package.resolved',
+        content: JSON.stringify({
+          pins: [{ identity: 'feedbackkit', state: { version: '0.2.0' } }],
+        }),
+      },
+      {
+        path: '/App/Info.plist',
+        content: '<key>FeedbackServerBaseURL</key><string>$(FEEDBACK_SERVER_URL)</string>',
+      },
+      {
+        path: '/App/FeedbackCenter.swift',
+        content: `
+          let configuration = try FeedbackConfiguration(
+            productKey: "${product.publishableKey}",
+            keychainService: visitorService,
+            languagePolicy: configuredLanguagePolicy
+          )
+        `,
+      },
+    ], { ...credentials, baseUrl: DEFAULT_BASE_URL }, product);
+
+    expect(checks.find(({ id }) => id === 'app.url')).toMatchObject({ status: 'warn' });
+    expect(checks.find(({ id }) => id === 'app.keychain-service')).toMatchObject({
+      status: 'warn',
+    });
+    expect(checks.find(({ id }) => id === 'app.language')).toMatchObject({ status: 'warn' });
+    expect(checks.filter(({ status }) => status === 'fail')).toEqual([]);
   });
 
   test('marks a verified host App complete in shared onboarding output', async () => {

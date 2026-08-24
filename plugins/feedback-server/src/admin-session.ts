@@ -5,10 +5,12 @@ import {
   addPendingTokenRevocation,
   deleteKeychainCredentials,
   deleteKeychainProfileCredentials,
+  KEYCHAIN_ACCOUNT,
   normalizeBaseUrl,
   readPendingTokenRevocations,
   readKeychainCredentials,
   readKeychainProfileCredentials,
+  readKeychainReferencedTokenIds,
   removePendingTokenRevocation,
   resumeKeychainCredentialCleanup,
   resumeKeychainProfileCredentialCleanup,
@@ -77,6 +79,7 @@ export interface ConfigurationDependencies {
   revokeToken: typeof revokeAgentToken;
   logout: typeof logout;
   readPendingRevocations: () => Promise<PendingTokenRevocation[]>;
+  readReferencedTokenIds: () => Promise<Set<string>>;
   addPendingRevocation: (entry: PendingTokenRevocation) => Promise<void>;
   removePendingRevocation: (entry: PendingTokenRevocation) => Promise<void>;
 }
@@ -257,6 +260,7 @@ function defaultConfigurationDependencies(profile?: string): ConfigurationDepend
     revokeToken: revokeAgentToken,
     logout,
     readPendingRevocations: readPendingTokenRevocations,
+    readReferencedTokenIds: readKeychainReferencedTokenIds,
     addPendingRevocation: addPendingTokenRevocation,
     removePendingRevocation: removePendingTokenRevocation,
   };
@@ -270,8 +274,9 @@ function pendingRevocation(
   baseUrl: string,
   username: string,
   tokenId: string,
+  profile: string,
 ): PendingTokenRevocation {
-  return { baseUrl, username, tokenId };
+  return { baseUrl, username, tokenId, profile };
 }
 
 async function revokeOrAcceptMissing(
@@ -291,17 +296,24 @@ async function revokePendingAgentTokens(
   credentials: StoredCredentials | undefined,
   baseUrl: string,
   username: string,
+  profile: string,
   accessToken: string,
   dependencies: ConfigurationDependencies,
 ): Promise<void> {
   for (const tokenId of credentials?.pendingRevocationTokenIds ?? []) {
-    await dependencies.addPendingRevocation(pendingRevocation(baseUrl, username, tokenId));
+    await dependencies.addPendingRevocation(
+      pendingRevocation(baseUrl, username, tokenId, profile),
+    );
   }
+  const referencedTokenIds = await dependencies.readReferencedTokenIds();
   const entries = await dependencies.readPendingRevocations();
   for (const entry of entries) {
     if (normalizeBaseUrl(entry.baseUrl) !== baseUrl || entry.username !== username) continue;
+    if (entry.profile !== undefined && entry.profile !== profile) continue;
     if (entry.tokenId !== credentials?.tokenId) {
-      await revokeOrAcceptMissing(baseUrl, accessToken, entry.tokenId, dependencies);
+      if (!referencedTokenIds.has(entry.tokenId)) {
+        await revokeOrAcceptMissing(baseUrl, accessToken, entry.tokenId, dependencies);
+      }
     }
     await dependencies.removePendingRevocation(entry);
   }
@@ -358,6 +370,7 @@ export async function configureAgent(input: {
   profile?: string;
 }, dependencies: ConfigurationDependencies = defaultConfigurationDependencies(input.profile)): Promise<StoredCredentials> {
   const baseUrl = normalizeBaseUrl(input.baseUrl);
+  const profile = input.profile ?? KEYCHAIN_ACCOUNT;
   const previous = await dependencies.readCredentials();
   if (previous && normalizeBaseUrl(previous.baseUrl) !== baseUrl) {
     throw new Error(
@@ -375,13 +388,14 @@ export async function configureAgent(input: {
       previous,
       baseUrl,
       input.username,
+      profile,
       session.accessToken,
       dependencies,
     );
     const created = await dependencies.createToken(baseUrl, session.accessToken);
-    const createdEntry = pendingRevocation(baseUrl, input.username, created.id);
+    const createdEntry = pendingRevocation(baseUrl, input.username, created.id, profile);
     const previousEntry = previous?.tokenId
-      ? pendingRevocation(baseUrl, input.username, previous.tokenId)
+      ? pendingRevocation(baseUrl, input.username, previous.tokenId, profile)
       : undefined;
     try {
       await dependencies.addPendingRevocation(createdEntry);
@@ -418,6 +432,7 @@ export async function configureAgent(input: {
       credentials,
       baseUrl,
       input.username,
+      profile,
       session.accessToken,
       dependencies,
     );
@@ -444,12 +459,14 @@ export async function disconnectAgent(input: {
   const stored = await dependencies.readCredentials();
   if (!stored) return false;
   const baseUrl = normalizeBaseUrl(stored.baseUrl);
+  const profile = input.profile ?? KEYCHAIN_ACCOUNT;
   const session = await dependencies.login(baseUrl, input.username, input.password);
   try {
     await revokePendingAgentTokens(
       stored,
       baseUrl,
       input.username,
+      profile,
       session.accessToken,
       dependencies,
     );
@@ -479,10 +496,17 @@ export async function revokeAgentTokenById(input: {
 }, dependencies: ConfigurationDependencies = defaultConfigurationDependencies()): Promise<void> {
   const baseUrl = normalizeBaseUrl(input.baseUrl);
   const session = await dependencies.login(baseUrl, input.username, input.password);
-  const entry = pendingRevocation(baseUrl, input.username, input.tokenId);
   try {
     await revokeOrAcceptMissing(baseUrl, session.accessToken, input.tokenId, dependencies);
-    await dependencies.removePendingRevocation(entry);
+    for (const entry of await dependencies.readPendingRevocations()) {
+      if (
+        normalizeBaseUrl(entry.baseUrl) === baseUrl
+        && entry.username === input.username
+        && entry.tokenId === input.tokenId
+      ) {
+        await dependencies.removePendingRevocation(entry);
+      }
+    }
   } finally {
     try {
       await dependencies.logout(baseUrl, session.refreshToken);

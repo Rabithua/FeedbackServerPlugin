@@ -6,6 +6,7 @@ describe('local setup preparation', () => {
     const result = prepareLocalSetup(
       { flow: 'configure_account' },
       "/tmp/Feedback Server's Plugin/bin/feedback-server",
+      'darwin',
     );
     expect(result).toMatchObject({
       status: 'ready',
@@ -23,6 +24,7 @@ describe('local setup preparation', () => {
     const result = prepareLocalSetup(
       { flow: 'configure_account', profile: 'work.production' },
       '/tmp/plugin/bin/feedback-server',
+      'darwin',
     );
     expect(result.command).toBe(
       "'/tmp/plugin/bin/feedback-server' 'agent' 'configure' '--profile' 'work.production'",
@@ -36,7 +38,7 @@ describe('local setup preparation', () => {
       invitationToken: `fsinv_${'x'.repeat(48)}`,
       username: 'invited-admin',
       displayName: "O'Connor Admin",
-    }, '/tmp/plugin/bin/feedback-server');
+    }, '/tmp/plugin/bin/feedback-server', 'darwin');
     expect(result.command).toContain("'admin' 'accept-invite'");
     expect(result.command).toContain("'https://feedback.example.com/v1/api'");
     expect(result.command).toContain("'O'\\''Connor Admin'");
@@ -61,5 +63,13 @@ describe('local setup preparation', () => {
       displayName: 'Invited Admin',
       profile: 'work',
     }, '/tmp/plugin/bin/feedback-server')).toThrow('profile is only valid');
+  });
+
+  test('rejects automatic setup on platforms without macOS Keychain', () => {
+    expect(() => prepareLocalSetup(
+      { flow: 'configure_account' },
+      '/tmp/plugin/bin/feedback-server',
+      'linux',
+    )).toThrow('FEEDBACK_SERVER_BASE_URL and FEEDBACK_SERVER_API_TOKEN together');
   });
 });

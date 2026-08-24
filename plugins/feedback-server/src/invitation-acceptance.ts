@@ -10,10 +10,12 @@ import {
 } from './admin-session.js';
 import {
   addPendingTokenRevocation,
+  KEYCHAIN_ACCOUNT,
   normalizeBaseUrl,
   readPendingTokenRevocations,
   readKeychainCredentials,
   readKeychainProfileCredentials,
+  readKeychainReferencedTokenIds,
   removePendingTokenRevocation,
   writeKeychainCredentials,
   writeKeychainProfileCredentials,
@@ -79,6 +81,7 @@ export interface InvitationAcceptanceDependencies {
   revokeToken: typeof revokeAgentToken;
   logout: typeof logout;
   readPendingRevocations: () => Promise<PendingTokenRevocation[]>;
+  readReferencedTokenIds: () => Promise<Set<string>>;
   addPendingRevocation: (entry: PendingTokenRevocation) => Promise<void>;
   removePendingRevocation: (entry: PendingTokenRevocation) => Promise<void>;
 }
@@ -99,6 +102,7 @@ function defaultDependencies(profile?: string): InvitationAcceptanceDependencies
     revokeToken: revokeAgentToken,
     logout,
     readPendingRevocations: readPendingTokenRevocations,
+    readReferencedTokenIds: readKeychainReferencedTokenIds,
     addPendingRevocation: addPendingTokenRevocation,
     removePendingRevocation: removePendingTokenRevocation,
   };
@@ -152,12 +156,17 @@ async function revokeOrAcceptMissing(
 async function retryPendingRevocations(
   baseUrl: string,
   username: string,
+  profile: string,
   accessToken: string,
   dependencies: InvitationAcceptanceDependencies,
 ): Promise<void> {
+  const referencedTokenIds = await dependencies.readReferencedTokenIds();
   for (const entry of await dependencies.readPendingRevocations()) {
     if (normalizeBaseUrl(entry.baseUrl) !== baseUrl || entry.username !== username) continue;
-    await revokeOrAcceptMissing(baseUrl, accessToken, entry.tokenId, dependencies);
+    if (entry.profile !== undefined && entry.profile !== profile) continue;
+    if (!referencedTokenIds.has(entry.tokenId)) {
+      await revokeOrAcceptMissing(baseUrl, accessToken, entry.tokenId, dependencies);
+    }
     await dependencies.removePendingRevocation(entry);
   }
 }
@@ -208,6 +217,7 @@ export async function acceptInvitationAndConfigure(
   if (existing) throw new AgentAlreadyConfiguredError(existing);
 
   const baseUrl = normalizeBaseUrl(input.baseUrl);
+  const profile = input.profile ?? KEYCHAIN_ACCOUNT;
   let accepted: AcceptedInvitation;
   try {
     accepted = await dependencies.acceptInvitation(baseUrl, {
@@ -241,6 +251,7 @@ export async function acceptInvitationAndConfigure(
     await retryPendingRevocations(
       baseUrl,
       input.username,
+      profile,
       verified.accessToken,
       dependencies,
     );
@@ -250,6 +261,7 @@ export async function acceptInvitationAndConfigure(
       baseUrl,
       username: input.username,
       tokenId: created.id,
+      profile,
     };
     try {
       await dependencies.addPendingRevocation(pendingEntry);
