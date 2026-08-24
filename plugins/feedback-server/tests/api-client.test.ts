@@ -14,6 +14,7 @@ import {
   SECURITY_EXECUTABLE,
   SECURITY_EXPECT_EXECUTABLE,
   SECURITY_EXECUTABLE_FALLBACK,
+  SECURITY_LAUNCH_FAILURE_MARKER,
   SECURITY_SECRET_PROMPT_SCRIPT,
   SECURITY_SHELL_EXECUTABLE,
   deleteKeychainCredentialRecord,
@@ -30,6 +31,7 @@ import {
   resumeKeychainCredentialRecordCleanup,
   securityCommandCandidates,
   securitySecretPromptCommand,
+  runSecurityCandidateChain,
   writeKeychainAdminPassword,
   writeKeychainPendingTokenRevocations,
   writeKeychainCredentialRecord,
@@ -37,6 +39,25 @@ import {
 } from '../src/credentials.js';
 
 const token = `fspat_${'a'.repeat(64)}`;
+const macOSTest = process.platform === 'darwin' ? test : test.skip;
+
+async function runHiddenPromptCommand(command: string[], secret: string) {
+  const subprocess = Bun.spawn({
+    cmd: securitySecretPromptCommand(command),
+    stdin: 'pipe',
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const stdin = subprocess.stdin;
+  await stdin.write(`${secret}\n${secret}\n`);
+  await stdin.end();
+  const [exitCode, stdout, stderr] = await Promise.all([
+    subprocess.exited,
+    new Response(subprocess.stdout).text(),
+    new Response(subprocess.stderr).text(),
+  ]);
+  return { exitCode, stdout, stderr };
+}
 
 async function withPlatform<T>(platform: NodeJS.Platform, operation: () => Promise<T>): Promise<T> {
   const previousPlatform = process.platform;
@@ -102,6 +123,87 @@ describe('credentials and API client', () => {
     expect(command.at(-1)).toBe('-w');
     expect(command.join(' ')).not.toContain(token);
     expect(SECURITY_SECRET_PROMPT_SCRIPT).toEndWith('/scripts/keychain-secret.exp');
+  });
+
+  test('falls back when the hidden prompt wrapper cannot launch its inner executable', async () => {
+    const commands = [['/missing/security'], [SECURITY_EXECUTABLE]];
+    const calls: string[][] = [];
+    const result = await runSecurityCandidateChain(
+      commands,
+      'dummy-secret\ndummy-secret\n',
+      (command) => {
+        calls.push(command);
+        return Promise.resolve(command === commands[0]
+          ? {
+              exitCode: 127,
+              stdout: '',
+              stderr: `${SECURITY_LAUNCH_FAILURE_MARKER}couldn't execute /missing/security\n`,
+            }
+          : { exitCode: 0, stdout: '', stderr: '' });
+      },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(calls).toEqual(commands);
+  });
+
+  test('does not retry genuine Keychain command failures', async () => {
+    const commands = [[SECURITY_EXECUTABLE], [SECURITY_EXECUTABLE_FALLBACK]];
+    const calls: string[][] = [];
+    const result = await runSecurityCandidateChain(
+      commands,
+      'dummy-secret\ndummy-secret\n',
+      (command) => {
+        calls.push(command);
+        return Promise.resolve({
+          exitCode: 36,
+          stdout: '',
+          stderr: 'User interaction is not allowed.',
+        });
+      },
+    );
+
+    expect(result).toEqual({
+      exitCode: 36,
+      stdout: '',
+      stderr: 'User interaction is not allowed.',
+    });
+    expect(calls).toEqual([commands[0]!]);
+  });
+
+  macOSTest('marks a missing wrapped executable so the caller can fall back', async () => {
+    const secret = 'hidden-launch-test-secret';
+    const result = await runHiddenPromptCommand(
+      ['/definitely/missing/feedback-server-security'],
+      secret,
+    );
+
+    expect(result.exitCode).toBe(127);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain(SECURITY_LAUNCH_FAILURE_MARKER);
+    expect(`${result.stdout}${result.stderr}`).not.toContain(secret);
+  });
+
+  macOSTest('forwards child diagnostics while redacting hidden input', async () => {
+    const secret = 'hidden-diagnostic-test-secret';
+    const result = await runHiddenPromptCommand(
+      [
+        '/bin/sh',
+        '-c',
+        'stty -echo; printf "password data for new item: "; IFS= read -r first; '
+          + 'printf "retype password for new item: "; IFS= read -r second; '
+          + 'printf "Keychain locked for %s\\n" "$first" >&2; exit 36',
+      ],
+      secret,
+    );
+
+    expect(result.exitCode).toBe(36);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Keychain locked');
+    expect(result.stderr).toContain('[REDACTED_SECRET]');
+    expect(`${result.stdout}${result.stderr}`).not.toContain(secret);
+    expect(result.stderr.toLowerCase()).not.toContain('password data');
+    expect(result.stderr.toLowerCase()).not.toContain('retype password');
   });
 
   test('normalizes API roots and requires paired environment credentials', async () => {

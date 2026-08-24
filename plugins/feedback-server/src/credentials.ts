@@ -18,6 +18,7 @@ export const SECURITY_EXECUTABLE = '/usr/bin/security';
 export const SECURITY_EXECUTABLE_FALLBACK = 'security';
 export const SECURITY_SHELL_EXECUTABLE = '/bin/sh';
 export const SECURITY_EXPECT_EXECUTABLE = '/usr/bin/expect';
+export const SECURITY_LAUNCH_FAILURE_MARKER = 'feedback-server-security-launch-failed:';
 export const MAX_KEYCHAIN_PROFILES = 100;
 export const SECURITY_SECRET_PROMPT_SCRIPT = fileURLToPath(
   new URL('../scripts/keychain-secret.exp', import.meta.url),
@@ -134,11 +135,26 @@ async function runSecurity(
   args: string[],
   input?: string,
 ): Promise<SecurityCommandResult> {
+  return runSecurityCandidateChain(
+    securityCommandCandidates(args),
+    input,
+    runSecurityCommand,
+  );
+}
+
+export async function runSecurityCandidateChain(
+  commands: string[][],
+  input: string | undefined,
+  runner: SecurityCommandRunner,
+): Promise<SecurityCommandResult> {
   const launchErrors: string[] = [];
 
-  for (const command of securityCommandCandidates(args)) {
+  for (const command of commands) {
     try {
-      return await runSecurityCommand(command, input);
+      const result = await runner(command, input);
+      const wrappedLaunchError = wrappedExecutableMissingError(result);
+      if (!wrappedLaunchError) return result;
+      launchErrors.push(wrappedLaunchError);
     } catch (error) {
       if (!isExecutableMissingError(error)) throw error;
       launchErrors.push(error instanceof Error ? error.message : String(error));
@@ -150,6 +166,17 @@ async function runSecurity(
       launchErrors.join('; ')
     }`,
   );
+}
+
+function wrappedExecutableMissingError(result: SecurityCommandResult): string | undefined {
+  if (result.exitCode !== 127) return undefined;
+  const markerIndex = result.stderr.indexOf(SECURITY_LAUNCH_FAILURE_MARKER);
+  if (markerIndex < 0) return undefined;
+  const detail = result.stderr
+    .slice(markerIndex + SECURITY_LAUNCH_FAILURE_MARKER.length)
+    .split(/\r?\n/u, 1)[0]
+    ?.trim();
+  return detail || 'Wrapped Keychain executable could not be started';
 }
 
 export function securityCommandCandidates(

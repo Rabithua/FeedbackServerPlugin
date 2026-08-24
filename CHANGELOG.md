@@ -2,6 +2,11 @@
 
 All notable changes to FeedbackServer Plugin are documented here.
 
+## 0.10.3 - 2026-08-24
+
+- Continue through macOS Keychain executable fallbacks when the hidden prompt wrapper cannot launch a configured `security` candidate.
+- Preserve actionable Keychain diagnostics while redacting password prompts and secret input.
+
 ## 0.10.2 - 2026-08-24
 
 - Write PATs and administrator passwords through a hidden pseudo-terminal so macOS Keychain never prompts the user or receives an empty secret.
