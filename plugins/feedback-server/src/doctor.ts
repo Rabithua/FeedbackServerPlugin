@@ -216,29 +216,35 @@ function localeLanguage(value: string): string {
 
 function swiftFeedbackConfigurationArguments(content: string): string[] {
   const arguments_: string[] = [];
-  for (const match of content.matchAll(/\bFeedback(?:Center)?Configuration\s*\(/g)) {
-    const openParenthesis = match.index + match[0].lastIndexOf('(');
-    let depth = 0;
-    let quoted = false;
-    let escaped = false;
-    for (let index = openParenthesis; index < content.length; index += 1) {
-      const character = content[index];
-      if (quoted) {
-        if (escaped) escaped = false;
-        else if (character === '\\') escaped = true;
-        else if (character === '"') quoted = false;
-        continue;
-      }
-      if (character === '"') {
-        quoted = true;
-        continue;
-      }
-      if (character === '(') depth += 1;
-      else if (character === ')') {
-        depth -= 1;
-        if (depth === 0) {
-          arguments_.push(content.slice(openParenthesis + 1, index));
-          break;
+  const patterns = [
+    /\bFeedback(?:Center)?Configuration(?:\.init)?\s*\(/g,
+    /:\s*Feedback(?:Center)?Configuration\s*=\s*\.init\s*\(/g,
+  ];
+  for (const pattern of patterns) {
+    for (const match of content.matchAll(pattern)) {
+      const openParenthesis = match.index + match[0].lastIndexOf('(');
+      let depth = 0;
+      let quoted = false;
+      let escaped = false;
+      for (let index = openParenthesis; index < content.length; index += 1) {
+        const character = content[index];
+        if (quoted) {
+          if (escaped) escaped = false;
+          else if (character === '\\') escaped = true;
+          else if (character === '"') quoted = false;
+          continue;
+        }
+        if (character === '"') {
+          quoted = true;
+          continue;
+        }
+        if (character === '(') depth += 1;
+        else if (character === ')') {
+          depth -= 1;
+          if (depth === 0) {
+            arguments_.push(content.slice(openParenthesis + 1, index));
+            break;
+          }
         }
       }
     }

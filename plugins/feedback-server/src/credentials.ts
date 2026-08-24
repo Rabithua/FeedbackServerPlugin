@@ -517,6 +517,29 @@ async function readCredentialPointer(
   return normalizeStoredCredentials({ ...metadata, token });
 }
 
+async function readCredentialTokenIdPointer(
+  service: string,
+  account: string,
+  runner: SecurityCommandRunner,
+): Promise<string | undefined> {
+  const pointer = await readKeychainValue(service, account, runner);
+  if (!pointer) return undefined;
+
+  const recordId = keychainRecordIdSchema.safeParse(pointer);
+  if (!recordId.success) {
+    return normalizeStoredCredentials(JSON.parse(pointer)).tokenId;
+  }
+  const metadataValue = await readKeychainValue(
+    KEYCHAIN_METADATA_SERVICE,
+    recordId.data,
+    runner,
+  );
+  if (!metadataValue) {
+    throw new Error('FeedbackServer credential metadata in Keychain is incomplete');
+  }
+  return credentialMetadataSchema.parse(JSON.parse(metadataValue)).tokenId;
+}
+
 export async function readKeychainCredentialRecord(
   runner: SecurityCommandRunner,
 ): Promise<StoredCredentials | undefined> {
@@ -567,14 +590,11 @@ export async function readKeychainReferencedTokenIds(
   if (process.platform !== 'darwin') return new Set();
   await migrateLegacyDefaultProfile(runner);
   const profiles = await readProfileIndex(runner);
-  const credentials = await Promise.all(
+  const tokenIds = await Promise.all(
     profiles.map((profile) =>
-      readCredentialPointer(KEYCHAIN_PROFILE_POINTER_SERVICE, profile, runner)),
+      readCredentialTokenIdPointer(KEYCHAIN_PROFILE_POINTER_SERVICE, profile, runner)),
   );
-  return new Set(
-    credentials
-      .flatMap((entry) => entry?.tokenId ? [entry.tokenId] : []),
-  );
+  return new Set(tokenIds.flatMap((tokenId) => tokenId ? [tokenId] : []));
 }
 
 export async function useKeychainProfile(
@@ -872,6 +892,7 @@ export async function writeKeychainProfileCredentials(
     await setActiveProfile(parsedProfile, runner);
   } catch (error) {
     const rollbackErrors: unknown[] = [error];
+    let pointerMovedAwayFromRecord = false;
     try {
       if (previousPointer) {
         await writeKeychainValue(
@@ -879,24 +900,27 @@ export async function writeKeychainProfileCredentials(
           `the previous FeedbackServer profile ${parsedProfile}`,
           runner,
         );
+        pointerMovedAwayFromRecord = true;
       } else if (!(await deleteKeychainItem(
         KEYCHAIN_PROFILE_POINTER_SERVICE,
         parsedProfile,
         runner,
       ))) {
         throw new Error(`Unable to remove the incomplete FeedbackServer profile ${parsedProfile}`);
+      } else {
+        pointerMovedAwayFromRecord = true;
       }
     } catch (rollbackError) {
       rollbackErrors.push(rollbackError);
     }
-    if (!wasIndexed) {
+    if (pointerMovedAwayFromRecord && !wasIndexed) {
       try {
         await writeProfileIndex(profiles, runner);
       } catch (rollbackError) {
         rollbackErrors.push(rollbackError);
       }
     }
-    if (!(await deleteKeychainRecord(recordId, runner))) {
+    if (pointerMovedAwayFromRecord && !(await deleteKeychainRecord(recordId, runner))) {
       rollbackErrors.push(new Error('Unable to remove the uncommitted FeedbackServer credential record'));
     }
     throw rollbackErrors.length === 1

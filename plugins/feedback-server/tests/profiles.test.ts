@@ -279,6 +279,58 @@ describe('global named profiles', () => {
     });
   });
 
+  test('preserves a credential record when pointer rollback is uncertain', async () => {
+    await withDarwin(async () => {
+      const keychain = memoryKeychain();
+      const runner: SecurityCommandRunner = (args, input) => {
+        if (
+          args[0] === 'add-generic-password'
+          && args.includes(KEYCHAIN_ACTIVE_PROFILE_SERVICE)
+        ) {
+          return Promise.resolve({
+            exitCode: 1,
+            stdout: '',
+            stderr: 'simulated active-profile interruption',
+          });
+        }
+        if (
+          args[0] === 'delete-generic-password'
+          && args.includes(KEYCHAIN_PROFILE_POINTER_SERVICE)
+        ) {
+          return Promise.resolve({
+            exitCode: 1,
+            stdout: '',
+            stderr: 'simulated pointer rollback interruption',
+          });
+        }
+        return keychain.runner(args, input);
+      };
+
+      const error = await capturedError(writeKeychainProfileCredentials(
+        {
+          baseUrl: 'https://work.example.com/v1/api',
+          token: firstToken,
+          tokenId: secondRecordId,
+        },
+        'work',
+        runner,
+        () => firstRecordId,
+      ));
+
+      expect(error).toBeInstanceOf(AggregateError);
+      expect(keychain.items.get(key(KEYCHAIN_PROFILE_POINTER_SERVICE, 'work')))
+        .toBe(firstRecordId);
+      expect(keychain.items.get(key(KEYCHAIN_TOKEN_SERVICE, firstRecordId))).toBe(firstToken);
+      expect(JSON.parse(
+        keychain.items.get(key(KEYCHAIN_PROFILE_INDEX_SERVICE, KEYCHAIN_ACCOUNT)) ?? '{}',
+      )).toEqual({ version: 1, profiles: ['work'] });
+      expect(await readKeychainProfileCredentials('work', keychain.runner)).toMatchObject({
+        token: firstToken,
+        tokenId: secondRecordId,
+      });
+    });
+  });
+
   test('reports every PAT token ID still referenced by a profile', async () => {
     await withDarwin(async () => {
       const keychain = memoryKeychain();
@@ -303,7 +355,17 @@ describe('global named profiles', () => {
         () => secondRecordId,
       );
 
-      expect(await readKeychainReferencedTokenIds(keychain.runner)).toEqual(
+      const runner: SecurityCommandRunner = (args, input) => {
+        if (args[0] === 'find-generic-password' && args.includes(KEYCHAIN_TOKEN_SERVICE)) {
+          return Promise.resolve({
+            exitCode: 1,
+            stdout: '',
+            stderr: 'PAT access is intentionally denied',
+          });
+        }
+        return keychain.runner(args, input);
+      };
+      expect(await readKeychainReferencedTokenIds(runner)).toEqual(
         new Set([firstRecordId, secondRecordId]),
       );
     });
