@@ -2,6 +2,13 @@
 
 All notable changes to FeedbackServer Plugin are documented here.
 
+## 0.10.1 - 2026-08-24
+
+- Validate and normalize account-email endpoints before transmitting passwords or verification codes.
+- Require an interactive terminal before requesting password-reset email, and warn when email binding cannot close its temporary session.
+- Store the server-returned canonical username after verified-email login.
+- Make Doctor identify PATs that lack the `waitlist:invite` scope.
+
 ## 0.10.0 - 2026-08-24
 
 - Add explicitly confirmed waitlist invitation send, retry, and revoke tools with typed Free/Solo/Studio grants.
