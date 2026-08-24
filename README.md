@@ -2,7 +2,7 @@
 
 FeedbackKit connects Codex and Claude Code to FeedbackServer for Product setup, user-feedback
 triage, roadmap and release publishing, waitlist invitations, notifications, and audit history.
-Version 0.11.0 introduces Agent-first, passwordless onboarding.
+Version 0.11 introduces Agent-first, passwordless onboarding.
 
 ## Install
 
@@ -53,7 +53,7 @@ feedbackkit profile use work
 feedbackkit profile remove work
 ```
 
-Android and Web can create the account and Product in 0.11.0; automatic SDK integration is currently
+Android and Web can create the account and Product in 0.11; automatic SDK integration is currently
 Apple-only.
 
 ## Security model

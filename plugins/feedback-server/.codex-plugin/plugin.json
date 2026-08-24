@@ -1,6 +1,6 @@
 {
   "name": "feedback-server",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "Agent-first setup and management for FeedbackKit products, feedback, waitlists, activity, roadmaps, releases, and notifications.",
   "author": {
     "name": "Rabithua",
@@ -34,7 +34,7 @@
       "cwd": ".",
       "command": "bun",
       "args": [
-        "./dist/server.mjs"
+        "./bin/feedbackkit-mcp"
       ]
     }
   }

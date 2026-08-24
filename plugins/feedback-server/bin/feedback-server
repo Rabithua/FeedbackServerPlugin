@@ -1,5 +1,15 @@
 #!/usr/bin/env bun
 
-import { main } from '../dist/cli.mjs';
+import { ensureRuntimeDependencies } from '../scripts/ensure-runtime-dependencies.ts';
 
+if (ensureRuntimeDependencies()) {
+  const relaunched = Bun.spawnSync({
+    cmd: [process.execPath, ...Bun.argv.slice(1)],
+    stdin: 'inherit',
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+  process.exit(relaunched.exitCode);
+}
+const { main } = await import('../dist/cli.mjs');
 await main(Bun.argv.slice(2));
