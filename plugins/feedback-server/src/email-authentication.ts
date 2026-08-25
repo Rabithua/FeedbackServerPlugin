@@ -15,13 +15,16 @@ import {
 import {
   DEFAULT_BASE_URL,
   KEYCHAIN_ACCOUNT,
+  MAX_KEYCHAIN_PROFILES,
   deletePendingEmailLogin,
   deletePendingReauthentication,
+  listKeychainProfiles,
   normalizeBaseUrl,
   preflightNativeCredentialStore,
   profileIdSchema,
   readActiveKeychainProfile,
   readKeychainProfileCredentials,
+  readKeychainReferencedTokenIds,
   readPendingEmailLogin,
   readPendingReauthentication,
   readRecentReauthentication,
@@ -51,6 +54,8 @@ export interface EmailLoginDependencies {
   preflight: typeof preflightNativeCredentialStore;
   readActiveProfile: typeof readActiveKeychainProfile;
   readProfile: typeof readKeychainProfileCredentials;
+  listProfiles: typeof listKeychainProfiles;
+  referencedTokenIds: typeof readKeychainReferencedTokenIds;
   writeProfile: typeof writeKeychainProfileCredentials;
   writePending: typeof writePendingEmailLogin;
   readPending: typeof readPendingEmailLogin;
@@ -65,6 +70,8 @@ const emailLoginDependencies: EmailLoginDependencies = {
   preflight: preflightNativeCredentialStore,
   readActiveProfile: readActiveKeychainProfile,
   readProfile: readKeychainProfileCredentials,
+  listProfiles: listKeychainProfiles,
+  referencedTokenIds: readKeychainReferencedTokenIds,
   writeProfile: writeKeychainProfileCredentials,
   writePending: writePendingEmailLogin,
   readPending: readPendingEmailLogin,
@@ -112,6 +119,16 @@ export async function requestAgentEmailLogin(input: {
   if (existing && !input.replaceExisting) {
     throw new EmailLoginProfileConflictError(profile, existing.email);
   }
+  const profiles = existing ? [] : await dependencies.listProfiles();
+  if (
+    !existing
+    && !profiles.some(({ name }) => name === profile)
+    && profiles.length >= MAX_KEYCHAIN_PROFILES
+  ) {
+    throw new Error(
+      `FeedbackKit already has ${MAX_KEYCHAIN_PROFILES} profiles. Remove or reuse one before requesting email.`,
+    );
+  }
   const baseUrl = normalizeBaseUrl(input.baseUrl ?? DEFAULT_BASE_URL);
   const email = input.email.trim().toLowerCase();
   const requestId = randomUUID();
@@ -134,7 +151,8 @@ export async function requestAgentEmailLogin(input: {
     credentialName,
     profile,
     replaceExisting: input.replaceExisting ?? false,
-    previousTokenId: existing?.tokenId ?? null,
+    previousCredentials: existing ?? null,
+    acceptedTokenId: null,
     expiresAt: new Date(challenge.expiresAt).toISOString(),
   });
   return {
@@ -164,14 +182,17 @@ export async function completeAgentEmailLogin(input: {
   const pending = await dependencies.readPending(input.requestId);
   if (!pending) throw new Error('Email login request is unavailable or expired');
   const existing = await dependencies.readProfile(pending.profile);
-  if (
-    (!pending.replaceExisting && existing)
-    || (pending.previousTokenId && existing?.tokenId !== pending.previousTokenId)
-    || (!pending.previousTokenId && existing)
-  ) {
+  const expectedExistingTokenIds = new Set([
+    pending.previousCredentials?.tokenId,
+    pending.acceptedTokenId,
+  ].filter((value): value is string => Boolean(value)));
+  if (existing && (
+    expectedExistingTokenIds.size === 0
+    || !expectedExistingTokenIds.has(existing.tokenId)
+  )) {
     throw new EmailLoginProfileConflictError(
       pending.profile,
-      existing?.email ?? 'another account',
+      existing.email,
       true,
     );
   }
@@ -190,6 +211,11 @@ export async function completeAgentEmailLogin(input: {
   if (accepted.enrollmentId !== pending.requestId || accepted.admin.email !== pending.email) {
     throw new Error('FeedbackKit returned an unexpected Agent enrollment');
   }
+  await dependencies.writePending({
+    ...pending,
+    acceptedTokenId: accepted.credential.id,
+    expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+  });
   const credentials: StoredCredentials = {
     baseUrl: pending.baseUrl,
     adminId: accepted.admin.id,
@@ -213,10 +239,16 @@ export async function completeAgentEmailLogin(input: {
   await dependencies.deletePending(pending.requestId).catch(() => undefined);
 
   let previousCredentialRevoked: boolean | null = null;
-  if (existing && pending.replaceExisting) {
+  if (pending.previousCredentials && pending.replaceExisting) {
     try {
-      await dependencies.revokePrevious(existing.baseUrl, existing.token);
-      previousCredentialRevoked = true;
+      const referencedTokenIds = await dependencies.referencedTokenIds();
+      if (!referencedTokenIds.has(pending.previousCredentials.tokenId)) {
+        await dependencies.revokePrevious(
+          pending.previousCredentials.baseUrl,
+          pending.previousCredentials.token,
+        );
+        previousCredentialRevoked = true;
+      }
     } catch {
       previousCredentialRevoked = false;
     }

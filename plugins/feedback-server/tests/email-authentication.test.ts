@@ -42,6 +42,8 @@ function dependencies(overrides: Partial<EmailLoginDependencies> = {}): EmailLog
     preflight: () => Promise.resolve(),
     readActiveProfile: () => Promise.resolve(undefined),
     readProfile: () => Promise.resolve(undefined),
+    listProfiles: () => Promise.resolve([]),
+    referencedTokenIds: () => Promise.resolve(new Set()),
     writeProfile: () => Promise.resolve(),
     writePending: () => Promise.resolve(),
     readPending: () => Promise.resolve(undefined),
@@ -93,6 +95,24 @@ describe('Agent email login', () => {
     }
     expect(preflightError).toMatchObject({ message: 'locked keyring' });
     expect(requests).toBe(0);
+
+    let capacityError: unknown;
+    try {
+      await requestAgentEmailLogin({ email: 'owner@example.com', profile: 'new-profile' }, dependencies({
+        listProfiles: () => Promise.resolve(Array.from({ length: 100 }, (_, index) => ({
+          name: `profile-${index}`,
+          active: false,
+        }))),
+        request: () => {
+          requests += 1;
+          return Promise.reject(new Error('must not send'));
+        },
+      }));
+    } catch (error) {
+      capacityError = error;
+    }
+    expect(capacityError).toMatchObject({ message: expect.stringContaining('100 profiles') });
+    expect(requests).toBe(0);
   });
 
   test('stores enrollment state but returns no enrollment secret or PAT', async () => {
@@ -133,7 +153,8 @@ describe('Agent email login', () => {
       credentialName: accepted.credential.name,
       profile: 'work',
       replaceExisting: true,
-      previousTokenId: oldCredentials.tokenId,
+      previousCredentials: oldCredentials,
+      acceptedTokenId: null,
       expiresAt: '2099-08-25T01:00:00.000Z',
     };
     const events: string[] = [];
@@ -189,5 +210,107 @@ describe('Agent email login', () => {
     });
     expect(JSON.stringify(completed)).not.toContain(accepted.credential.token);
     expect(JSON.stringify(completed)).not.toContain(oldCredentials.token);
+  });
+
+  test('recovers when the new credential was written before Profile activation failed', async () => {
+    let pending: PendingEmailLogin = {
+      version: 1,
+      requestId: accepted.enrollmentId,
+      baseUrl: oldCredentials.baseUrl,
+      enrollmentSecret: `fsenr_${'s'.repeat(43)}`,
+      challengeId: '66666666-6666-4666-8666-666666666666',
+      email: accepted.admin.email,
+      credentialName: accepted.credential.name,
+      profile: 'work',
+      replaceExisting: true,
+      previousCredentials: oldCredentials,
+      acceptedTokenId: null,
+      expiresAt: '2099-08-25T01:00:00.000Z',
+    };
+    const newCredentials: StoredCredentials = {
+      baseUrl: oldCredentials.baseUrl,
+      adminId: accepted.admin.id,
+      email: accepted.admin.email,
+      tokenId: accepted.credential.id,
+      token: accepted.credential.token,
+      scopes: accepted.credential.scopes,
+      expiresAt: accepted.credential.expiresAt,
+    };
+    let profile = oldCredentials;
+    let writes = 0;
+    let acknowledgements = 0;
+    let revokedToken: string | undefined;
+    const deps = dependencies({
+      readPending: () => Promise.resolve(pending),
+      writePending: (value) => {
+        pending = value;
+        return Promise.resolve();
+      },
+      readProfile: () => Promise.resolve(profile),
+      confirm: () => Promise.resolve(accepted),
+      writeProfile: (value) => {
+        writes += 1;
+        profile = value;
+        if (writes === 1) return Promise.reject(new Error('active Profile write failed'));
+        return Promise.resolve();
+      },
+      acknowledge: () => {
+        acknowledgements += 1;
+        return Promise.resolve(null);
+      },
+      revokePrevious: (_baseUrl, token) => {
+        revokedToken = token;
+        return Promise.resolve();
+      },
+    });
+    let persistenceError: unknown;
+    try {
+      await completeAgentEmailLogin({ requestId: pending.requestId, code: '123456' }, deps);
+    } catch (error) {
+      persistenceError = error;
+    }
+    expect(persistenceError).toMatchObject({ message: 'active Profile write failed' });
+    expect(profile).toEqual(newCredentials);
+    expect(pending.acceptedTokenId).toBe(accepted.credential.id);
+
+    const completed = await completeAgentEmailLogin({
+      requestId: pending.requestId,
+      code: '123456',
+    }, deps);
+    expect(completed.acknowledged).toBe(true);
+    expect(acknowledgements).toBe(1);
+    expect(revokedToken).toBe(oldCredentials.token);
+  });
+
+  test('does not revoke a previous credential still referenced by another Profile', async () => {
+    const pending: PendingEmailLogin = {
+      version: 1,
+      requestId: accepted.enrollmentId,
+      baseUrl: oldCredentials.baseUrl,
+      enrollmentSecret: `fsenr_${'s'.repeat(43)}`,
+      challengeId: '66666666-6666-4666-8666-666666666666',
+      email: accepted.admin.email,
+      credentialName: accepted.credential.name,
+      profile: 'work',
+      replaceExisting: true,
+      previousCredentials: oldCredentials,
+      acceptedTokenId: null,
+      expiresAt: '2099-08-25T01:00:00.000Z',
+    };
+    let revocations = 0;
+    const completed = await completeAgentEmailLogin({
+      requestId: pending.requestId,
+      code: '123456',
+    }, dependencies({
+      readPending: () => Promise.resolve(pending),
+      readProfile: () => Promise.resolve(oldCredentials),
+      referencedTokenIds: () => Promise.resolve(new Set([oldCredentials.tokenId])),
+      revokePrevious: () => {
+        revocations += 1;
+        return Promise.resolve();
+      },
+    }));
+    expect(revocations).toBe(0);
+    expect(completed.previousCredentialRevoked).toBeNull();
   });
 });

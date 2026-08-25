@@ -39,7 +39,10 @@ export function redactPreview(value: unknown): unknown {
   if (value !== null && typeof value === 'object') {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>).map(([key, entry]) => {
+        const nonSecretCredentialMetadata = /^(tokenId|tokenPrefix|credentialName)$/i.test(key);
         if (
+          !nonSecretCredentialMetadata
+          &&
           /(password|token|device.?key|secret|credential|signed.?url)/i.test(key)
         ) {
           return [key, entry === undefined ? undefined : '[REDACTED]'];

@@ -52,7 +52,8 @@ const pendingEmailLoginSchema = z.object({
   credentialName: z.string().min(1).max(160),
   profile: profileIdSchema,
   replaceExisting: z.boolean(),
-  previousTokenId: z.uuid().nullable(),
+  previousCredentials: credentialSchema.nullable(),
+  acceptedTokenId: z.uuid().nullable(),
   expiresAt: z.iso.datetime(),
 }).strict();
 

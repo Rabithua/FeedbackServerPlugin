@@ -112,7 +112,8 @@ describe('native credential storage', () => {
       credentialName: 'Recovery Agent',
       profile: 'work',
       replaceExisting: false,
-      previousTokenId: null,
+      previousCredentials: null,
+      acceptedTokenId: null,
       expiresAt: '2099-08-25T00:00:00.000Z',
     }, keyring.factory);
     expect(await readPendingEmailLogin(requestId, keyring.factory)).toMatchObject({

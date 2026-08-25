@@ -75,12 +75,20 @@ describe('confirmation store', () => {
       redactPreview({
         serverUrl: 'https://api.day.app',
         deviceKey: 'private',
-        nested: { accessToken: 'private', title: 'Visible' },
+        nested: {
+          accessToken: 'private',
+          tokenId: '11111111-1111-4111-8111-111111111111',
+          title: 'Visible',
+        },
       }),
     ).toEqual({
       serverUrl: 'https://api.day.app',
       deviceKey: '[REDACTED]',
-      nested: { accessToken: '[REDACTED]', title: 'Visible' },
+      nested: {
+        accessToken: '[REDACTED]',
+        tokenId: '11111111-1111-4111-8111-111111111111',
+        title: 'Visible',
+      },
     });
   });
 
