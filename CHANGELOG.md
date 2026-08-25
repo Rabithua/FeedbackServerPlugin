@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.1 - 2026-08-25
+
+- Restore explicit Free, Solo, and Studio grants for confirmed waitlist invitations while keeping
+  Free as the safe default.
+- Require an explicit month, year, or perpetual term for paid grants and include the exact grant in
+  the protected send preview and API request.
+- Accept paid subscription metadata returned by passwordless invitation enrollment.
+
 ## 0.12.0 - 2026-08-25
 
 - Add credential-free Agent email login with six-digit codes pasted directly into the conversation,

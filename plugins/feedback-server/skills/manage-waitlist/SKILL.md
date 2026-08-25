@@ -15,7 +15,9 @@ entry. Valid status values are `new`, `contacted`, `invited`, `converted`, and `
 substitute archive for a requested permanent deletion or vice versa.
 
 Invitation email is a protected external effect. Use `invite_waitlist_entry` to preview the exact
-recipient, language, App, fixed Free plan, invitation expiry, and email summary. Show that preview, wait for explicit approval, then call
+recipient, language, App, subscription grant, invitation expiry, and email summary. The default is
+Free. Solo and Studio require an explicit month, year, or perpetual term; ask when the user names a
+paid plan without a term and never infer one. Show that preview, wait for explicit approval, then call
 `execute_confirmation` with the returned ID. Apply the same confirmation gate to
 `retry_waitlist_invitation_email`. Use `revoke_waitlist_invitation` when the user asks to cancel a
 pending invite; revocation prevents acceptance but cannot recall mail already accepted by the
@@ -25,7 +27,7 @@ token, into the current Agent conversation. Consume it immediately and do not re
 commands, logs, previews, tool output, or the final response.
 
 An invited signup cannot be permanently deleted until its pending invitation is revoked. Acceptance
-atomically creates the verified-email account, applies Free, issues the Agent credential, and changes
+atomically creates the verified-email account, applies the selected grant, issues the Agent credential, and changes
 the signup to `converted`. The recipient runs `feedbackkit accept-invite` in the current Agent task;
 never ask for a username, display name, or password.
 

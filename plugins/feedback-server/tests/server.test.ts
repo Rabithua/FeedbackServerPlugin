@@ -113,7 +113,11 @@ const toolScenarios: ToolScenario[] = [
   },
   {
     name: 'invite_waitlist_entry',
-    arguments: { entryId: productId, expiresInDays: 7 },
+    arguments: {
+      entryId: productId,
+      expiresInDays: 7,
+      subscriptionGrant: { plan: 'solo', term: 'year' },
+    },
     path: `/v1/api/admin/waitlist/${productId}/invitations`,
     method: 'POST',
     confirmation: 'risk',
@@ -443,7 +447,7 @@ function missingParameterDescriptions(schema: unknown, path = 'input'): string[]
   return missing;
 }
 
-describe('MCP server 0.12.0', () => {
+describe('MCP server 0.12.1', () => {
   const originalFetch = globalThis.fetch;
   let client: Client;
   let server: ReturnType<typeof createServer>;
@@ -846,7 +850,9 @@ describe('MCP server 0.12.0', () => {
             preview: {
               recipient: 'owner@example.com',
               locale: 'en',
-              subscriptionGrant: { plan: 'free' },
+              subscriptionGrant: scenario.name === 'invite_waitlist_entry'
+                ? { plan: 'solo', term: 'year' }
+                : { plan: 'free' },
             },
           });
           expect(resultData(result).preview).toHaveProperty('emailSummary');
@@ -889,9 +895,55 @@ describe('MCP server 0.12.0', () => {
         expect(request!.headers.get('if-match')).toBe(mutationPrecondition);
         expect(await request!.clone().json()).toEqual({
           expiresInDays: 7,
+          subscriptionGrant: { plan: 'solo', term: 'year' },
         });
       }
     }
+  });
+
+  test('defaults confirmed waitlist invitations to Free when no grant is provided', async () => {
+    const requests: Request[] = [];
+    globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init);
+      requests.push(request);
+      const data = request.method === 'GET'
+        ? {
+            entry: {
+              id: productId,
+              appName: 'Example App',
+              platform: 'ios_ipados',
+              email: 'owner@example.com',
+              locale: 'en',
+              status: 'new',
+            },
+            precondition: mutationPrecondition,
+            invitation: null,
+          }
+        : { id: secondId, status: 'pending' };
+      return Promise.resolve(Response.json({ code: 'ok', message: 'success', data }));
+    }) as typeof fetch;
+
+    const preview = await client.callTool({
+      name: 'invite_waitlist_entry',
+      arguments: { entryId: productId, expiresInDays: 7 },
+    });
+    expect(resultData(preview)).toMatchObject({
+      status: 'confirmation_required',
+      preview: { subscriptionGrant: { plan: 'free' } },
+    });
+    const result = await client.callTool({
+      name: 'invite_waitlist_entry',
+      arguments: {
+        entryId: productId,
+        expiresInDays: 7,
+        confirmationId: resultData(preview).confirmationId,
+      },
+    });
+    expect(result.isError).not.toBe(true);
+    expect(await requests.at(-1)!.clone().json()).toEqual({
+      expiresInDays: 7,
+      subscriptionGrant: { plan: 'free' },
+    });
   });
 
   test('updates waitlist status with a fresh precondition and skips same-state writes', async () => {

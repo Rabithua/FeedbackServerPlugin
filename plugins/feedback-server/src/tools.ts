@@ -151,6 +151,13 @@ const appStoreBindingFields = {
 
 const waitlistStatus = z.enum(['new', 'contacted', 'invited', 'converted', 'archived']);
 const waitlistPlatform = z.enum(['ios_ipados', 'macos', 'android', 'web', 'other']);
+const invitationSubscriptionGrant = z.discriminatedUnion('plan', [
+  z.object({ plan: z.literal('free') }).strict(),
+  z.object({
+    plan: z.enum(['solo', 'studio']),
+    term: z.enum(['month', 'year', 'perpetual']),
+  }).strict(),
+]);
 interface ToolContext {
   credentials: StoredCredentials;
   credentialSource: LoadedCredentials['credentialSource'];
@@ -954,10 +961,11 @@ export function registerFeedbackServerTools(
     z.object({
       entryId: uuid,
       expiresInDays: z.number().int().min(1).max(30).default(7),
+      subscriptionGrant: invitationSubscriptionGrant.default({ plan: 'free' }),
       ...confirmation,
     }),
     { destructiveHint: false, idempotentHint: false },
-    async ({ entryId, expiresInDays }, { client }) => {
+    async ({ entryId, expiresInDays, subscriptionGrant }, { client }) => {
       const current = await client.request<{
         entry: {
           id: string;
@@ -977,19 +985,19 @@ export function registerFeedbackServerTools(
           appName: current.entry.appName,
           locale: current.entry.locale,
           currentStatus: current.entry.status,
-          subscriptionGrant: { plan: 'free' },
+          subscriptionGrant,
           expiresInDays,
           emailSummary: current.entry.locale === 'zh-CN'
-            ? `批准 ${current.entry.appName} 的 FeedbackKit 早期访问；包含一次性邀请、Free 套餐、有效期和 Agent 接入指南。`
-            : `Approves FeedbackKit early access for ${current.entry.appName}; includes a one-time invitation, Free plan, expiry, and Agent onboarding guide.`,
+            ? `批准 ${current.entry.appName} 的 FeedbackKit 早期访问；包含一次性邀请、所选套餐、有效期和 Agent 接入指南。`
+            : `Approves FeedbackKit early access for ${current.entry.appName}; includes a one-time invitation, selected plan, expiry, and Agent onboarding guide.`,
           effect: 'Sends one transactional invitation email. The waitlist status changes to invited only after Cloudflare accepts delivery.',
         },
       };
     },
-    async ({ entryId, expiresInDays }, { client }, precondition) =>
+    async ({ entryId, expiresInDays, subscriptionGrant }, { client }, precondition) =>
       client.request(`/admin/waitlist/${encodeURIComponent(entryId)}/invitations`, {
         method: 'POST',
-        body: { expiresInDays },
+        body: { expiresInDays, subscriptionGrant },
         ...(precondition ? { ifMatch: precondition } : {}),
       }),
   );
