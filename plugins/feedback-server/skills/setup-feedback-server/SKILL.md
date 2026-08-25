@@ -22,6 +22,13 @@ default user language, and—when the repository contains several Apps—the tar
 waitlist details. Generate a slug and show it for confirmation, then use the installed
 `feedbackkit product create`; defaults are active, private feedback, and diagnostics off.
 
+Immediately after Product creation, obtain an explicit notification preference before requesting
+approval for Apple project edits: Bark, Product Webhook, or defer notification setup. Do not infer
+defer from silence. For Bark or Webhook, follow `$configure-notifications`, including its protected
+preview and confirmation. If notification tools are unavailable in the current task because the MCP
+server has not reloaded, state that notifications are not yet configured and ask the user to
+continue that selected setup in a new task; do not silently convert the choice to defer.
+
 Before modifying an Apple project, identify the target project and files and obtain explicit
 approval. Then integrate the FeedbackKit SDK, write the Product's publishable key without echoing it,
 build the target, and run installed `feedbackkit doctor --product ID --app-path ABSOLUTE_PATH`.

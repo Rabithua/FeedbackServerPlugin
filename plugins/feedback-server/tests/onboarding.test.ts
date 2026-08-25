@@ -356,7 +356,11 @@ describe('setup notice', () => {
     expect(first).toMatchObject({
       kind: 'feedback_server_setup',
       prompt: '帮我完成 FeedbackServer 初始配置',
-      nextAction: { id: 'configure_notification' },
+      nextAction: {
+        id: 'configure_notification',
+        requiresUserChoice: true,
+        choices: ['bark', 'webhook', 'defer'],
+      },
     });
     expect(await provider.takeNotice()).toBeUndefined();
     expect(JSON.stringify(first)).not.toContain(secretDeviceKey);
