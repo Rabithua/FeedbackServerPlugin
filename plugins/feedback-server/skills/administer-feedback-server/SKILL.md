@@ -15,8 +15,9 @@ display names do not exist. New-device login happens inside the Agent with a six
 there is no website login or Passkey. Route login, email changes, and PAT management through
 `$setup-feedback-server`, and never return the long-lived PAT to Agent context.
 
-Waitlist invitation email belongs to `$manage-waitlist`: it defaults to Free and requires a redacted
-preview plus explicit confirmation. Never reproduce its one-time token or rendered body.
+Waitlist invitation email belongs to `$manage-waitlist`: it defaults to Free, allows an explicitly
+selected paid grant, and requires a redacted preview plus explicit confirmation. Never reproduce its
+one-time token or rendered body.
 
 Protected Product archival/deactivation, public defaults, key rotation, and permanent deletion
 require a redacted preview and explicit approval. Then call `execute_confirmation` with the returned

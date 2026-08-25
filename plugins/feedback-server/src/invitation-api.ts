@@ -6,13 +6,15 @@ interface ApiEnvelope<T> {
   data: T;
 }
 
-export type InvitationSubscriptionGrant = { plan: 'free' };
+export type InvitationSubscriptionGrant =
+  | { plan: 'free' }
+  | { plan: 'solo' | 'studio'; term: 'month' | 'year' | 'perpetual' };
 
 export interface AppliedInvitationSubscription {
-  plan: 'free';
-  term: 'free';
-  expiresAt: null;
-  graceEndsAt: null;
+  plan: 'free' | 'solo' | 'studio';
+  term: 'free' | 'fixed' | 'perpetual';
+  expiresAt: string | null;
+  graceEndsAt: string | null;
 }
 
 export interface AcceptedInvitation {
