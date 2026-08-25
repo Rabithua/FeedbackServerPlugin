@@ -12,6 +12,9 @@ export const MAX_KEYCHAIN_PROFILES = 100;
 const PROFILE_SERVICE = `${KEYRING_SERVICE}.profile`;
 const ACTIVE_PROFILE_SERVICE = `${KEYRING_SERVICE}.active`;
 const PROFILE_INDEX_SERVICE = `${KEYRING_SERVICE}.profiles`;
+const PENDING_EMAIL_LOGIN_SERVICE = `${KEYRING_SERVICE}.pending-email-login`;
+const PENDING_REAUTH_SERVICE = `${KEYRING_SERVICE}.pending-reauth`;
+const RECENT_REAUTH_SERVICE = `${KEYRING_SERVICE}.recent-reauth`;
 const ACTIVE_ACCOUNT = 'active';
 const INDEX_ACCOUNT = 'index';
 
@@ -39,7 +42,42 @@ const profileIndexSchema = z.object({
   profiles: z.array(profileIdSchema).max(MAX_KEYCHAIN_PROFILES),
 }).strict();
 
+const pendingEmailLoginSchema = z.object({
+  version: z.literal(1),
+  requestId: z.uuid(),
+  baseUrl: z.url(),
+  enrollmentSecret: z.string().regex(/^fsenr_[A-Za-z0-9_-]{43,}$/).max(120),
+  challengeId: z.uuid(),
+  email: z.email(),
+  credentialName: z.string().min(1).max(160),
+  profile: profileIdSchema,
+  replaceExisting: z.boolean(),
+  previousCredentials: credentialSchema.nullable(),
+  acceptedTokenId: z.uuid().nullable(),
+  expiresAt: z.iso.datetime(),
+}).strict();
+
+const pendingReauthenticationSchema = z.object({
+  version: z.literal(1),
+  requestId: z.uuid(),
+  challengeId: z.uuid(),
+  profile: profileIdSchema,
+  tokenId: z.uuid(),
+  expiresAt: z.iso.datetime(),
+}).strict();
+
+const recentReauthenticationSchema = z.object({
+  version: z.literal(1),
+  profile: profileIdSchema,
+  tokenId: z.uuid(),
+  token: z.string().min(20).max(4096),
+  expiresAt: z.iso.datetime(),
+}).strict();
+
 export type StoredCredentials = z.infer<typeof credentialSchema>;
+export type PendingEmailLogin = z.infer<typeof pendingEmailLoginSchema>;
+export type PendingReauthentication = z.infer<typeof pendingReauthenticationSchema>;
+export type RecentReauthentication = z.infer<typeof recentReauthenticationSchema>;
 export interface PendingTokenRevocation {
   baseUrl: string;
   tokenId: string;
@@ -263,6 +301,101 @@ export async function readKeychainReferencedTokenIds(
   return new Set(credentials.flatMap((value) => value ? [value.tokenId] : []));
 }
 
+export async function writePendingEmailLogin(
+  pending: PendingEmailLogin,
+  factory: NativeEntryFactory = nativeEntry,
+): Promise<void> {
+  const parsed = pendingEmailLoginSchema.parse({
+    ...pending,
+    baseUrl: normalizeBaseUrl(pending.baseUrl),
+    email: pending.email.trim().toLowerCase(),
+  });
+  await factory(PENDING_EMAIL_LOGIN_SERVICE, parsed.requestId).setPassword(JSON.stringify(parsed));
+}
+
+export async function readPendingEmailLogin(
+  requestId: string,
+  factory: NativeEntryFactory = nativeEntry,
+): Promise<PendingEmailLogin | undefined> {
+  const parsedId = z.uuid().parse(requestId);
+  const stored = await readValue(PENDING_EMAIL_LOGIN_SERVICE, parsedId, factory);
+  if (!stored) return undefined;
+  const pending = pendingEmailLoginSchema.parse(JSON.parse(stored));
+  if (new Date(pending.expiresAt).getTime() <= Date.now()) {
+    await deleteValue(PENDING_EMAIL_LOGIN_SERVICE, parsedId, factory);
+    return undefined;
+  }
+  return pending;
+}
+
+export async function deletePendingEmailLogin(
+  requestId: string,
+  factory: NativeEntryFactory = nativeEntry,
+): Promise<void> {
+  await deleteValue(PENDING_EMAIL_LOGIN_SERVICE, z.uuid().parse(requestId), factory);
+}
+
+export async function writePendingReauthentication(
+  pending: PendingReauthentication,
+  factory: NativeEntryFactory = nativeEntry,
+): Promise<void> {
+  const parsed = pendingReauthenticationSchema.parse(pending);
+  await factory(PENDING_REAUTH_SERVICE, parsed.requestId).setPassword(JSON.stringify(parsed));
+}
+
+export async function readPendingReauthentication(
+  requestId: string,
+  factory: NativeEntryFactory = nativeEntry,
+): Promise<PendingReauthentication | undefined> {
+  const parsedId = z.uuid().parse(requestId);
+  const stored = await readValue(PENDING_REAUTH_SERVICE, parsedId, factory);
+  if (!stored) return undefined;
+  const pending = pendingReauthenticationSchema.parse(JSON.parse(stored));
+  if (new Date(pending.expiresAt).getTime() <= Date.now()) {
+    await deleteValue(PENDING_REAUTH_SERVICE, parsedId, factory);
+    return undefined;
+  }
+  return pending;
+}
+
+export async function deletePendingReauthentication(
+  requestId: string,
+  factory: NativeEntryFactory = nativeEntry,
+): Promise<void> {
+  await deleteValue(PENDING_REAUTH_SERVICE, z.uuid().parse(requestId), factory);
+}
+
+export async function writeRecentReauthentication(
+  value: RecentReauthentication,
+  factory: NativeEntryFactory = nativeEntry,
+): Promise<void> {
+  const parsed = recentReauthenticationSchema.parse(value);
+  await factory(RECENT_REAUTH_SERVICE, parsed.profile).setPassword(JSON.stringify(parsed));
+}
+
+export async function readRecentReauthentication(
+  profile: string,
+  tokenId: string,
+  factory: NativeEntryFactory = nativeEntry,
+): Promise<RecentReauthentication | undefined> {
+  const parsedProfile = profileIdSchema.parse(profile);
+  const stored = await readValue(RECENT_REAUTH_SERVICE, parsedProfile, factory);
+  if (!stored) return undefined;
+  const recent = recentReauthenticationSchema.parse(JSON.parse(stored));
+  if (recent.tokenId !== z.uuid().parse(tokenId) || new Date(recent.expiresAt).getTime() <= Date.now()) {
+    await deleteValue(RECENT_REAUTH_SERVICE, parsedProfile, factory);
+    return undefined;
+  }
+  return recent;
+}
+
+export async function deleteRecentReauthentication(
+  profile: string,
+  factory: NativeEntryFactory = nativeEntry,
+): Promise<void> {
+  await deleteValue(RECENT_REAUTH_SERVICE, profileIdSchema.parse(profile), factory);
+}
+
 export function readPendingTokenRevocations(): Promise<PendingTokenRevocation[]> {
   return Promise.resolve([]);
 }
@@ -303,7 +436,7 @@ export async function loadCredentialsWithSource(
     : undefined;
   if (!credentials) {
     throw new Error(
-      'FeedbackKit Agent is not configured. Run feedbackkit accept-invite with the invitation token on stdin.',
+      'FeedbackKit Agent is not configured. Accept an invitation or ask the Agent to request an email login code.',
     );
   }
   return { credentials, credentialSource: 'keyring', activeProfile: activeProfile ?? null };

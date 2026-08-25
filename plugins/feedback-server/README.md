@@ -5,12 +5,15 @@ This directory is the installable FeedbackKit Agent plugin. `bin/feedbackkit` lo
 
 ```bash
 feedbackkit accept-invite
+feedbackkit login email request --email owner@example.com
+feedbackkit login email complete --request <uuid>
 feedbackkit onboarding status
 feedbackkit product create --name "My App" --platform ios
 feedbackkit doctor --product <uuid> --app-path /absolute/path
 ```
 
-The invitation token is accepted only through stdin or hidden TTY input. Credentials are stored in
+Invitation tokens and email codes are accepted through stdin or ordinary TTY input. They may come
+from the current Agent conversation and are consumed immediately. Long-lived credentials are stored in
 macOS Keychain, Windows Credential Manager, or Linux Secret Service through the native keyring
 backend. No password or plaintext-file fallback exists.
 

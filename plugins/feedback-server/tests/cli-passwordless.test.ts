@@ -15,4 +15,22 @@ describe('FeedbackKit passwordless CLI', () => {
     }
     expect(error).toMatchObject({ message: 'Unsupported option: --token' });
   });
+
+  test('never accepts an email code as a command argument', async () => {
+    let error: unknown;
+    try {
+      await runFeedbackServerCli([
+        'login',
+        'email',
+        'complete',
+        '--request',
+        '11111111-1111-4111-8111-111111111111',
+        '--code',
+        '123456',
+      ]);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toMatchObject({ message: 'Unsupported option: --code' });
+  });
 });

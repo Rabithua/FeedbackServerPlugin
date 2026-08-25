@@ -11,7 +11,9 @@ show the transition and execute only through `execute_confirmation` after approv
 
 Account onboarding is email-bound and Agent-first. Route invitation acceptance, profile selection,
 first Product creation, and Apple setup through `$setup-feedback-server`. Passwords, usernames, and
-display names do not exist. Subsequent human login uses email code or Passkey at feedkit.cn.
+display names do not exist. New-device login happens inside the Agent with a six-digit email code;
+there is no website login or Passkey. Route login, email changes, and PAT management through
+`$setup-feedback-server`, and never return the long-lived PAT to Agent context.
 
 Waitlist invitation email belongs to `$manage-waitlist`: it defaults to Free and requires a redacted
 preview plus explicit confirmation. Never reproduce its one-time token or rendered body.
