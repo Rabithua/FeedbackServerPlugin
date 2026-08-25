@@ -18,7 +18,10 @@ import {
   completeAgentEmailLogin,
   requestAgentEmailLogin,
 } from './email-authentication.js';
-import { deriveOnboardingStatus } from './onboarding.js';
+import {
+  deriveOnboardingStatus,
+  notificationSetupChoiceAction,
+} from './onboarding.js';
 
 const usage = `FeedbackKit Agent CLI
 
@@ -220,7 +223,12 @@ async function runProductCreate(options: string[]): Promise<void> {
       diagnosticsEnabled: false,
     },
   });
-  process.stdout.write(`${JSON.stringify({ ...product, platform, defaultLocale: locale }, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify({
+    ...product,
+    platform,
+    defaultLocale: locale,
+    nextActions: [notificationSetupChoiceAction()],
+  }, null, 2)}\n`);
 }
 
 async function runDoctor(options: string[]): Promise<void> {

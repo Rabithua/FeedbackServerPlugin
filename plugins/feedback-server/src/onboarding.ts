@@ -25,6 +25,8 @@ export interface OnboardingNextAction {
   status: 'action_required' | 'recommended';
   priority: number;
   message: string;
+  requiresUserChoice?: boolean | undefined;
+  choices?: Array<'bark' | 'webhook' | 'defer'> | undefined;
   tool?: string | undefined;
 }
 
@@ -301,6 +303,18 @@ function nextAction(
   if (!actions.some(({ id }) => id === action.id)) actions.push(action);
 }
 
+export function notificationSetupChoiceAction(): OnboardingNextAction {
+  return {
+    id: 'configure_notification',
+    stage: 'notifications',
+    status: 'recommended',
+    priority: 30,
+    message: 'Ask the user to choose Bark, Product Webhook, or explicitly defer notification setup before continuing App integration.',
+    requiresUserChoice: true,
+    choices: ['bark', 'webhook', 'defer'],
+  };
+}
+
 export async function deriveOnboardingStatus(
   options: DeriveOnboardingOptions,
 ): Promise<FeedbackServerOnboardingStatus> {
@@ -512,13 +526,7 @@ export async function deriveOnboardingStatus(
       message: 'Inspect the current workspace and continue only if it clearly contains the matching iOS App.',
     }, actions);
     if (!notificationsEffective) {
-      nextAction({
-        id: 'configure_notification',
-        stage: 'notifications',
-        status: 'recommended',
-        priority: 30,
-        message: 'Choose Bark, Product Webhook, or explicitly defer notification setup.',
-      }, actions);
+      nextAction(notificationSetupChoiceAction(), actions);
     }
     const missingReadScope = [bark.error, webhook.error, appStore.error]
       .some((error) => error?.reason === 'missing_scope');

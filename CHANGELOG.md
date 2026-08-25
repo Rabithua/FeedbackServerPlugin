@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.2 - 2026-08-25
+
+- Require an explicit Bark, Product Webhook, or defer choice immediately after first Product
+  creation and before requesting approval for Apple project edits.
+- Return the same structured notification choice from the same-task Product CLI and guided
+  onboarding status so Agents do not depend on documentation recall.
+- Preserve notification setup as optional and report it accurately when MCP notification tools need
+  a fresh task after plugin installation.
+
 ## 0.12.1 - 2026-08-25
 
 - Restore explicit Free, Solo, and Studio grants for confirmed waitlist invitations while keeping

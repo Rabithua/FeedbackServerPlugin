@@ -447,7 +447,7 @@ function missingParameterDescriptions(schema: unknown, path = 'input'): string[]
   return missing;
 }
 
-describe('MCP server 0.12.1', () => {
+describe('MCP server 0.12.2', () => {
   const originalFetch = globalThis.fetch;
   let client: Client;
   let server: ReturnType<typeof createServer>;
@@ -656,7 +656,9 @@ describe('MCP server 0.12.1', () => {
         stage: 'notifications',
         status: 'recommended',
         priority: 30,
-        message: 'Choose Bark, Product Webhook, or explicitly defer notification setup.',
+        message: 'Ask the user to choose Bark, Product Webhook, or explicitly defer notification setup before continuing App integration.',
+        requiresUserChoice: true,
+        choices: ['bark', 'webhook', 'defer'],
       },
     };
     globalThis.fetch = (() => Promise.resolve(Response.json({
