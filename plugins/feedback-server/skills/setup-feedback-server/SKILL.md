@@ -24,10 +24,14 @@ waitlist details. Generate a slug and show it for confirmation, then use the ins
 
 Immediately after Product creation, obtain an explicit notification preference before requesting
 approval for Apple project edits: Bark, Product Webhook, or defer notification setup. Do not infer
-defer from silence. For Bark or Webhook, follow `$configure-notifications`, including its protected
-preview and confirmation. If notification tools are unavailable in the current task because the MCP
-server has not reloaded, state that notifications are not yet configured and ask the user to
-continue that selected setup in a new task; do not silently convert the choice to defer.
+defer from silence. Persist every answer immediately with installed
+`feedbackkit notification preference set --product ID --choice bark|webhook|defer`; a deferred
+choice resolves this setup step and must not be asked again in later tasks. For Bark or Webhook,
+follow `$configure-notifications`, including its protected preview and confirmation. If notification
+tools are unavailable in the current task because the MCP server has not reloaded, preserve the
+selected preference, state that the channel is not yet configured, and ask the user to continue that
+selected setup in a new task; do not silently convert the choice to defer. In later tasks,
+`set_notification_setup_preference` provides the same persisted operation through MCP.
 
 Before modifying an Apple project, identify the target project and files and obtain explicit
 approval. Then integrate the FeedbackKit SDK, write the Product's publishable key without echoing it,
@@ -35,10 +39,11 @@ build the target, and run installed `feedbackkit doctor --product ID --app-path 
 Android and Web may complete account and Product creation, but state that automatic SDK integration
 is not available in this release.
 
-`feedbackkit onboarding status`, `product create`, and `doctor` are available immediately after
-installation and do not require MCP hot reload. In later tasks, use `connection_status` and
-`get_onboarding_status`; with several Products, ask for an explicit Product selection. Treat Doctor
-failures as blockers and warnings as review items. Run a live roundtrip only when explicitly asked.
+`feedbackkit onboarding status`, `product create`, `notification preference set`, and `doctor` are
+available immediately after installation and do not require MCP hot reload. In later tasks, use
+`connection_status` and `get_onboarding_status`; with several Products, ask for an explicit Product
+selection. Treat Doctor failures as blockers and warnings as review items. Run a live roundtrip only
+when explicitly asked.
 
 For a new device or credential recovery, use `request_email_login` without existing credentials.
 If it reports `profile_choice_required`, show the existing Profile email and let the user choose to

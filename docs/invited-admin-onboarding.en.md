@@ -9,7 +9,8 @@
    saves the Agent credential, and confirms storage to the Server.
 6. The Agent asks for your App name, Apple platform, default language, and target App again.
 7. After you confirm the slug, it creates the Product and asks you to choose Bark, Product Webhook,
-   or explicitly defer notification setup. Before Apple project changes it shows the files it will
+   or explicitly defer notification setup. It saves that choice on the Product so later tasks do not
+   ask again. Before Apple project changes it shows the files it will
    touch and asks for approval, then integrates the SDK, builds, and runs Doctor.
 
 Invitations expire after seven days and can be used once. A retry from the same enrollment can

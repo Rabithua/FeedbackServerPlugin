@@ -9,6 +9,7 @@ feedbackkit login email request --email owner@example.com
 feedbackkit login email complete --request <uuid>
 feedbackkit onboarding status
 feedbackkit product create --name "My App" --platform ios
+feedbackkit notification preference set --product <uuid> --choice bark|webhook|defer
 feedbackkit doctor --product <uuid> --app-path /absolute/path
 ```
 

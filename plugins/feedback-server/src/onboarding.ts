@@ -79,9 +79,12 @@ export interface OnboardingProductRecord {
   name: string;
   defaultLocale: string;
   status: string;
+  notificationSetupPreference?: NotificationSetupPreference;
   diagnosticsEnabled?: boolean;
   publishableKey?: string;
 }
+
+export type NotificationSetupPreference = 'unresolved' | 'bark' | 'webhook' | 'deferred';
 
 interface OptionalStageError {
   reason: 'missing_scope' | 'query_failed';
@@ -115,6 +118,8 @@ export interface FeedbackServerOnboardingStatus {
   notifications: {
     status: OnboardingStageStatus;
     effective: boolean;
+    preference: NotificationSetupPreference;
+    choiceResolved: boolean;
     bark: {
       status: OnboardingStageStatus;
       mode: 'inherit' | 'custom' | 'disabled' | 'unknown';
@@ -315,6 +320,32 @@ export function notificationSetupChoiceAction(): OnboardingNextAction {
   };
 }
 
+export function notificationSetupActionForPreference(
+  preference: NotificationSetupPreference,
+): OnboardingNextAction | undefined {
+  if (preference === 'unresolved') return notificationSetupChoiceAction();
+  if (preference === 'deferred') return undefined;
+  return preference === 'bark'
+    ? {
+        id: 'configure_notification',
+        stage: 'notifications',
+        status: 'recommended',
+        priority: 30,
+        message: 'Bark is the saved notification preference. Configure and test Bark before continuing App integration.',
+        requiresUserChoice: false,
+        tool: 'update_product_bark_config',
+      }
+    : {
+        id: 'configure_notification',
+        stage: 'notifications',
+        status: 'recommended',
+        priority: 30,
+        message: 'Product Webhook is the saved notification preference. Configure and test the Product Webhook before continuing App integration.',
+        requiresUserChoice: false,
+        tool: 'update_product_webhook_config',
+      };
+}
+
 export async function deriveOnboardingStatus(
   options: DeriveOnboardingOptions,
 ): Promise<FeedbackServerOnboardingStatus> {
@@ -495,9 +526,11 @@ export async function deriveOnboardingStatus(
   }
 
   const notificationsEffective = bark.effective || webhook.effective;
+  const notificationPreference = product.selectedRecord?.notificationSetupPreference ?? 'unresolved';
+  const notificationChoiceResolved = notificationsEffective || notificationPreference !== 'unresolved';
   const notificationsStatus: OnboardingStageStatus = !product.selected
     ? 'not_checked'
-    : notificationsEffective
+    : notificationPreference === 'deferred' || notificationsEffective
       ? 'complete'
       : bark.status === 'unavailable' && webhook.status === 'unavailable'
         ? 'unavailable'
@@ -526,7 +559,8 @@ export async function deriveOnboardingStatus(
       message: 'Inspect the current workspace and continue only if it clearly contains the matching iOS App.',
     }, actions);
     if (!notificationsEffective) {
-      nextAction(notificationSetupChoiceAction(), actions);
+      const notificationAction = notificationSetupActionForPreference(notificationPreference);
+      if (notificationAction) nextAction(notificationAction, actions);
     }
     const missingReadScope = [bark.error, webhook.error, appStore.error]
       .some((error) => error?.reason === 'missing_scope');
@@ -593,6 +627,8 @@ export async function deriveOnboardingStatus(
     notifications: {
       status: notificationsStatus,
       effective: notificationsEffective,
+      preference: notificationPreference,
+      choiceResolved: notificationChoiceResolved,
       bark,
       webhook,
     },
@@ -624,10 +660,8 @@ function shouldTriggerSetupNotice(status: FeedbackServerOnboardingStatus): boole
     status.notifications.webhook.error,
     status.appStore.error,
   ].some((error) => error?.reason === 'missing_scope');
-  return missingReadScope || (
-    status.product.selected !== null
-    && !status.notifications.effective
-  );
+  return missingReadScope
+    || status.nextActions.some(({ id }) => id === 'configure_notification');
 }
 
 class DerivedSetupNoticeProvider implements SetupNoticeProvider {

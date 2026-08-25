@@ -288,6 +288,7 @@ const OPEN_WORLD_EFFECT_TOOLS = new Set([
 ]);
 
 const IDEMPOTENT_DIRECT_WRITE_TOOLS = new Set([
+  'set_notification_setup_preference',
   'configure_product_app_store_binding',
   'remove_product_app_store_binding',
   'link_feedback_item',
@@ -893,6 +894,22 @@ export function registerFeedbackServerTools(
       scopes: credentials.scopes,
       productId,
     }),
+  );
+  registerDirectWrite(
+    server,
+    'set_notification_setup_preference',
+    'Persist the user\'s explicit Bark, Product Webhook, or defer choice for one Product so guided setup does not ask again in later tasks.',
+    z.object({
+      productId: uuid,
+      choice: z.enum(['bark', 'webhook', 'defer']).describe(
+        'The user\'s explicit notification setup choice. Use defer only when the user explicitly declines configuration for now.',
+      ),
+    }),
+    async ({ productId, choice }, { client }) =>
+      client.request(`/admin/products/${encodeURIComponent(productId)}/notification-setup`, {
+        method: 'PUT',
+        body: { preference: choice === 'defer' ? 'deferred' : choice },
+      }),
   );
   registerRiskAwareWrite(
     server,

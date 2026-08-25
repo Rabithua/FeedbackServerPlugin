@@ -6,7 +6,7 @@
 4. 一次性令牌可以保留在当前 Agent 对话中；Agent 通过 stdin 传入并立即消费，不把它重复写入命令参数、Shell 历史、日志或输出。
 5. CLI 先检查系统安全凭据库，再创建已验证邮箱账号、启用 Free、保存 Agent 凭据，并通知服务端清除恢复密文。
 6. Agent 重新询问 App 名称、Apple 平台、默认语言；仓库有多个 App 时还会询问目标。
-7. 你确认 slug 后创建 Product，然后明确选择 Bark、Product Webhook 或暂不配置通知。修改 Apple 工程前，Agent 会说明目标工程和文件并取得批准；之后接入 SDK、构建并运行 Doctor。
+7. 你确认 slug 后创建 Product，然后明确选择 Bark、Product Webhook 或暂不配置通知。该选择会保存到 Product，后续任务不会重复询问。修改 Apple 工程前，Agent 会说明目标工程和文件并取得批准；之后接入 SDK、构建并运行 Doctor。
 
 邀请默认 7 天有效且只能使用一次。同一 enrollment 可在 15 分钟内恢复网络中断后的凭据，其他 enrollment 不能重放邀请。如果本机已有账号，CLI 会在消费邀请前让你选择保留、添加命名 Profile 或替换。
 

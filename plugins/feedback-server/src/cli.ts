@@ -20,7 +20,10 @@ import {
 } from './email-authentication.js';
 import {
   deriveOnboardingStatus,
+  notificationSetupActionForPreference,
   notificationSetupChoiceAction,
+  type FeedbackServerOnboardingStatus,
+  type NotificationSetupPreference,
 } from './onboarding.js';
 
 const usage = `FeedbackKit Agent CLI
@@ -30,6 +33,7 @@ Usage:
   feedbackkit login email request --email EMAIL [--url URL] [--profile NAME] [--credential-name NAME]
   feedbackkit login email complete --request UUID
   feedbackkit onboarding status [--product ID] [--format text|json]
+  feedbackkit notification preference set --product ID --choice bark|webhook|defer
   feedbackkit product create --name NAME --platform ios|ipados|macos|android|web [--slug SLUG] [--locale LOCALE]
   feedbackkit doctor [--product ID] [--app-path PATH] [--format text|json]
   feedbackkit profile list
@@ -188,11 +192,60 @@ async function runOnboardingStatus(options: string[]): Promise<void> {
     productId: parsed.get('--product'),
   });
   if (format === 'json') process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
-  else {
-    process.stdout.write(
-      `Account: ${credentials.email}\nApps: ${status.product.count}\nCore ready: ${status.coreReady ? 'yes' : 'no'}\n`,
-    );
+  else process.stdout.write(formatOnboardingStatus(status, credentials.email));
+}
+
+export function formatOnboardingStatus(
+  status: FeedbackServerOnboardingStatus,
+  email: string,
+): string {
+  const lines = [
+    `Account: ${email}`,
+    `Apps: ${status.product.count}`,
+    `Core ready: ${status.coreReady ? 'yes' : 'no'}`,
+  ];
+  if (status.nextActions.length > 0) {
+    lines.push('Next actions:');
+    for (const action of status.nextActions) {
+      lines.push(`- ${action.message}`);
+      if (action.requiresUserChoice && action.choices) {
+        lines.push(`  Choices: ${action.choices.join(', ')}`);
+      }
+    }
   }
+  return `${lines.join('\n')}\n`;
+}
+
+async function runNotificationPreferenceSet(options: string[]): Promise<void> {
+  const parsed = parseCliOptions(options, ['--product', '--choice']);
+  const productId = parsed.get('--product');
+  const choice = parsed.get('--choice');
+  if (!productId) throw new Error('--product is required');
+  if (!choice || !['bark', 'webhook', 'defer'].includes(choice)) {
+    throw new Error('--choice must be bark, webhook, or defer');
+  }
+  const preference: NotificationSetupPreference = choice === 'defer'
+    ? 'deferred'
+    : choice === 'bark'
+      ? 'bark'
+      : 'webhook';
+  const credentials = await loadCredentials();
+  const client = new FeedbackServerApiClient(credentials);
+  const product = await client.request<{
+    id: string;
+    name: string;
+    notificationSetupPreference: NotificationSetupPreference;
+  }>(`/admin/products/${encodeURIComponent(productId)}/notification-setup`, {
+    method: 'PUT',
+    body: { preference },
+  });
+  const nextAction = notificationSetupActionForPreference(preference);
+  process.stdout.write(`${JSON.stringify({
+    product,
+    choice,
+    preference,
+    nextActions: nextAction ? [nextAction] : [],
+  }, null, 2)}\n`);
 }
 
 async function runProductCreate(options: string[]): Promise<void> {
@@ -274,6 +327,11 @@ export async function runFeedbackServerCli(argv: string[]): Promise<void> {
     return runEmailLogin(emailAction, emailOptions);
   }
   if (group === 'onboarding' && action === 'status') return runOnboardingStatus(options);
+  if (group === 'notification' && action === 'preference') {
+    const [preferenceAction, ...preferenceOptions] = options;
+    if (preferenceAction === 'set') return runNotificationPreferenceSet(preferenceOptions);
+    throw new Error('Use notification preference set');
+  }
   if (group === 'product' && action === 'create') return runProductCreate(options);
   if (group === 'doctor') return runDoctor(argv.slice(1));
   if (group === 'profile') return runProfile(argv.slice(1));
