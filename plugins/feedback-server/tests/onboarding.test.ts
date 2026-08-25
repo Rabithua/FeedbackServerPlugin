@@ -293,6 +293,59 @@ describe('guided onboarding status', () => {
     expect(status.appStore).toMatchObject({ status: 'recommended', configured: false });
   });
 
+  test('persists an explicit channel choice without asking the user to choose again', async () => {
+    const status = await deriveOnboardingStatus({
+      ...baseOptions,
+      client: client(completeOptionalRoutes({
+        '/admin/bark/global': { enabled: false, serverUrl: 'https://api.day.app', deviceKey: null },
+        [`/admin/bark/products/${productId}`]: { mode: 'inherit' },
+        [`/admin/webhooks/products/${productId}`]: {
+          enabled: false,
+          endpointUrl: null,
+          secret: null,
+        },
+      })),
+      products: [{ ...product, notificationSetupPreference: 'bark' }],
+      subscription: subscription(),
+    });
+
+    expect(status.notifications).toMatchObject({
+      status: 'recommended',
+      effective: false,
+      preference: 'bark',
+      choiceResolved: true,
+    });
+    expect(status.nextActions.find(({ id }) => id === 'configure_notification')).toMatchObject({
+      requiresUserChoice: false,
+      tool: 'update_product_bark_config',
+    });
+  });
+
+  test('treats an explicit defer choice as resolved without claiming delivery is effective', async () => {
+    const status = await deriveOnboardingStatus({
+      ...baseOptions,
+      client: client(completeOptionalRoutes({
+        '/admin/bark/global': { enabled: false, serverUrl: 'https://api.day.app', deviceKey: null },
+        [`/admin/bark/products/${productId}`]: { mode: 'inherit' },
+        [`/admin/webhooks/products/${productId}`]: {
+          enabled: false,
+          endpointUrl: null,
+          secret: null,
+        },
+      })),
+      products: [{ ...product, notificationSetupPreference: 'deferred' }],
+      subscription: subscription(),
+    });
+
+    expect(status.notifications).toMatchObject({
+      status: 'complete',
+      effective: false,
+      preference: 'deferred',
+      choiceResolved: true,
+    });
+    expect(status.nextActions.some(({ id }) => id === 'configure_notification')).toBe(false);
+  });
+
   test('contains optional 403 and query failures without breaking core status', async () => {
     const forbidden = new FeedbackServerApiError(403, 'admin_scope_required', 'missing scope', null);
     const failed = new FeedbackServerApiError(503, 'connection_failed', 'unavailable', null);
@@ -416,6 +469,26 @@ describe('setup notice', () => {
         '/admin/products': [product],
         '/admin/subscription': subscription(),
         ...completeOptionalRoutes(),
+      }),
+    });
+    expect(await provider.takeNotice()).toBeUndefined();
+  });
+
+  test('does not ask for notification setup again after the user explicitly defers it', async () => {
+    const provider = createSetupNoticeProvider({
+      loadCredentials: () => Promise.resolve(credentials),
+      createClient: () => client({
+        '/admin/products': [{ ...product, notificationSetupPreference: 'deferred' }],
+        '/admin/subscription': subscription(),
+        ...completeOptionalRoutes({
+          '/admin/bark/global': { enabled: false, serverUrl: 'https://api.day.app', deviceKey: null },
+          [`/admin/bark/products/${productId}`]: { mode: 'inherit' },
+          [`/admin/webhooks/products/${productId}`]: {
+            enabled: false,
+            endpointUrl: null,
+            secret: null,
+          },
+        }),
       }),
     });
     expect(await provider.takeNotice()).toBeUndefined();

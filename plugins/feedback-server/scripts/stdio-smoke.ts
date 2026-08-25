@@ -11,13 +11,13 @@ const transport = new StdioClientTransport({
   },
   stderr: 'pipe',
 });
-const client = new Client({ name: 'feedback-server-stdio-smoke', version: '0.12.2' });
+const client = new Client({ name: 'feedback-server-stdio-smoke', version: '0.12.3' });
 
 try {
   await client.connect(transport);
   const tools = (await client.listTools()).tools;
-  if (tools.length !== 79) {
-    throw new Error(`Expected 79 FeedbackServer tools, received ${tools.length}`);
+  if (tools.length !== 80) {
+    throw new Error(`Expected 80 FeedbackServer tools, received ${tools.length}`);
   }
   if (!tools.some(({ name }) => name === 'connection_status')) {
     throw new Error('FeedbackServer stdio bundle is missing connection_status');
@@ -25,7 +25,7 @@ try {
   if (!tools.some(({ name }) => name === 'get_onboarding_status')) {
     throw new Error('FeedbackServer stdio bundle is missing get_onboarding_status');
   }
-  console.error('FeedbackServer stdio bundle initialized with 79 tools.');
+  console.error('FeedbackServer stdio bundle initialized with 80 tools.');
 } finally {
   await client.close();
 }

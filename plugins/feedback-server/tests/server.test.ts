@@ -33,6 +33,12 @@ const toolScenarios: ToolScenario[] = [
   { name: 'get_product', arguments: { productId }, path: `/v1/api/admin/products/${productId}` },
   { name: 'get_subscription', arguments: {}, path: '/v1/api/admin/subscription' },
   {
+    name: 'set_notification_setup_preference',
+    arguments: { productId, choice: 'defer' },
+    path: `/v1/api/admin/products/${productId}/notification-setup`,
+    method: 'PUT',
+  },
+  {
     name: 'set_primary_product',
     arguments: { productId: secondId },
     path: '/v1/api/admin/subscription/primary-product',
@@ -447,7 +453,7 @@ function missingParameterDescriptions(schema: unknown, path = 'input'): string[]
   return missing;
 }
 
-describe('MCP server 0.12.2', () => {
+describe('MCP server 0.12.3', () => {
   const originalFetch = globalThis.fetch;
   let client: Client;
   let server: ReturnType<typeof createServer>;
@@ -506,10 +512,11 @@ describe('MCP server 0.12.2', () => {
   test('exposes the new surface and removes legacy Feedback and Item fields', async () => {
     const tools = (await client.listTools()).tools;
     const names = tools.map(({ name }) => name);
-    expect(names).toHaveLength(79);
+    expect(names).toHaveLength(80);
     expect(names).toContain('execute_confirmation');
     expect(names).toContain('get_subscription');
     expect(names).toContain('get_onboarding_status');
+    expect(names).toContain('set_notification_setup_preference');
     expect(names).toContain('set_primary_product');
     expect(names).toContain('set_feedback_visibility');
     expect(names).toContain('set_feedback_pinned');
@@ -885,6 +892,9 @@ describe('MCP server 0.12.2', () => {
       if (scenario.name === 'set_primary_product') {
         expect(request!.headers.get('if-match')).toBe(mutationPrecondition);
         expect(await request!.clone().json()).toEqual({ productId: secondId });
+      }
+      if (scenario.name === 'set_notification_setup_preference') {
+        expect(await request!.clone().json()).toEqual({ preference: 'deferred' });
       }
       if (scenario.name === 'update_waitlist_status') {
         expect(request!.headers.get('if-match')).toBe(mutationPrecondition);

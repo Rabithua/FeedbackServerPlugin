@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.3 - 2026-08-25
+
+- Persist each Product's explicit Bark, Product Webhook, or defer onboarding choice so later tasks
+  continue the selected path instead of repeating the question.
+- Show prioritized next actions and notification choices in the default `onboarding status` text
+  output, matching the structured JSON status.
+- Add same-task CLI and MCP operations for saving the notification preference, with deferred setup
+  remaining resolved without falsely reporting an effective delivery channel.
+
 ## 0.12.2 - 2026-08-25
 
 - Require an explicit Bark, Product Webhook, or defer choice immediately after first Product

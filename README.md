@@ -41,14 +41,16 @@ before consuming the invitation. Old username-based profiles are intentionally n
 The Agent asks again for App name, Apple platform, default language, and target App when a repository
 contains several Apps. It confirms the generated slug, creates an active Product with private
 feedback and diagnostics disabled, then asks you to choose Bark, Product Webhook, or explicitly
-defer notification setup. After that choice it describes the intended Apple project edits and waits
-for approval. After SDK integration it builds and runs Doctor.
+defer notification setup. It persists that answer on the Product so later tasks continue the chosen
+channel or respect the defer choice instead of asking again. After that choice it describes the
+intended Apple project edits and waits for approval. After SDK integration it builds and runs Doctor.
 
 These commands are available immediately after installation, without MCP hot reload:
 
 ```bash
 feedbackkit onboarding status
 feedbackkit product create --name "My App" --platform ios --locale zh-CN
+feedbackkit notification preference set --product <uuid> --choice bark|webhook|defer
 feedbackkit doctor --product <uuid> --app-path /absolute/path/to/app
 feedbackkit profile list
 feedbackkit profile use work
