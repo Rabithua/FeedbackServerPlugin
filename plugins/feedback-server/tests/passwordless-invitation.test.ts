@@ -4,8 +4,12 @@ import {
   preflightNativeCredentialStore,
   readKeychainCredentials,
   readKeychainProfileCredentials,
+  readPendingEmailLogin,
+  readRecentReauthentication,
   useKeychainProfile,
   writeKeychainProfileCredentials,
+  writePendingEmailLogin,
+  writeRecentReauthentication,
   type NativeEntryFactory,
   type StoredCredentials,
 } from '../src/credentials.js';
@@ -93,6 +97,41 @@ describe('native credential storage', () => {
     expect(await readKeychainCredentials(keyring.factory)).toEqual(second);
     await useKeychainProfile('work', keyring.factory);
     expect(await readKeychainProfileCredentials('work', keyring.factory)).toEqual(credentials);
+  });
+
+  test('keeps pending and recent authentication secrets only in the native store and deletes expired values', async () => {
+    const keyring = memoryKeyring();
+    const requestId = '33333333-3333-4333-8333-333333333333';
+    await writePendingEmailLogin({
+      version: 1,
+      requestId,
+      baseUrl: credentials.baseUrl,
+      enrollmentSecret: `fsenr_${'s'.repeat(43)}`,
+      challengeId: '44444444-4444-4444-8444-444444444444',
+      email: credentials.email,
+      credentialName: 'Recovery Agent',
+      profile: 'work',
+      replaceExisting: false,
+      previousTokenId: null,
+      expiresAt: '2099-08-25T00:00:00.000Z',
+    }, keyring.factory);
+    expect(await readPendingEmailLogin(requestId, keyring.factory)).toMatchObject({
+      requestId,
+      profile: 'work',
+    });
+    await writeRecentReauthentication({
+      version: 1,
+      profile: 'work',
+      tokenId: credentials.tokenId,
+      token: 'short-lived-reauth-token-value',
+      expiresAt: '2000-08-25T00:00:00.000Z',
+    }, keyring.factory);
+    expect(await readRecentReauthentication(
+      'work',
+      credentials.tokenId,
+      keyring.factory,
+    )).toBeUndefined();
+    expect([...keyring.values.keys()].some((key) => key.includes('recent-reauth'))).toBe(false);
   });
 });
 

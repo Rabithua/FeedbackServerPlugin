@@ -14,12 +14,18 @@ import {
 } from './credentials.js';
 import { diagnoseFeedbackServer, formatDoctorReport } from './doctor.js';
 import { acceptInvitationAndConfigure } from './invitation-acceptance.js';
+import {
+  completeAgentEmailLogin,
+  requestAgentEmailLogin,
+} from './email-authentication.js';
 import { deriveOnboardingStatus } from './onboarding.js';
 
 const usage = `FeedbackKit Agent CLI
 
 Usage:
   feedbackkit accept-invite [--url URL] [--profile NAME] [--credential-name NAME]
+  feedbackkit login email request --email EMAIL [--url URL] [--profile NAME] [--credential-name NAME]
+  feedbackkit login email complete --request UUID
   feedbackkit onboarding status [--product ID] [--format text|json]
   feedbackkit product create --name NAME --platform ios|ipados|macos|android|web [--slug SLUG] [--locale LOCALE]
   feedbackkit doctor [--product ID] [--app-path PATH] [--format text|json]
@@ -27,8 +33,8 @@ Usage:
   feedbackkit profile use NAME
   feedbackkit profile remove NAME
 
-The one-time invitation token is accepted only on stdin or through hidden TTY input. It is never
-accepted as a command argument.`;
+One-time invitation tokens and six-digit email codes are accepted only on stdin or ordinary TTY
+input. They may be passed by the Agent from the current conversation, but never as command arguments.`;
 
 function slugify(value: string): string {
   const slug = value
@@ -55,37 +61,9 @@ async function promptText(label: string, defaultValue?: string): Promise<string>
   }
 }
 
-async function hiddenInput(label: string): Promise<string> {
+async function oneTimeInput(label: string): Promise<string> {
   if (!process.stdin.isTTY || !process.stderr.isTTY) return (await Bun.stdin.text()).trim();
-  process.stderr.write(`${label}: `);
-  process.stdin.setRawMode(true);
-  process.stdin.resume();
-  return new Promise((resolve, reject) => {
-    let value = '';
-    const cleanup = () => {
-      process.stdin.off('data', onData);
-      process.stdin.setRawMode(false);
-      process.stdin.pause();
-      process.stderr.write('\n');
-    };
-    const onData = (chunk: Buffer) => {
-      for (const byte of chunk) {
-        if (byte === 3) {
-          cleanup();
-          reject(new Error('Cancelled'));
-          return;
-        }
-        if (byte === 13 || byte === 10) {
-          cleanup();
-          resolve(value.trim());
-          return;
-        }
-        if (byte === 127 || byte === 8) value = Array.from(value).slice(0, -1).join('');
-        else if (byte >= 32) value += String.fromCodePoint(byte);
-      }
-    };
-    process.stdin.on('data', onData);
-  });
+  return promptText(label);
 }
 
 async function chooseInvitationProfile(requested?: string): Promise<{
@@ -120,7 +98,7 @@ async function runAcceptInvite(options: string[]): Promise<void> {
     return;
   }
   const baseUrl = parsed.get('--url') ?? DEFAULT_BASE_URL;
-  const token = await hiddenInput('One-time FeedbackKit invitation token');
+  const token = await oneTimeInput('One-time FeedbackKit invitation token');
   if (!/^fsinv_[A-Za-z0-9_-]+$/.test(token)) throw new Error('Invitation token is invalid');
   const credentialName = parsed.get('--credential-name');
   const configured = await acceptInvitationAndConfigure({
@@ -146,6 +124,51 @@ async function runAcceptInvite(options: string[]): Promise<void> {
       'Warning: the replacement account is connected, but the previous Agent credential could not be revoked. Revoke it from that account when access is available.',
     );
   }
+}
+
+async function runEmailLogin(action: string | undefined, options: string[]): Promise<void> {
+  if (action === 'request') {
+    const parsed = parseCliOptions(options, ['--email', '--url', '--profile', '--credential-name']);
+    const email = parsed.get('--email');
+    if (!email) throw new Error('--email is required');
+    const selection = await chooseInvitationProfile(parsed.get('--profile'));
+    if (selection.stop) {
+      console.error('Keeping the existing account; no verification email was sent.');
+      return;
+    }
+    const credentialName = parsed.get('--credential-name');
+    const requested = await requestAgentEmailLogin({
+      email,
+      baseUrl: parsed.get('--url') ?? DEFAULT_BASE_URL,
+      profile: selection.profile,
+      replaceExisting: selection.replaceExisting,
+      ...(credentialName ? { credentialName } : {}),
+    });
+    process.stdout.write(`${JSON.stringify(requested, null, 2)}\n`);
+    return;
+  }
+  if (action === 'complete') {
+    const parsed = parseCliOptions(options, ['--request']);
+    const requestId = parsed.get('--request');
+    if (!requestId) throw new Error('--request is required');
+    const code = await oneTimeInput('Six-digit FeedbackKit email code');
+    if (!/^\d{6}$/.test(code)) throw new Error('Email code must contain exactly six digits');
+    const completed = await completeAgentEmailLogin({ requestId, code });
+    process.stdout.write(`${JSON.stringify(completed, null, 2)}\n`);
+    if (!completed.acknowledged) {
+      console.error(
+        'Warning: the local credential is saved, but server acknowledgement was interrupted. '
+        + 'The recoverable copy will expire automatically.',
+      );
+    }
+    if (completed.previousCredentialRevoked === false) {
+      console.error(
+        'Warning: the new credential is saved, but the previous Agent credential could not be revoked.',
+      );
+    }
+    return;
+  }
+  throw new Error('Use login email request or login email complete');
 }
 
 async function runOnboardingStatus(options: string[]): Promise<void> {
@@ -238,6 +261,10 @@ export async function runFeedbackServerCli(argv: string[]): Promise<void> {
   }
   const [group, action, ...options] = argv;
   if (group === 'accept-invite') return runAcceptInvite(argv.slice(1));
+  if (group === 'login' && action === 'email') {
+    const [emailAction, ...emailOptions] = options;
+    return runEmailLogin(emailAction, emailOptions);
+  }
   if (group === 'onboarding' && action === 'status') return runOnboardingStatus(options);
   if (group === 'product' && action === 'create') return runProductCreate(options);
   if (group === 'doctor') return runDoctor(argv.slice(1));

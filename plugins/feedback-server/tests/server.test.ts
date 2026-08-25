@@ -443,7 +443,7 @@ function missingParameterDescriptions(schema: unknown, path = 'input'): string[]
   return missing;
 }
 
-describe('MCP server 0.11.1', () => {
+describe('MCP server 0.12.0', () => {
   const originalFetch = globalThis.fetch;
   let client: Client;
   let server: ReturnType<typeof createServer>;
@@ -502,7 +502,7 @@ describe('MCP server 0.11.1', () => {
   test('exposes the new surface and removes legacy Feedback and Item fields', async () => {
     const tools = (await client.listTools()).tools;
     const names = tools.map(({ name }) => name);
-    expect(names).toHaveLength(71);
+    expect(names).toHaveLength(79);
     expect(names).toContain('execute_confirmation');
     expect(names).toContain('get_subscription');
     expect(names).toContain('get_onboarding_status');
@@ -518,6 +518,14 @@ describe('MCP server 0.11.1', () => {
     expect(names).toContain('invite_waitlist_entry');
     expect(names).toContain('retry_waitlist_invitation_email');
     expect(names).toContain('revoke_waitlist_invitation');
+    expect(names).toContain('request_email_login');
+    expect(names).toContain('complete_email_login');
+    expect(names).toContain('request_email_reauthentication');
+    expect(names).toContain('complete_email_reauthentication');
+    expect(names).toContain('request_email_change');
+    expect(names).toContain('complete_email_change');
+    expect(names).toContain('list_agent_credentials');
+    expect(names).toContain('revoke_agent_credential');
     const serialized = JSON.stringify(tools);
     expect(serialized).toContain('conversation');
     expect(serialized).toContain('roadmapStage');

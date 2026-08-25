@@ -8,7 +8,8 @@ description: Install, upgrade, accept a FeedbackKit invitation, connect an Agent
 For an invitation Prompt, install or upgrade the trusted `feedback-server` plugin first. Locate its
 installed directory from `codex plugin list --json` (`source.path`) or `claude plugin list --json`
 (`installPath`); do not clone the repository or guess a cache path. In the same task, run the
-bundle's `bin/feedbackkit accept-invite` and pass the one-time token only through stdin. Never put it
+bundle's `bin/feedbackkit accept-invite`. The invitation token may appear in the user-supplied Prompt
+and current Agent conversation. Pass it through stdin, consume it immediately, and never repeat it
 in command arguments, shell history, logs, or the final response.
 
 The CLI checks the operating system's native credential store before consuming the invitation. If a
@@ -32,6 +33,17 @@ installation and do not require MCP hot reload. In later tasks, use `connection_
 `get_onboarding_status`; with several Products, ask for an explicit Product selection. Treat Doctor
 failures as blockers and warnings as review items. Run a live roundtrip only when explicitly asked.
 
-For subsequent website access, use the feedkit.cn email-code or Passkey flow. Passwords, usernames,
-display names, and password reset do not exist. Email changes require recent interactive
-authentication and verification of the new address.
+For a new device or credential recovery, use `request_email_login` without existing credentials.
+If it reports `profile_choice_required`, show the existing Profile email and let the user choose to
+keep it, add a named Profile, or replace it; never choose for them or request email first. Ask the
+user to reply directly in the Agent conversation with the six-digit code, then call
+`complete_email_login`. The one-time code does not need hidden input. The result must contain only
+account UUID/email, Profile, token ID, scopes, expiry, and status; a PAT must never appear in Agent
+context, output, logs, or a file.
+
+Before email changes or listing/revoking other Agent credentials, call
+`request_email_reauthentication`, ask the user to reply with the six digits, and call
+`complete_email_reauthentication`. The plugin keeps the resulting ten-minute PAT-bound token in the
+native credential store. Use the email-change tools to verify the new address. Never revoke the
+currently active PAT through the other-credential tool. There is no website login, Passkey,
+password, username, display name, or password reset.

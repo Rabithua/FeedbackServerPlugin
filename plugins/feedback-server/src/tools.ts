@@ -8,7 +8,19 @@ import { z } from 'zod';
 import { FeedbackServerApiClient, FeedbackServerApiError } from './api-client.js';
 import { ConfirmationStore, redactPreview } from './confirmation.js';
 import {
+  EmailLoginProfileConflictError,
+  completeAgentEmailChange,
+  completeAgentEmailLogin,
+  completeAgentEmailReauthentication,
+  listAgentCredentialMetadata,
+  requestAgentEmailChange,
+  requestAgentEmailLogin,
+  requestAgentEmailReauthentication,
+  revokeAgentCredentialById,
+} from './email-authentication.js';
+import {
   loadCredentialsWithSource,
+  profileIdSchema,
   type LoadedCredentials,
   type StoredCredentials,
 } from './credentials.js';
@@ -165,6 +177,15 @@ const PARAMETER_DESCRIPTIONS: Record<string, string> = {
   outboxId: 'UUID of the exact failed notification delivery to retry.',
   entryId: 'UUID of the exact owner-scoped waitlist entry.',
   invitationId: 'UUID of the exact administrator invitation.',
+  requestId: 'UUID returned by the preceding FeedbackKit email authentication request.',
+  challengeId: 'UUID returned by the preceding FeedbackKit email challenge request.',
+  code: 'Six-digit one-time code from the FeedbackKit email; it may be pasted directly into the Agent conversation.',
+  email: 'Normalized account email used for FeedbackKit authentication or email replacement.',
+  profile: 'Local native-keyring Profile name; omit to use the default or active Profile.',
+  baseUrl: 'FeedbackKit API base URL; omit to use the hosted service.',
+  credentialName: 'Human-readable device credential name shown in Agent credential metadata.',
+  replaceExisting: 'Explicitly replace the selected occupied Profile only after showing its current email to the user.',
+  tokenId: 'UUID of an Agent credential; this is non-secret metadata, not the PAT value.',
   confirmationId: 'Single-use confirmation ID returned by a protected preview; example: 123e4567-e89b-42d3-a456-426614174000.',
   cursor: 'Opaque nextCursor from the preceding page; omit for the first page.',
   limit: 'Maximum number of records in this page within the documented numeric bounds.',
@@ -351,7 +372,7 @@ function remediationFor(error: FeedbackServerApiError): string {
     if (error.credentialSource === 'environment') {
       return 'Replace or remove both FEEDBACK_SERVER_BASE_URL and FEEDBACK_SERVER_API_TOKEN, then restart the MCP process before retrying.';
     }
-    return 'Reconnect the active FeedbackServer profile in a visible terminal, then retry.';
+    return 'Ask the Agent to request an email login code for this Profile, complete it in the conversation, then retry.';
   }
   if (error.status === 403) {
     return 'Check the active account, Product access, and PAT scopes before retrying.';
@@ -466,6 +487,40 @@ function registerDirectWrite<T extends ObjectSchema>(
       try {
         return success(await handler(inputSchema.parse(input), await context()));
       } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+}
+
+function registerCredentialIndependent<T extends ObjectSchema>(
+  server: McpServer,
+  name: string,
+  description: string,
+  inputSchema: T,
+  annotations: Pick<ToolAnnotations, 'readOnlyHint' | 'destructiveHint' | 'idempotentHint'>,
+  handler: (input: z.infer<T>) => Promise<unknown>,
+): void {
+  toolRegistrar(server)(
+    name,
+    {
+      description,
+      inputSchema,
+      annotations: { ...annotations, openWorldHint: true },
+    },
+    async (input) => {
+      try {
+        return success(await handler(inputSchema.parse(input)));
+      } catch (error) {
+        if (error instanceof EmailLoginProfileConflictError) {
+          return success({
+            status: 'profile_choice_required',
+            profile: error.profile,
+            existingEmail: error.email,
+            choices: ['keep', 'add_named_profile', 'replace'],
+            emailSent: error.emailSent,
+          });
+        }
         return failure(error);
       }
     },
@@ -640,6 +695,90 @@ export function registerFeedbackServerTools(
 ): void {
   updateNoticeProviders.set(server, updateNotices);
   setupNoticeProviders.set(server, setupNotices);
+  registerCredentialIndependent(
+    server,
+    'request_email_login',
+    'Request a six-digit FeedbackKit login code for a new device. This works without existing credentials. It preflights the native keyring before sending email. If the Profile is occupied, show the returned existing email and obtain the user choice before retrying with another Profile or replaceExisting=true.',
+    z.object({
+      email: z.email(),
+      baseUrl: z.url().optional(),
+      profile: profileIdSchema.optional(),
+      credentialName: z.string().trim().min(1).max(160).optional(),
+      replaceExisting: z.boolean().default(false),
+    }),
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    requestAgentEmailLogin,
+  );
+  registerCredentialIndependent(
+    server,
+    'complete_email_login',
+    'Complete FeedbackKit login using the six-digit code the user pasted directly into this Agent conversation. The tool stores the new PAT in the native keyring and returns only non-secret account, Profile, scope, and expiry metadata.',
+    z.object({
+      requestId: z.uuid(),
+      code: z.string().regex(/^\d{6}$/),
+    }),
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    completeAgentEmailLogin,
+  );
+  registerCredentialIndependent(
+    server,
+    'request_email_reauthentication',
+    'Request a six-digit code for sensitive FeedbackKit credential or email operations using an existing native-keyring Profile.',
+    z.object({ profile: profileIdSchema.optional() }),
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    requestAgentEmailReauthentication,
+  );
+  registerCredentialIndependent(
+    server,
+    'complete_email_reauthentication',
+    'Complete recent authentication using the six-digit code pasted directly into this Agent conversation. The ten-minute PAT-bound reauthentication token remains only in the native keyring.',
+    z.object({
+      requestId: z.uuid(),
+      code: z.string().regex(/^\d{6}$/),
+    }),
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    completeAgentEmailReauthentication,
+  );
+  registerCredentialIndependent(
+    server,
+    'request_email_change',
+    'Send a verification code to a new account email after recent email reauthentication.',
+    z.object({ email: z.email(), profile: profileIdSchema.optional() }),
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    requestAgentEmailChange,
+  );
+  registerCredentialIndependent(
+    server,
+    'complete_email_change',
+    'Consume the new-address code pasted into the Agent conversation and update the verified account email plus local Profile metadata.',
+    z.object({
+      challengeId: z.uuid(),
+      code: z.string().regex(/^\d{6}$/),
+      profile: profileIdSchema.optional(),
+    }),
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    completeAgentEmailChange,
+  );
+  registerCredentialIndependent(
+    server,
+    'list_agent_credentials',
+    'List non-secret Agent credential metadata after recent email reauthentication. PAT values are never returned.',
+    z.object({ profile: profileIdSchema.optional() }),
+    { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    listAgentCredentialMetadata,
+  );
+  registerConfirmedWrite(
+    server,
+    confirmations,
+    'revoke_agent_credential',
+    'Revoke one non-current Agent credential after recent email reauthentication.',
+    z.object({ tokenId: uuid, profile: profileIdSchema.optional(), ...confirmation }),
+    { destructiveHint: true, idempotentHint: true },
+    async ({ tokenId, profile }) => revokeAgentCredentialById({
+      tokenId,
+      ...(profile ? { profile } : {}),
+    }),
+  );
   toolRegistrar(server)(
     'execute_confirmation',
     {

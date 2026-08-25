@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.12.0 - 2026-08-25
+
+- Add credential-free Agent email login with six-digit codes pasted directly into the conversation,
+  recoverable enrollment, native-keyring persistence, and PAT-free MCP results.
+- Add PAT-bound email reauthentication, Agent email replacement, and non-secret PAT listing and
+  confirmed revocation tools.
+- Remove website and Passkey guidance; keep invitation tokens and email codes usable in the current
+  Agent conversation while preventing long-lived credentials from entering Agent context.
+- Add same-task email login CLI commands and cover Profile conflict, response loss, replay, keyring
+  expiry, and sensitive request placement.
+
 ## 0.11.1 - 2026-08-25
 
 - Bootstrap locked production dependencies before loading the CLI or MCP server when a marketplace

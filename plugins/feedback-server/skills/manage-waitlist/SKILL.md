@@ -20,7 +20,9 @@ recipient, language, App, fixed Free plan, invitation expiry, and email summary.
 `retry_waitlist_invitation_email`. Use `revoke_waitlist_invitation` when the user asks to cancel a
 pending invite; revocation prevents acceptance but cannot recall mail already accepted by the
 provider. These tools require both the PAT scope `waitlist:invite` and a current database
-`super_admin` role. Never reproduce the invitation token or rendered email body in Agent text.
+`super_admin` role. The recipient may paste the complete invitation Prompt, including its single-use
+token, into the current Agent conversation. Consume it immediately and do not repeat the token in
+commands, logs, previews, tool output, or the final response.
 
 An invited signup cannot be permanently deleted until its pending invitation is revoked. Acceptance
 atomically creates the verified-email account, applies Free, issues the Agent credential, and changes
