@@ -15,8 +15,9 @@ When the user supplies an invitation Prompt:
 
 1. Install or upgrade the trusted `feedback-server` plugin. Authentication is deferred until a
    protected tool is used, so do not start ordinary email login first.
-2. Read `invitation_token` from the Prompt and call the anonymous `accept_invitation` tool exactly
-   once. Never repeat the token in chat, logs, commands, previews, or the final response.
+2. Read `invitation_token` from the Prompt and call the anonymous `accept_invitation` tool once for
+   the current handoff. Do not call it again while that handoff remains active. Never repeat the
+   token in chat, logs, commands, previews, or the final response.
 3. Show the returned continuation link and ten-character pairing code. Ask the user to open the
    link. The code is only a cross-browser/WebView pairing fallback, not another identity check.
 4. Retry protected `connection_status`. Its OAuth challenge lets the host open the authorization
@@ -26,7 +27,8 @@ When the user supplies an invitation Prompt:
    an invitation.
 6. Retry `connection_status` after approval. Continue only when it reports an authenticated OAuth
    connection. If the handoff expired, call `accept_invitation` again; the invitation remains usable
-   until final approval or its own expiry.
+   until final approval or its own expiry; this expiry recovery is the exception to the one-call
+   rule for the previous handoff.
 
 If OAuth opens in a different browser or isolated WebView and shows ordinary email login, have the
 user paste the short connection code into that page. Do not route an invited user through email

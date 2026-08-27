@@ -62,7 +62,7 @@ require(claude_entries[0].get("strict") is True, "Claude marketplace must use st
 require(cursor.get("mcpServers", {}).get("feedback-server", {}).get("url") == MCP_URL, "Cursor example is not remote")
 require(opencode.get("mcp", {}).get("feedback-server", {}).get("url") == MCP_URL, "OpenCode example is not remote")
 
-for skill in (
+skills = (
     "setup-feedback-server",
     "triage-feedback",
     "manage-waitlist",
@@ -70,8 +70,16 @@ for skill in (
     "configure-notifications",
     "administer-feedback-server",
     "manage-feedback-server",
-):
+)
+for skill in skills:
     require((PLUGIN / "skills" / skill / "SKILL.md").is_file(), f"Missing skill: {skill}")
+    metadata = (PLUGIN / "skills" / skill / "agents" / "openai.yaml").read_text(
+        encoding="utf-8"
+    )
+    require(
+        'transport: "streamable_http"' in metadata,
+        f"Skill {skill} must declare the Streamable HTTP MCP transport",
+    )
 
 for forbidden in ("bin", "dist", "src", "scripts", "tests"):
     directory = PLUGIN / forbidden
@@ -88,5 +96,16 @@ allowed_root = {
 }
 unexpected = sorted(path.name for path in ROOT.iterdir() if path.name not in allowed_root)
 require(not unexpected, f"Unexpected public repository paths: {', '.join(unexpected)}")
+
+private_names = {".env", "docker-compose.yml", "drizzle.config.ts", "DOKPLOY.md"}
+private_paths = sorted(
+    str(path.relative_to(ROOT))
+    for path in ROOT.rglob("*")
+    if path.is_file() and ".git" not in path.parts and path.name in private_names
+)
+require(
+    not private_paths,
+    f"Private deployment files must not ship: {', '.join(private_paths)}",
+)
 
 print(f"FeedbackServer Plugin {VERSION} is a valid runtime-free remote MCP distribution.")
