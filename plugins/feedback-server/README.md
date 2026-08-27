@@ -1,21 +1,14 @@
-# FeedbackKit plugin bundle
+# FeedbackKit remote plugin
 
-This directory is the installable FeedbackKit Agent plugin. `bin/feedbackkit` loads the bundled CLI;
-`dist/server.mjs` is the MCP server. The public passwordless onboarding commands are:
+This installable plugin contains only Skills and remote MCP metadata. Codex and Claude Code connect
+to `https://api.feedkit.cn/mcp` over HTTP and use host-managed OAuth. There is no local executable,
+Bun dependency, CLI, keyring, Profile, package install, or runtime JavaScript distribution.
 
-```bash
-feedbackkit accept-invite
-feedbackkit login email request --email owner@example.com
-feedbackkit login email complete --request <uuid>
-feedbackkit onboarding status
-feedbackkit product create --name "My App" --platform ios
-feedbackkit notification preference set --product <uuid> --choice bark|webhook|defer
-feedbackkit doctor --product <uuid> --app-path /absolute/path
-```
+Anonymous tools:
 
-Invitation tokens and email codes are accepted through stdin or ordinary TTY input. They may come
-from the current Agent conversation and are consumed immediately. Long-lived credentials are stored in
-macOS Keychain, Windows Credential Manager, or Linux Secret Service through the native keyring
-backend. No password or plaintext-file fallback exists.
+- `health`
+- `accept_invitation`
 
-Run `bun run check` from this directory to typecheck, lint, test, build, and smoke-test the bundle.
+All other tools declare OAuth scopes and trigger host linking on first use. For invitation setup,
+call `accept_invitation`, show the returned link and short code, then retry `connection_status`.
+Invited users approve the recognized email without receiving another verification message.

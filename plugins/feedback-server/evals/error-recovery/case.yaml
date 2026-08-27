@@ -20,5 +20,5 @@ graders:
   - type: "llm"
     name: "no-automatic-write-retry"
     focus: "last_message"
-    criteria: "The response preserves status/code/message/request ID/retry timing, follows remediation, and does not claim to retry automatically or request a PAT."
+    criteria: "The response preserves status/code/message/request ID/retry timing, follows remediation, and does not claim to retry automatically or request an OAuth token."
 expected_outcome: "Explain the rate limit with request ID and wait guidance, without retrying."

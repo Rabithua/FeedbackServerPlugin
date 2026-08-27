@@ -7,6 +7,6 @@ dependencies:
     - type: "mcp"
       value: "feedback-server"
       description: "FeedbackServer administration tools"
-      transport: "stdio"
+      transport: "http"
 policy:
   allow_implicit_invocation: true

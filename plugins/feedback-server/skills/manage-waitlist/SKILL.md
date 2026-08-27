@@ -21,15 +21,15 @@ paid plan without a term and never infer one. Show that preview, wait for explic
 `execute_confirmation` with the returned ID. Apply the same confirmation gate to
 `retry_waitlist_invitation_email`. Use `revoke_waitlist_invitation` when the user asks to cancel a
 pending invite; revocation prevents acceptance but cannot recall mail already accepted by the
-provider. These tools require both the PAT scope `waitlist:invite` and a current database
-`super_admin` role. The recipient may paste the complete invitation Prompt, including its single-use
-token, into the current Agent conversation. Consume it immediately and do not repeat the token in
-commands, logs, previews, tool output, or the final response.
+provider. These tools require both the OAuth scope `waitlist:invite` and a current database
+`super_admin` role. The recipient may paste the complete invitation Prompt into the current Agent
+conversation. Use its token only in anonymous `accept_invitation`; do not repeat it in commands,
+logs, previews, tool output, or the final response.
 
 An invited signup cannot be permanently deleted until its pending invitation is revoked. Acceptance
-atomically creates the verified-email account, applies the selected grant, issues the Agent credential, and changes
-the signup to `converted`. The recipient runs `feedbackkit accept-invite` in the current Agent task;
-never ask for a username, display name, or password.
+atomically creates the verified-email account, applies the selected grant, creates the OAuth grant
+and authorization code, and changes the signup to `converted`. The recipient opens the handoff link,
+then accepts OAuth without a second email code; never ask for a username, display name, or password.
 
 Permanent deletion requires confirmation. Show the returned App, platform, and note-count preview,
 wait for explicit approval, then call `execute_confirmation` with the returned ID. Confirmation is

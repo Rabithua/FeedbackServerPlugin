@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""Validate the runtime-free FeedbackKit remote MCP plugin distribution."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent.parent
+PLUGIN = ROOT / "plugins" / "feedback-server"
+VERSION = "1.0.0"
+MCP_URL = "https://api.feedkit.cn/mcp"
+
+
+def load(path: Path) -> dict:
+    with path.open(encoding="utf-8") as handle:
+        value = json.load(handle)
+    assert isinstance(value, dict), f"{path} must contain a JSON object"
+    return value
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise RuntimeError(message)
+
+
+codex = load(PLUGIN / ".codex-plugin" / "plugin.json")
+claude = load(PLUGIN / ".claude-plugin" / "plugin.json")
+mcp = load(PLUGIN / ".mcp.json")
+codex_marketplace = load(ROOT / ".agents" / "plugins" / "marketplace.json")
+claude_marketplace = load(ROOT / ".claude-plugin" / "marketplace.json")
+cursor = load(ROOT / "examples" / "cursor.mcp.json")
+opencode = load(ROOT / "examples" / "opencode.json")
+
+require(codex.get("name") == PLUGIN.name, "Plugin folder and Codex manifest name differ")
+require(codex.get("version") == VERSION, "Codex plugin version must be 1.0.0")
+require(claude.get("version") == VERSION, "Claude plugin version must be 1.0.0")
+require(codex.get("skills") == "./skills/", "Codex skills path is invalid")
+require(
+    codex.get("mcpServers") == {
+        "feedback-server": {"type": "http", "url": MCP_URL},
+    },
+    "Codex must declare the remote HTTP MCP endpoint",
+)
+require("apps" not in codex, "Do not add an app manifest until the real connector ID is registered")
+require("mcpServers" not in claude, "Claude must use the canonical root .mcp.json")
+require(mcp.get("feedback-server") == {"type": "http", "url": MCP_URL}, "Remote MCP descriptor is invalid")
+
+entries = codex_marketplace.get("plugins")
+require(isinstance(entries, list) and len(entries) == 1, "Codex marketplace must contain one plugin")
+entry = entries[0]
+require(entry.get("name") == "feedback-server", "Codex marketplace plugin name is invalid")
+require(entry.get("source") == {"source": "local", "path": "./plugins/feedback-server"}, "Codex marketplace source is invalid")
+require(entry.get("policy") == {"installation": "AVAILABLE", "authentication": "ON_USE"}, "Codex marketplace must defer authentication until first protected tool use")
+
+claude_entries = claude_marketplace.get("plugins")
+require(isinstance(claude_entries, list) and len(claude_entries) == 1, "Claude marketplace must contain one plugin")
+require(claude_entries[0].get("version") == VERSION, "Claude marketplace version differs")
+require(claude_entries[0].get("strict") is True, "Claude marketplace must use strict metadata")
+
+require(cursor.get("mcpServers", {}).get("feedback-server", {}).get("url") == MCP_URL, "Cursor example is not remote")
+require(opencode.get("mcp", {}).get("feedback-server", {}).get("url") == MCP_URL, "OpenCode example is not remote")
+
+for skill in (
+    "setup-feedback-server",
+    "triage-feedback",
+    "manage-waitlist",
+    "publish-roadmap-releases",
+    "configure-notifications",
+    "administer-feedback-server",
+    "manage-feedback-server",
+):
+    require((PLUGIN / "skills" / skill / "SKILL.md").is_file(), f"Missing skill: {skill}")
+
+for forbidden in ("bin", "dist", "src", "scripts", "tests"):
+    directory = PLUGIN / forbidden
+    require(
+        not directory.exists() or not any(path.is_file() for path in directory.rglob("*")),
+        f"Runtime directory must not ship files: {forbidden}",
+    )
+for forbidden in ("bun.lock", "package.json", "tsconfig.json", "eslint.config.js"):
+    require(not (PLUGIN / forbidden).exists(), f"Runtime file must not ship: {forbidden}")
+
+allowed_root = {
+    ".agents", ".claude-plugin", ".git", ".github", ".gitignore", "CHANGELOG.md",
+    "LICENSE", "README.md", "docs", "examples", "package.json", "plugins", "scripts",
+}
+unexpected = sorted(path.name for path in ROOT.iterdir() if path.name not in allowed_root)
+require(not unexpected, f"Unexpected public repository paths: {', '.join(unexpected)}")
+
+print(f"FeedbackServer Plugin {VERSION} is a valid runtime-free remote MCP distribution.")

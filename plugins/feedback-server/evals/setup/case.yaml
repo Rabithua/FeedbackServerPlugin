@@ -1,6 +1,6 @@
 schema_version: "1.1"
-name: "same-task-passwordless-onboarding"
-description: "Runs invitation acceptance from the installed plugin without MCP hot reload."
+name: "invitation-handoff-oauth-onboarding"
+description: "Uses anonymous invitation handoff before host-managed OAuth."
 tags: ["setup"]
 execution:
   prompt: "我把 FeedbackKit 邀请 Prompt 发给你了。请安装插件，在当前任务完成账号和首个 App 接入；令牌不要放进参数或输出。"
@@ -12,5 +12,5 @@ graders:
   - type: "llm"
     name: "same-task-token-safety"
     focus: "last_message"
-    criteria: "The response locates the installed bundle from Codex source.path or Claude installPath, runs feedbackkit accept-invite in the current task with the token on stdin, never asks for username/password, re-asks App details, requires an explicit Bark, Product Webhook, or defer choice after Product creation, and requires approval before Apple project edits."
-expected_outcome: "Complete safe passwordless onboarding in the current task without MCP hot reload."
+    criteria: "The response calls anonymous accept_invitation without repeating the token, shows the continuation link and pairing code, retries connection_status to start host OAuth, never asks an invited user for an email code, re-asks App details after connection, requires an explicit Bark, Product Webhook, or defer choice, and requires approval before Apple project edits."
+expected_outcome: "Complete safe invitation handoff and browser OAuth without exposing credentials."

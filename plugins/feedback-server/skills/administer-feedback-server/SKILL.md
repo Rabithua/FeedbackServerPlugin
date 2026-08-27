@@ -9,11 +9,11 @@ Use MCP tools for Products, subscription state, access, primary Product, keys, a
 Never infer subscription access or use undocumented grant routes. `set_primary_product` is protected:
 show the transition and execute only through `execute_confirmation` after approval.
 
-Account onboarding is email-bound and Agent-first. Route invitation acceptance, profile selection,
-first Product creation, and Apple setup through `$setup-feedback-server`. Passwords, usernames, and
-display names do not exist. New-device login happens inside the Agent with a six-digit email code;
-there is no website login or Passkey. Route login, email changes, and PAT management through
-`$setup-feedback-server`, and never return the long-lived PAT to Agent context.
+Account onboarding is email-bound and browser-OAuth based. Route invitation acceptance, Agent
+connection, first Product creation, and Apple setup through `$setup-feedback-server`. Passwords,
+usernames, and display names do not exist. The host stores OAuth tokens; never request or return a
+token to Agent context. Route connection, email changes, and grant management through
+`$setup-feedback-server`.
 
 Waitlist invitation email belongs to `$manage-waitlist`: it defaults to Free, allows an explicitly
 selected paid grant, and requires a redacted preview plus explicit confirmation. Never reproduce its

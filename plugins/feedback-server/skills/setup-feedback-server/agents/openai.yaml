@@ -1,12 +1,12 @@
 interface:
   display_name: "Set Up FeedbackServer"
-  short_description: "Install, connect, diagnose, and configure FeedbackServer profiles"
+  short_description: "Install, connect, and diagnose FeedbackServer OAuth"
   default_prompt: "Use $setup-feedback-server to diagnose my connection and continue the next setup step."
 dependencies:
   tools:
     - type: "mcp"
       value: "feedback-server"
       description: "FeedbackServer setup and administrator tools"
-      transport: "stdio"
+      transport: "http"
 policy:
   allow_implicit_invocation: true

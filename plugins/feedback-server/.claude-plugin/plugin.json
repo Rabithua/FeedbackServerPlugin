@@ -1,6 +1,6 @@
 {
   "name": "feedback-server",
-  "version": "0.12.3",
+  "version": "1.0.0",
   "description": "Set up FeedbackKit and manage products, feedback, waitlists, activity, roadmaps, releases, and notifications through MCP.",
   "author": {
     "name": "Rabithua",
@@ -15,7 +15,7 @@
     "roadmap",
     "changelog",
     "mcp",
-    "profiles"
+    "oauth"
   ],
   "skills": [
     "./skills/setup-feedback-server",

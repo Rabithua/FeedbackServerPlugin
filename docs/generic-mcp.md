@@ -1,22 +1,24 @@
-# Generic MCP clients
+# Generic remote MCP clients
 
-The committed `plugins/feedback-server/dist/server.mjs` file is a standalone Bun stdio MCP server.
-Replace `/ABSOLUTE/PATH/FeedbackServerPlugin` below with the absolute path of a trusted checkout.
-Do not add a PAT to these JSON files.
+FeedbackKit is a hosted Streamable HTTP MCP server:
+
+```text
+https://api.feedkit.cn/mcp
+```
+
+Do not configure a local command, Bun runtime, PAT, API token, or environment credential. The client
+must support remote HTTP MCP plus OAuth authorization-code flow with PKCE and dynamic client
+registration.
 
 ## Cursor
 
-Copy [`examples/cursor.mcp.json`](../examples/cursor.mcp.json) to the user-level or project-level
-`mcp.json` supported by Cursor:
+Start from [`examples/cursor.mcp.json`](../examples/cursor.mcp.json):
 
 ```json
 {
   "mcpServers": {
     "feedback-server": {
-      "command": "bun",
-      "args": [
-        "/ABSOLUTE/PATH/FeedbackServerPlugin/plugins/feedback-server/dist/server.mjs"
-      ]
+      "url": "https://api.feedkit.cn/mcp"
     }
   }
 }
@@ -31,32 +33,14 @@ Start from [`examples/opencode.json`](../examples/opencode.json):
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "feedback-server": {
-      "type": "local",
-      "command": [
-        "bun",
-        "/ABSOLUTE/PATH/FeedbackServerPlugin/plugins/feedback-server/dist/server.mjs"
-      ],
+      "type": "remote",
+      "url": "https://api.feedkit.cn/mcp",
       "enabled": true
     }
   }
 }
 ```
 
-The server reads the active FeedbackKit profile from macOS Keychain, Windows Credential Manager, or
-Linux Secret Service. Use `feedbackkit accept-invite` to create it; no plaintext credential file is
-supported. A controlled headless runtime may instead inject the complete
-`FEEDBACK_SERVER_BASE_URL`, `FEEDBACK_SERVER_ADMIN_ID`, `FEEDBACK_SERVER_ADMIN_EMAIL`,
-`FEEDBACK_SERVER_API_TOKEN_ID`, `FEEDBACK_SERVER_API_TOKEN`, `FEEDBACK_SERVER_API_SCOPES`, and
-`FEEDBACK_SERVER_API_TOKEN_EXPIRES_AT` set through its secret environment. Never commit those values.
-
-## Check the transport
-
-From the repository root, run:
-
-```bash
-bun --cwd=plugins/feedback-server run test
-```
-
-The tests initialize the stdio server, verify its 71-tool surface, and exercise request
-routing. After client configuration, start a fresh client session and call `connection_status`
-before making changes.
+After configuration, call `health`, then `connection_status`. The protected call should open the
+client's OAuth linking UI. If the client cannot complete remote MCP OAuth, it is not supported by
+this distribution; do not fall back to putting a PAT in a JSON file.

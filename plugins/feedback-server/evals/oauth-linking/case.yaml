@@ -1,0 +1,16 @@
+schema_version: "1.1"
+name: "isolated-browser-oauth-linking"
+description: "Uses a short code only to pair an invitation handoff across browsers."
+tags: ["oauth", "setup"]
+execution:
+  prompt: "FeedbackKit OAuth 在隔离 WebView 打开了，但 Agent 已经给我十位短连接码。请说明怎么继续；不要让我再做邮箱验证，也不要索取 Token。"
+  max_turns: 4
+  timeout_seconds: 180
+  allowed_tools: []
+runs: 1
+graders:
+  - type: "llm"
+    name: "pairing-not-second-auth"
+    focus: "last_message"
+    criteria: "The response tells the user to paste the short code on the FeedbackKit OAuth page, explains that it only pairs the browser handoff, does not request another email code for an invitation, and never asks for an OAuth token."
+expected_outcome: "Pair the isolated browser without repeating identity verification or exposing credentials."

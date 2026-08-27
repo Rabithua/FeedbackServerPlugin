@@ -1,10 +1,7 @@
 {
   "mcpServers": {
     "feedback-server": {
-      "command": "bun",
-      "args": [
-        "/ABSOLUTE/PATH/FeedbackServerPlugin/plugins/feedback-server/dist/server.mjs"
-      ]
+      "url": "https://api.feedkit.cn/mcp"
     }
   }
 }

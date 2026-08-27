@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.0 - 2026-08-28
+
+- Replace the local Bun/stdio MCP, CLI, native keyring, Profiles, and runtime JavaScript bundle with
+  the hosted `https://api.feedkit.cn/mcp` connector.
+- Defer Marketplace authentication until a protected tool is used, keeping `health` and anonymous
+  `accept_invitation` available before linking.
+- Add the ten-minute invitation handoff and cross-browser pairing-code workflow; invited users
+  approve the recognized email and entitlement in browser OAuth without another email code.
+- Move access/refresh token storage entirely into Codex, ChatGPT, or Claude Code and preserve
+  tool-specific scopes plus encrypted single-use confirmations.
+
 ## 0.12.3 - 2026-08-25
 
 - Persist each Product's explicit Bark, Product Webhook, or defer onboarding choice so later tasks
