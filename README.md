@@ -1,8 +1,9 @@
-# FeedbackKit Agent Plugin
+# FeedbackKit Agent Plugin 1.0
 
-FeedbackKit connects Codex and Claude Code to FeedbackServer for Product setup, user-feedback
-triage, roadmap and release publishing, waitlist invitations, notifications, and audit history.
-Version 0.12 adds Agent-native email-code login and recovery without a browser account surface.
+FeedbackKit connects Codex and Claude Code directly to the hosted FeedbackServer MCP for Product
+setup, user-feedback triage, roadmaps, releases, waitlist invitations, notifications, and audit
+history. Version 1.0 uses browser OAuth and ships no local MCP runtime, CLI, Bun dependency, native
+keyring integration, Profile, or JavaScript bundle.
 
 ## Install
 
@@ -20,88 +21,57 @@ claude plugin marketplace add Rabithua/FeedbackServerPlugin
 claude plugin install feedback-server@feedback-server --scope user
 ```
 
-## Accept an invitation
+Installation does not force sign-in. The remote MCP at `https://api.feedkit.cn/mcp` anonymously
+publishes `health` and `accept_invitation`; the first protected tool starts OAuth.
 
-Paste the complete invitation Prompt into a Codex or Claude Code task. The Agent installs or
-upgrades this plugin, locates the installed bundle from plugin metadata, and runs `feedbackkit
-accept-invite` in the same task. The invitation Prompt may contain its one-time token in the current
-conversation; the Agent sends it through stdin and consumes it immediately, never placing it in a
-command argument, shell history, log, or repeated output.
+## Invitation connection
 
-Acceptance atomically creates the verified-email account, enables Free, issues a 365-day Agent
-credential, stores it in the operating system's native keyring, and acknowledges storage so the
-Server clears its encrypted 15-minute recovery copy. Supported stores are macOS Keychain, Windows
-Credential Manager, and Linux Secret Service. There is no plaintext file fallback.
+Paste the complete invitation Prompt into a Codex or Claude Code task. The Agent calls anonymous
+`accept_invitation`, shows a ten-minute, ten-character connection code, then immediately retries
+`connection_status`; the host opens OAuth once.
 
-If a local profile exists, the CLI asks whether to keep it, add a named profile, or replace it
-before consuming the invitation. Old username-based profiles are intentionally not migrated.
+Paste the code on the OAuth page. It automatically pairs the browser and loads the invited email,
+subscription entitlement, and requested scopes. Click **Accept and connect**; no email entry or
+second verification message is required. The invitation is consumed only at final approval, in the
+same transaction that creates the account, entitlement, OAuth grant, and authorization code.
 
-## First App
+The connection code only pairs the browser to the pending invitation; it does not authenticate a
+second time. The browser continuation link remains only for non-Agent invitation use.
 
-The Agent asks again for App name, Apple platform, default language, and target App when a repository
-contains several Apps. It confirms the generated slug, creates an active Product with private
-feedback and diagnostics disabled, then asks you to choose Bark, Product Webhook, or explicitly
-defer notification setup. It persists that answer on the Product so later tasks continue the chosen
-channel or respect the defer choice instead of asking again. After that choice it describes the
-intended Apple project edits and waits for approval. After SDK integration it builds and runs Doctor.
+## Existing accounts
 
-These commands are available immediately after installation, without MCP hot reload:
-
-```bash
-feedbackkit onboarding status
-feedbackkit product create --name "My App" --platform ios --locale zh-CN
-feedbackkit notification preference set --product <uuid> --choice bark|webhook|defer
-feedbackkit doctor --product <uuid> --app-path /absolute/path/to/app
-feedbackkit profile list
-feedbackkit profile use work
-feedbackkit profile remove work
-```
-
-Android and Web can create the account and Product in 0.12; automatic SDK integration is currently
-Apple-only.
-
-## Log in on another device
-
-Tell the Agent to log in to FeedbackKit. The plugin's `request_email_login` tool checks the native
-credential store before sending email. Reply to the Agent with the six-digit code, and
-`complete_email_login` creates a new 365-day PAT, stores it in the native keyring, and returns only
-the account UUID/email, Profile, scopes, token ID, and expiry. The PAT never enters MCP output or the
-Agent context. The same flow is available immediately after installation:
-
-```bash
-feedbackkit login email request --email owner@example.com
-printf '%s' '123456' | feedbackkit login email complete --request <uuid>
-```
-
-If the target Profile exists, the Agent shows its email and asks whether to keep it, add a named
-Profile, or replace it before any login email is sent. Email changes and Agent credential listing or
-revocation require a separate email code that creates a ten-minute authorization bound to the
-current PAT.
+Calling a protected tool such as `connection_status` opens the same OAuth page. Existing accounts
+switch to **Email code**, enter their email and six-digit code in the browser, review requested
+scopes, and approve. The host
+exchanges and stores the opaque access and rotating refresh tokens. Tokens never enter Agent output,
+plugin files, website storage, or the repository.
 
 ## Security model
 
-- Accounts use UUID identity and a normalized verified email. There are no usernames, display
-  names, passwords, or password reset.
-- Email codes are the only human recovery and sensitive-operation authentication method; there is
-  no website login or Passkey surface.
-- Invitation tokens and email codes may appear in the current Agent conversation because they are
-  single-use and immediately consumed. They must not enter logs, command arguments, or repeated output.
-- Long-lived Agent PATs remain only in native credential storage and never enter Agent context.
-- Agent credentials use named native-keyring profiles. Environment credentials remain available for
-  controlled headless runtimes only and require complete non-secret identity metadata.
-- External invitation email and destructive/public changes retain explicit confirmation gates.
+- Invitation tokens are used only by the first anonymous tool call and are never logged or repeated.
+- Handoffs and short codes expire after ten minutes, are stored as hashes, are single-use, and are
+  rate-limited after five failed guesses.
+- Protected tools declare their own OAuth scopes and return the standard MCP authentication
+  challenge when linking is required.
+- Destructive, public, and external effects retain encrypted ten-minute, single-use confirmation
+  previews through `execute_confirmation`.
+- Existing REST/PAT and legacy invitation credentials remain server-compatible, but plugin 1.0
+  neither creates nor stores PATs.
 
-See [English onboarding](docs/invited-admin-onboarding.en.md), [中文接入说明](docs/invited-admin-onboarding.zh-Hans.md),
-and [generic MCP configuration](docs/generic-mcp.md).
+See [English onboarding](docs/invited-admin-onboarding.en.md),
+[中文接入说明](docs/invited-admin-onboarding.zh-Hans.md), and
+[generic remote MCP configuration](docs/generic-mcp.md).
 
-## Development
+## Validate
+
+No package installation or Bun environment is required:
 
 ```bash
-bun install --cwd=plugins/feedback-server --frozen-lockfile
-bun run check
-bun run validate
-bun run scan
+python3 scripts/validate_distribution.py
+python3 scripts/check_sensitive_content.py
+python3 /path/to/plugin-creator/scripts/validate_plugin.py plugins/feedback-server
 ```
 
-The checked distribution includes Codex and Claude Code manifests, focused Skills, bundled CLI/MCP
-artifacts, tests, and structural/secret scans.
+The Codex `.app.json` is added only after OpenAI assigns the production connector ID. Until that
+registration step, Codex and Claude Code both use the checked remote HTTP MCP descriptor; no fake
+connector identifier is committed.

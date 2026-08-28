@@ -1,8 +1,6 @@
 {
   "feedback-server": {
-    "command": "bun",
-    "args": [
-      "${CLAUDE_PLUGIN_ROOT}/bin/feedbackkit-mcp"
-    ]
+    "type": "http",
+    "url": "https://api.feedkit.cn/mcp"
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "feedback-server",
-  "version": "0.12.3",
+  "version": "1.0.0",
   "description": "Agent-first setup and management for FeedbackKit products, feedback, waitlists, activity, roadmaps, releases, and notifications.",
   "author": {
     "name": "Rabithua",
@@ -9,33 +9,26 @@
   "homepage": "https://github.com/Rabithua/FeedbackServerPlugin",
   "repository": "https://github.com/Rabithua/FeedbackServerPlugin",
   "license": "MIT",
-  "keywords": ["feedback", "waitlist", "roadmap", "changelog", "bark", "agent", "profiles"],
+  "keywords": ["feedback", "waitlist", "roadmap", "changelog", "bark", "agent", "oauth"],
   "skills": "./skills/",
   "interface": {
     "displayName": "FeedbackKit",
     "shortDescription": "Onboard and manage app feedback with your Agent.",
-    "longDescription": "Connect Codex to FeedbackKit for guided app setup, Feedback service management, waitlist invitations, and risk-based confirmations.",
+    "longDescription": "Connect Codex to FeedbackKit over remote OAuth for guided app setup, feedback management, waitlist invitations, and risk-based confirmations.",
     "developerName": "Rabithua",
     "category": "Productivity",
     "capabilities": ["Read", "Write", "Interactive"],
-    "websiteURL": "https://github.com/Rabithua/FeedbackServerPlugin",
+    "websiteURL": "https://feedkit.cn",
     "defaultPrompt": [
       "Set up FeedbackKit for my app and guide me through the next step.",
       "List my apps and summarize unresolved feedback.",
-      "Review recent waitlist signups and identify the next follow-up actions.",
-      "Draft a reply to recent feedback and show me before sending.",
-      "Review roadmap items and draft the next changelog."
+      "Review recent waitlist signups and identify the next follow-up actions."
     ]
   },
   "mcpServers": {
     "feedback-server": {
-      "title": "Feedback Server",
-      "description": "Manage FeedbackKit products and feedback through a local MCP server with risk-based confirmations.",
-      "cwd": ".",
-      "command": "bun",
-      "args": [
-        "./bin/feedbackkit-mcp"
-      ]
+      "type": "http",
+      "url": "https://api.feedkit.cn/mcp"
     }
   }
 }

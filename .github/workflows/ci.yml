@@ -10,51 +10,22 @@ permissions:
   contents: read
 
 jobs:
-  native-platforms:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-14, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.4
-      - run: bun install --cwd=plugins/feedback-server --frozen-lockfile
-      - run: bun --cwd=plugins/feedback-server run typecheck
-      - run: bun --cwd=plugins/feedback-server run test
-      - run: bun --cwd=plugins/feedback-server run build
-      - run: bun --cwd=plugins/feedback-server run test:keyring
-
-  linux-keyring:
+  verify-runtime-free-plugin:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-python@v5
         with:
-          bun-version: 1.3.4
-      - run: bun install --cwd=plugins/feedback-server --frozen-lockfile
-      - run: sudo apt-get update && sudo apt-get install --yes dbus-x11 gnome-keyring
-      - name: Verify Secret Service write/read/delete
+          python-version: "3.13"
+      - run: python3 scripts/validate_distribution.py
+      - run: python3 scripts/check_sensitive_content.py
+      - name: Verify installable bundle contains no local runtime
         run: |
-          dbus-run-session -- bash -euo pipefail -c '
-            printf %s test-password | gnome-keyring-daemon --unlock
-            eval "$(gnome-keyring-daemon --start --components=secrets)"
-            bun --cwd=plugins/feedback-server run test:keyring
-          '
-
-  verify:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.4
-      - run: bun install --cwd=plugins/feedback-server --frozen-lockfile
-      - run: npm install --global @anthropic-ai/claude-code@2.1.221
-      - run: bun run check
-      - run: bun run validate
+          test ! -e plugins/feedback-server/package.json
+          test ! -e plugins/feedback-server/bun.lock
+          test ! -e plugins/feedback-server/bin
+          test ! -e plugins/feedback-server/dist
+          test ! -e plugins/feedback-server/src
+      - name: Install Claude Code validator
+        run: npm install --global @anthropic-ai/claude-code@2.1.221
       - run: claude plugin validate --strict .
-      - run: bun run scan
-      - run: git diff --exit-code -- plugins/feedback-server/dist/server.mjs plugins/feedback-server/dist/cli.mjs

@@ -2,12 +2,17 @@
 
 1. 将完整的 FeedbackKit 邀请 Prompt 发给 Codex 或 Claude Code。
 2. Agent 安装或升级可信来源 `Rabithua/FeedbackServerPlugin`。
-3. Agent 在当前任务定位已安装 bundle，直接运行其中的 `feedbackkit accept-invite`。
-4. 一次性令牌可以保留在当前 Agent 对话中；Agent 通过 stdin 传入并立即消费，不把它重复写入命令参数、Shell 历史、日志或输出。
-5. CLI 先检查系统安全凭据库，再创建已验证邮箱账号、启用 Free、保存 Agent 凭据，并通知服务端清除恢复密文。
-6. Agent 重新询问 App 名称、Apple 平台、默认语言；仓库有多个 App 时还会询问目标。
-7. 你确认 slug 后创建 Product，然后明确选择 Bark、Product Webhook 或暂不配置通知。该选择会保存到 Product，后续任务不会重复询问。修改 Apple 工程前，Agent 会说明目标工程和文件并取得批准；之后接入 SDK、构建并运行 Doctor。
+3. Agent 调用匿名 `accept_invitation`，只把 Prompt 中的邀请码用于这一次调用，不复述、不记录。
+4. Agent 展示工具返回的十分钟短连接码，然后立即重试 `connection_status`，宿主只打开一次
+   FeedbackKit OAuth。
+5. 在 OAuth 页面粘贴十位短连接码；完整输入后页面自动载入受邀邮箱、订阅权益、客户端和申请权限。
+   短码只用于浏览器配对，不是第二次身份验证。
+6. 核对载入的信息并点击“接受并连接”。邀请流程不需要输入邮箱，也不会再发送验证码邮件。
+7. 宿主交换并保存 OAuth Token。Agent 确认连接后重新询问 App 信息、创建 Product，并在获批后继续
+   SDK 接入。
 
-邀请默认 7 天有效且只能使用一次。同一 enrollment 可在 15 分钟内恢复网络中断后的凭据，其他 enrollment 不能重放邀请。如果本机已有账号，CLI 会在消费邀请前让你选择保留、添加命名 Profile 或替换。
+如果中途关闭或放弃，邀请码不会被消费；只有最终批准 OAuth 时才会消费。同一套短码流程适用于普通
+浏览器和隔离 WebView。
 
-FeedbackKit 账号没有用户名、密码、Passkey 或网页登录。换设备时直接让 Agent 登录，再把邮件里的 6 位验证码回复到对话中。插件签发新 PAT 并存入 macOS Keychain、Windows Credential Manager 或 Linux Secret Service，PAT 不返回 Agent 上下文，也不提供明文文件回退。
+普通已有账号不使用邀请码：调用受保护工具，在浏览器 OAuth 页面切换到“邮箱验证码”，输入邮箱和
+六位验证码，再确认授权。OAuth Token 只由宿主保存，不返回 Agent，也不进入网站存储。
