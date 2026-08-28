@@ -10,5 +10,5 @@ Anonymous tools:
 - `accept_invitation`
 
 All other tools declare OAuth scopes and trigger host linking on first use. For invitation setup,
-call `accept_invitation`, show the returned link and short code, then retry `connection_status`.
-Invited users approve the recognized email without receiving another verification message.
+call `accept_invitation`, show the returned short code, then immediately retry `connection_status`.
+The host opens OAuth once; the code automatically loads the invited identity before final approval.

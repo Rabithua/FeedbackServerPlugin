@@ -27,21 +27,22 @@ publishes `health` and `accept_invitation`; the first protected tool starts OAut
 ## Invitation connection
 
 Paste the complete invitation Prompt into a Codex or Claude Code task. The Agent calls anonymous
-`accept_invitation`, then shows a ten-minute continuation link and ten-character pairing code. Open
-the link and let the Agent retry `connection_status`; the host opens OAuth.
+`accept_invitation`, shows a ten-minute, ten-character connection code, then immediately retries
+`connection_status`; the host opens OAuth once.
 
-The consent page already knows the invited email and subscription entitlement. Click **Accept and
-connect** after reviewing scopes. No email entry or second verification message is required. The
-invitation is consumed only at final approval, in the same transaction that creates the account,
-entitlement, OAuth grant, and authorization code.
+Paste the code on the OAuth page. It automatically pairs the browser and loads the invited email,
+subscription entitlement, and requested scopes. Click **Accept and connect**; no email entry or
+second verification message is required. The invitation is consumed only at final approval, in the
+same transaction that creates the account, entitlement, OAuth grant, and authorization code.
 
-If OAuth uses another browser or isolated WebView, paste the pairing code on the page. This only
-pairs the browser to the handoff; it does not authenticate a second time.
+The connection code only pairs the browser to the pending invitation; it does not authenticate a
+second time. The browser continuation link remains only for non-Agent invitation use.
 
 ## Existing accounts
 
 Calling a protected tool such as `connection_status` opens the same OAuth page. Existing accounts
-enter their email and six-digit code in the browser, review requested scopes, and approve. The host
+switch to **Email code**, enter their email and six-digit code in the browser, review requested
+scopes, and approve. The host
 exchanges and stores the opaque access and rotating refresh tokens. Tokens never enter Agent output,
 plugin files, website storage, or the repository.
 

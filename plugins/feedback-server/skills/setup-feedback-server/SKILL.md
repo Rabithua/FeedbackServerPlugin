@@ -18,28 +18,29 @@ When the user supplies an invitation Prompt:
 2. Read `invitation_token` from the Prompt and call the anonymous `accept_invitation` tool once for
    the current handoff. Do not call it again while that handoff remains active. Never repeat the
    token in chat, logs, commands, previews, or the final response.
-3. Show the returned continuation link and ten-character pairing code. Ask the user to open the
-   link. The code is only a cross-browser/WebView pairing fallback, not another identity check.
-4. Retry protected `connection_status`. Its OAuth challenge lets the host open the authorization
-   flow. Do not ask the user to paste a credential or access token.
-5. The page must show the invited email, subscription entitlement, client, and requested scopes.
-   Tell the user to click **Accept and connect**. Never request a second email verification code for
-   an invitation.
+3. Show the returned ten-character connection code, explain that OAuth is about to open, then
+   immediately retry protected `connection_status`. Its OAuth challenge lets the host open the
+   authorization flow once. Do not show or ask the user to open a separate continuation link.
+4. On the OAuth page, have the user paste the connection code. A complete code is verified
+   automatically and must load the invited email, subscription entitlement, client, and requested
+   scopes. The code only pairs this browser with the pending invitation; it is not another identity
+   check and is not an OAuth credential.
+5. Tell the user to click **Accept and connect** after reviewing the loaded identity and scopes.
+   Never request a second email verification code for an invitation.
 6. Retry `connection_status` after approval. Continue only when it reports an authenticated OAuth
    connection. If the handoff expired, call `accept_invitation` again; the invitation remains usable
    until final approval or its own expiry; this expiry recovery is the exception to the one-call
    rule for the previous handoff.
 
-If OAuth opens in a different browser or isolated WebView and shows ordinary email login, have the
-user paste the short connection code into that page. Do not route an invited user through email
-verification.
+Do not route an invited user through email verification. The short connection code is the primary
+invitation path for every OAuth browser or isolated WebView, not merely a fallback.
 
 ## Existing-account connection
 
 For a normal installation without an invitation, call protected `connection_status` immediately.
-The host opens FeedbackKit OAuth; the user enters the existing account email and six-digit code on
-`feedkit.cn/connect`, reviews scopes, and approves. The email and code stay in the browser flow, not
-the Agent conversation. Retry `connection_status` after approval.
+The host opens FeedbackKit OAuth; the user switches to **Email code**, enters the existing account
+email and six-digit code on `feedkit.cn/connect`, reviews scopes, and approves. The email and code
+stay in the browser flow, not the Agent conversation. Retry `connection_status` after approval.
 
 ## First Product and SDK setup
 
