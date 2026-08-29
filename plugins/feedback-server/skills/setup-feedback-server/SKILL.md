@@ -18,13 +18,14 @@ When the user supplies an invitation Prompt:
 2. Read `invitation_token` from the Prompt and call the anonymous `accept_invitation` tool once for
    the current handoff. Do not call it again while that handoff remains active. Never repeat the
    token in chat, logs, commands, previews, or the final response.
-3. Show the returned ten-character connection code, explain that OAuth is about to open, then
+3. Keep the returned ten-character connection code available as a fallback, explain that OAuth is
+   about to open, then
    immediately retry protected `connection_status`. Its OAuth challenge lets the host open the
    authorization flow once. Do not show or ask the user to open a separate continuation link.
-4. On the OAuth page, have the user paste the connection code. A complete code is verified
-   automatically and must load the invited email, subscription entitlement, client, and requested
-   scopes. The code only pairs this browser with the pending invitation; it is not another identity
-   check and is not an OAuth credential.
+4. On the OAuth page, first check whether the invited email, subscription entitlement, client, and
+   requested scopes are already loaded. If so, do not ask for the code. If the page requests a
+   connection code, have the user paste it; complete input binds this isolated OAuth request. The
+   code is not another identity check and is not an OAuth credential.
 5. Tell the user to click **Accept and connect** after reviewing the loaded identity and scopes.
    Never request a second email verification code for an invitation.
 6. Retry `connection_status` after approval. Continue only when it reports an authenticated OAuth
@@ -32,8 +33,9 @@ When the user supplies an invitation Prompt:
    until final approval or its own expiry; this expiry recovery is the exception to the one-call
    rule for the previous handoff.
 
-Do not route an invited user through email verification. The short connection code is the primary
-invitation path for every OAuth browser or isolated WebView, not merely a fallback.
+Do not route an invited user through email verification. A same-browser invitation handoff binds
+automatically; the short connection code is only the fallback for an isolated WebView or a different
+browser.
 
 ## Existing-account connection
 

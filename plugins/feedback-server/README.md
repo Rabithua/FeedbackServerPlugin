@@ -11,4 +11,5 @@ Anonymous tools:
 
 All other tools declare OAuth scopes and trigger host linking on first use. For invitation setup,
 call `accept_invitation`, show the returned short code, then immediately retry `connection_status`.
-The host opens OAuth once; the code automatically loads the invited identity before final approval.
+The host opens OAuth once. The page loads a same-browser invitation automatically; otherwise the
+short code binds the isolated OAuth browser before final approval.

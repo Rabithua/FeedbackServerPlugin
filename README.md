@@ -1,8 +1,8 @@
-# FeedbackKit Agent Plugin 1.0
+# FeedbackKit Agent Plugin 1.1
 
 FeedbackKit connects Codex and Claude Code directly to the hosted FeedbackServer MCP for Product
 setup, user-feedback triage, roadmaps, releases, waitlist invitations, notifications, and audit
-history. Version 1.0 uses browser OAuth and ships no local MCP runtime, CLI, Bun dependency, native
+history. Version 1.1 uses browser OAuth and ships no local MCP runtime, CLI, Bun dependency, native
 keyring integration, Profile, or JavaScript bundle.
 
 ## Install
@@ -27,13 +27,15 @@ publishes `health` and `accept_invitation`; the first protected tool starts OAut
 ## Invitation connection
 
 Paste the complete invitation Prompt into a Codex or Claude Code task. The Agent calls anonymous
-`accept_invitation`, shows a ten-minute, ten-character connection code, then immediately retries
-`connection_status`; the host opens OAuth once.
+`accept_invitation`, keeps the returned ten-minute connection code available as a fallback, then
+immediately retries `connection_status`; the host opens OAuth once.
 
-Paste the code on the OAuth page. It automatically pairs the browser and loads the invited email,
-subscription entitlement, and requested scopes. Click **Accept and connect**; no email entry or
-second verification message is required. The invitation is consumed only at final approval, in the
-same transaction that creates the account, entitlement, OAuth grant, and authorization code.
+If the browser already carries the invitation handoff, the OAuth page loads the invited email,
+subscription entitlement, and requested scopes automatically. In an isolated WebView or a different
+browser, paste the ten-character code to bind that OAuth request. Click **Accept and connect**; no
+email entry or second verification message is required. The invitation is consumed only at final
+approval, in the same transaction that creates the account, entitlement, OAuth grant, and
+authorization code.
 
 The connection code only pairs the browser to the pending invitation; it does not authenticate a
 second time. The browser continuation link remains only for non-Agent invitation use.
@@ -55,8 +57,8 @@ plugin files, website storage, or the repository.
   challenge when linking is required.
 - Destructive, public, and external effects retain encrypted ten-minute, single-use confirmation
   previews through `execute_confirmation`.
-- Existing REST/PAT and legacy invitation credentials remain server-compatible, but plugin 1.0
-  neither creates nor stores PATs.
+- Independent REST/PAT authentication remains available, but invitation enrollment is OAuth-only
+  and the plugin neither creates nor stores PATs.
 
 See [English onboarding](docs/invited-admin-onboarding.en.md),
 [中文接入说明](docs/invited-admin-onboarding.zh-Hans.md), and

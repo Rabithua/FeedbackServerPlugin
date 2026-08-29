@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0 - 2026-08-29
+
+- Bind same-browser invitation handoffs directly to the OAuth authorization request and retain the
+  ten-character code only for isolated WebViews or different browsers.
+- Describe invitation activation as one OAuth approval transaction that creates the account,
+  applies its entitlement, and issues the authorization code without a separate signup step.
+- Remove invitation PAT enrollment compatibility guidance; independent PAT authentication remains
+  available outside invitation onboarding.
+
 ## 1.0.0 - 2026-08-28
 
 - Replace the local Bun/stdio MCP, CLI, native keyring, Profiles, and runtime JavaScript bundle with
