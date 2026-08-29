@@ -2,20 +2,19 @@
 
 1. Paste the complete FeedbackKit invitation Prompt into Codex or Claude Code.
 2. The Agent installs or upgrades the trusted `Rabithua/FeedbackServerPlugin` plugin.
-3. The Agent calls anonymous `accept_invitation` with the token without repeating or logging it.
-4. The Agent immediately shows the returned ten-minute connection code and retries
-   `connection_status`, causing the host to open FeedbackKit OAuth once.
-5. Paste the ten characters on the OAuth page. This binds the browser request and then reveals the
-   invited email, entitlement, client, and requested scopes; it is not another identity check.
-6. Review the loaded details and click **Accept and connect**. Do not enter an email or request
-   another verification message.
-7. The host exchanges and stores the OAuth tokens. The Agent confirms the connection, asks for the
+3. The Agent invokes the OAuth2-protected `authenticate` tool. Its empty scopes list lets the host
+   establish the OAuth connection without granting account access.
+4. OAuth completes with the connection still unbound. The Agent calls
+   `authenticate({ method: "invitation", code })`, passing the invitation code only as the tool
+   input.
+5. The invitation code binds the connection immediately. There is no separate browser input or
+   email verification step.
+6. The Agent calls `connection_status`, asks for the
    App details and an explicit Bark, Product Webhook, or defer choice, creates the Product with that
    preference, and continues SDK setup after approval.
 
-The invitation remains unused if you close or abandon the flow. It is consumed only at final OAuth
-approval. Every invitation browser uses the short connection code; no invitation cookie is used.
-
-For an existing account without an invitation, call a protected tool. Switch to **Email code**,
-enter the email and six-digit code on the browser OAuth page, then approve. OAuth tokens remain in
-the host and are never shown to the Agent or stored by the website.
+For email authentication, the Agent instead calls `authenticate({ method: "email", email })` after
+host OAuth. The result is `pending_verification`. Open the one-time link in the email; do not copy
+the link back into the conversation. The Agent observes completion with `authentication_status`
+before calling `connection_status`. OAuth tokens remain in the host and are never shown to the
+Agent.

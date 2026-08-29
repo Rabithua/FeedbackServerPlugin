@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PLUGIN = ROOT / "plugins" / "feedback-server"
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 MCP_URL = "https://api.feedkit.cn/mcp"
 
 
@@ -61,6 +61,54 @@ require(claude_entries[0].get("strict") is True, "Claude marketplace must use st
 
 require(cursor.get("mcpServers", {}).get("feedback-server", {}).get("url") == MCP_URL, "Cursor example is not remote")
 require(opencode.get("mcp", {}).get("feedback-server", {}).get("url") == MCP_URL, "OpenCode example is not remote")
+
+root_readme = (ROOT / "README.md").read_text(encoding="utf-8")
+setup_skill = (PLUGIN / "skills" / "setup-feedback-server" / "SKILL.md").read_text(
+    encoding="utf-8"
+)
+require(
+    "protocol discovery and `health`" in root_readme,
+    "Root README must limit anonymous access to MCP discovery and health",
+)
+for required in (
+    'authenticate({ method: "email", email })',
+    'authenticate({ method: "invitation", code })',
+    "empty scopes list",
+    "pending_verification",
+    "authentication_status",
+    "connection_status",
+):
+    require(required in setup_skill, f"Setup skill is missing authentication contract: {required}")
+
+contract_paths = [
+    ROOT / "README.md",
+    ROOT / "CHANGELOG.md",
+    ROOT / ".agents" / "plugins" / "marketplace.json",
+    ROOT / ".claude-plugin" / "marketplace.json",
+    *sorted((ROOT / "docs").rglob("*.md")),
+    *sorted(PLUGIN.rglob("README.md")),
+    *sorted(PLUGIN.rglob("SKILL.md")),
+    *sorted(PLUGIN.rglob("*.yaml")),
+    PLUGIN / ".claude-plugin" / "plugin.json",
+    PLUGIN / ".codex-plugin" / "plugin.json",
+]
+retired_markers = (
+    "accept_" "invitation",
+    "invitation_" "token",
+    "connection " "code",
+    "pairing " "code",
+    "email " "code",
+    "six-" "digit",
+    "six " "digits",
+    "invitation " "handoff",
+    "十位连接" "码",
+    "配对" "码",
+    "六位验证" "码",
+)
+for path in contract_paths:
+    content = path.read_text(encoding="utf-8").casefold()
+    found = [marker for marker in retired_markers if marker.casefold() in content]
+    require(not found, f"Retired authentication guidance remains in {path.relative_to(ROOT)}")
 
 skills = (
     "setup-feedback-server",

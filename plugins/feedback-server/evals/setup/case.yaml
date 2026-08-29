@@ -1,16 +1,16 @@
 schema_version: "1.1"
-name: "invitation-code-oauth-onboarding"
-description: "Uses a proactively displayed connection code inside one host-managed OAuth page."
+name: "invitation-authentication-onboarding"
+description: "Establishes host OAuth, binds with the invitation discriminator, and continues onboarding."
 tags: ["setup"]
 execution:
-  prompt: "我把 FeedbackKit 邀请 Prompt 发给你了。请安装插件，在当前任务完成账号和首个 App 接入；令牌不要放进参数或输出。"
+  prompt: "我把包含邀请短码的 FeedbackKit 邀请 Prompt 发给你了。请安装插件，在当前任务完成账号绑定和首个 App 接入；不要在回复中复述短码。"
   max_turns: 5
   timeout_seconds: 180
   allowed_tools: []
 runs: 1
 graders:
   - type: "llm"
-    name: "same-task-token-safety"
+    name: "discriminated-invitation-binding"
     focus: "last_message"
-    criteria: "The response calls anonymous accept_invitation without repeating the token, immediately shows the returned connection code, retries connection_status to open OAuth once, tells the user the page always requires the code, never requests email verification, continues onboarding after connection, re-asks App details and an explicit Bark, Product Webhook, or defer choice before Product creation, and requires approval before Apple project edits."
-expected_outcome: "Complete one-page invitation OAuth without exposing credentials."
+    criteria: "The response invokes the OAuth2-protected authenticate tool whose scopes list is empty, recognizes that OAuth success leaves the connection unbound, calls authenticate with the exact invitation discriminator without repeating the code, treats success as immediate binding, and only then calls connection_status. It continues onboarding, re-asks App details and an explicit Bark, Product Webhook, or defer choice before Product creation, and requires approval before Apple project edits. It does not move invitation input or email verification into the browser."
+expected_outcome: "Bind an invited account immediately after host OAuth and complete guided onboarding."

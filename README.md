@@ -1,9 +1,9 @@
-# FeedbackKit Agent Plugin 1.1
+# FeedbackKit Agent Plugin 1.2
 
 FeedbackKit connects Codex and Claude Code directly to the hosted FeedbackServer MCP for Product
 setup, user-feedback triage, roadmaps, releases, waitlist invitations, notifications, and audit
-history. Version 1.1 uses browser OAuth and ships no local MCP runtime, CLI, Bun dependency, native
-keyring integration, Profile, or JavaScript bundle.
+history. Version 1.2 uses host-managed OAuth and ships no local MCP runtime, CLI, Bun dependency, or
+JavaScript bundle.
 
 ## Install
 
@@ -21,48 +21,52 @@ claude plugin marketplace add Rabithua/FeedbackServerPlugin
 claude plugin install feedback-server@feedback-server --scope user
 ```
 
-Installation does not force sign-in. The remote MCP at `https://api.feedkit.cn/mcp` anonymously
-publishes `health` and `accept_invitation`; the first protected tool starts OAuth.
+Installation does not force sign-in. The only anonymous MCP surface at
+`https://api.feedkit.cn/mcp` is protocol discovery and `health`.
 
-## Invitation connection
+## OAuth and account authentication
 
-Paste the complete invitation Prompt into a Codex or Claude Code task. The Agent calls anonymous
-`accept_invitation`, immediately shows the returned ten-minute connection code, then retries
-`connection_status`; the host opens OAuth once.
+The `authenticate` tool is OAuth2-protected with an empty scopes list. Its first invocation lets the
+host complete OAuth without granting FeedbackKit account access. OAuth success creates an unbound
+connection; it does not select or create an account.
 
-The OAuth page always asks for the ten-character code before it loads the invited email,
-subscription entitlement, and requested scopes. Paste the code to bind that OAuth request, then
-click **Accept and connect**; no
-email entry or second verification message is required. The invitation is consumed only at final
-approval, in the same transaction that creates the account, entitlement, OAuth grant, and
-authorization code.
+After OAuth, the Agent calls `authenticate` with exactly one discriminated input:
 
-The connection code only pairs the browser to the pending invitation; it does not authenticate a
-second time. The browser continuation link remains only for non-Agent invitation use.
+```json
+{ "method": "email", "email": "person@example.com" }
+```
 
-## Existing accounts
+or:
 
-Calling a protected tool such as `connection_status` opens the same OAuth page. Existing accounts
-switch to **Email code**, enter their email and six-digit code in the browser, review requested
-scopes, and approve. The host
-exchanges and stores the opaque access and rotating refresh tokens. Tokens never enter Agent output,
-plugin files, website storage, or the repository.
+```json
+{ "method": "invitation", "code": "the-code-from-the-invitation" }
+```
+
+Email authentication returns `pending_verification`. The user clicks the one-time link in the
+email; the link is never copied back to the Agent. The Agent observes completion with
+`authentication_status`. An invitation code binds the connection immediately, without a separate
+browser step.
+
+Only after account binding succeeds does the Agent call `connection_status`, then continue Product
+and notification onboarding instead of stopping at “OAuth connected.”
 
 ## Security model
 
-- Invitation tokens are used only by the first anonymous tool call and are never logged or repeated.
-- Pending invitation pairings and short codes expire after ten minutes, are stored as hashes, are single-use, and are
-  rate-limited after five failed guesses.
+- Anonymous access is limited to MCP discovery and health.
+- OAuth credentials remain in the host and never enter Agent output, plugin files, or the repository.
+- OAuth completion and FeedbackKit account binding are separate states; an unbound connection has
+  no account access.
+- Email verification uses a one-time link that is opened by the user and observed through
+  `authentication_status`.
+- Invitation codes are passed only to the `invitation` branch of `authenticate` and bind immediately.
 - Protected tools declare their own OAuth scopes and return the standard MCP authentication
-  challenge when linking is required.
+  challenge when additional authorization is required.
 - Destructive, public, and external effects retain encrypted ten-minute, single-use confirmation
   previews through `execute_confirmation`.
-- Independent REST/PAT authentication remains available, but invitation enrollment is OAuth-only
-  and the plugin neither creates nor stores PATs.
 
-After OAuth, `connection_status` returns live onboarding actions. The Agent must continue instead of
-stopping at “connected”: first-Product creation requires an explicit Bark, Product Webhook, or defer
-choice, and an existing Product with an unresolved choice prompts immediately.
+After binding, `connection_status` returns live onboarding actions. First-Product creation requires
+an explicit Bark, Product Webhook, or defer choice, and an existing Product with an unresolved
+choice prompts immediately.
 
 See [English onboarding](docs/invited-admin-onboarding.en.md),
 [中文接入说明](docs/invited-admin-onboarding.zh-Hans.md), and
