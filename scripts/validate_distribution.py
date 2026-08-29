@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PLUGIN = ROOT / "plugins" / "feedback-server"
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 MCP_URL = "https://api.feedkit.cn/mcp"
 
 
@@ -71,8 +71,8 @@ require(
     "Root README must limit anonymous access to MCP discovery and health",
 )
 for required in (
-    'authenticate({ method: "email", email })',
-    'authenticate({ method: "invitation", code })',
+    'authenticate({ method: "email", value: email })',
+    'authenticate({ method: "invitation", value: invitationCode })',
     "empty scopes list",
     "pending_verification",
     "authentication_status",
@@ -80,18 +80,21 @@ for required in (
 ):
     require(required in setup_skill, f"Setup skill is missing authentication contract: {required}")
 
-contract_paths = [
-    ROOT / "README.md",
-    ROOT / "CHANGELOG.md",
-    ROOT / ".agents" / "plugins" / "marketplace.json",
-    ROOT / ".claude-plugin" / "marketplace.json",
-    *sorted((ROOT / "docs").rglob("*.md")),
-    *sorted(PLUGIN.rglob("README.md")),
-    *sorted(PLUGIN.rglob("SKILL.md")),
-    *sorted(PLUGIN.rglob("*.yaml")),
-    PLUGIN / ".claude-plugin" / "plugin.json",
-    PLUGIN / ".codex-plugin" / "plugin.json",
-]
+contract_paths = sorted(
+    path
+    for path in ROOT.rglob("*")
+    if path.is_file()
+    and ".git" not in path.parts
+    and "__pycache__" not in path.parts
+)
+contract_contents: list[tuple[Path, str]] = []
+for path in contract_paths:
+    try:
+        content = path.read_text(encoding="utf-8").casefold()
+    except UnicodeDecodeError:
+        continue
+    contract_contents.append((path, content))
+
 retired_markers = (
     "accept_" "invitation",
     "invitation_" "token",
@@ -105,10 +108,21 @@ retired_markers = (
     "配对" "码",
     "六位验证" "码",
 )
-for path in contract_paths:
-    content = path.read_text(encoding="utf-8").casefold()
+for path, content in contract_contents:
     found = [marker for marker in retired_markers if marker.casefold() in content]
     require(not found, f"Retired authentication guidance remains in {path.relative_to(ROOT)}")
+
+invalid_authenticate_inputs = tuple(
+    value
+    for method, field in (("email", "email"), ("invitation", "code"))
+    for value in (
+        f'authenticate({{ method: "{method}", {field}',
+        f'{{ "method": "{method}", "{field}"',
+    )
+)
+for path, content in contract_contents:
+    found = [value for value in invalid_authenticate_inputs if value.casefold() in content]
+    require(not found, f"Invalid authenticate input fields remain in {path.relative_to(ROOT)}")
 
 skills = (
     "setup-feedback-server",

@@ -1,6 +1,6 @@
 {
   "name": "feedback-server",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Agent-first authentication and management for FeedbackKit products, feedback, waitlists, activity, roadmaps, releases, and notifications.",
   "author": {
     "name": "Rabithua",

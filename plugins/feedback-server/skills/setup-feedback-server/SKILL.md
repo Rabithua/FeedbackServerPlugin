@@ -20,9 +20,9 @@ method from explicit user input. Do not guess between methods.
 
 ### Email
 
-1. Call `authenticate({ method: "email", email })` with the user's exact email. The protected call
-   causes the host to complete OAuth when needed; once OAuth returns, call the same method to bind
-   the account.
+1. Call `authenticate({ method: "email", value: email })` with the user's exact email as `value`.
+   The protected call causes the host to complete OAuth when needed; once OAuth returns, call the
+   same method to bind the account.
 2. Expect `pending_verification`. Tell the user to click the one-time link in the email. Never ask
    the user to paste the link or any verification material into the conversation.
 3. Observe completion with `authentication_status`, respecting any returned retry timing. Continue
@@ -31,8 +31,8 @@ method from explicit user input. Do not guess between methods.
 ### Invitation
 
 1. Read the invitation code from the user-supplied invitation Prompt and call
-   `authenticate({ method: "invitation", code })`. Pass the code only as the tool input; do not
-   repeat it in chat, logs, commands, previews, or the final response.
+   `authenticate({ method: "invitation", value: invitationCode })`. Pass the code only as `value`;
+   do not repeat it in chat, logs, commands, previews, or the final response.
 2. The protected call causes the host to complete OAuth when needed; once OAuth returns, call the
    same method to bind the account.
 3. Successful invitation authentication binds immediately. Do not ask the user to enter anything

@@ -33,13 +33,13 @@ connection; it does not select or create an account.
 After OAuth, the Agent calls `authenticate` with exactly one discriminated input:
 
 ```json
-{ "method": "email", "email": "person@example.com" }
+{ "method": "email", "value": "person@example.com" }
 ```
 
 or:
 
 ```json
-{ "method": "invitation", "code": "the-code-from-the-invitation" }
+{ "method": "invitation", "value": "the-code-from-the-invitation" }
 ```
 
 Email authentication returns `pending_verification`. The user clicks the one-time link in the
@@ -58,7 +58,8 @@ and notification onboarding instead of stopping at “OAuth connected.”
   no account access.
 - Email verification uses a one-time link that is opened by the user and observed through
   `authentication_status`.
-- Invitation codes are passed only to the `invitation` branch of `authenticate` and bind immediately.
+- Invitation codes are passed as `value` only to the `invitation` branch of `authenticate` and bind
+  immediately.
 - Protected tools declare their own OAuth scopes and return the standard MCP authentication
   challenge when additional authorization is required.
 - Destructive, public, and external effects retain encrypted ten-minute, single-use confirmation
