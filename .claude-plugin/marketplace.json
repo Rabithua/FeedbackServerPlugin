@@ -10,7 +10,7 @@
       "name": "feedback-server",
       "source": "./plugins/feedback-server",
       "description": "Set up FeedbackKit and manage your app's Feedback service through Claude Code.",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": {
         "name": "Rabithua"
       },

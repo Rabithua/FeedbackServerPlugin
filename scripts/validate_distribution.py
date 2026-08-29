@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PLUGIN = ROOT / "plugins" / "feedback-server"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 MCP_URL = "https://api.feedkit.cn/mcp"
 
 
@@ -34,8 +34,8 @@ cursor = load(ROOT / "examples" / "cursor.mcp.json")
 opencode = load(ROOT / "examples" / "opencode.json")
 
 require(codex.get("name") == PLUGIN.name, "Plugin folder and Codex manifest name differ")
-require(codex.get("version") == VERSION, "Codex plugin version must be 1.0.0")
-require(claude.get("version") == VERSION, "Claude plugin version must be 1.0.0")
+require(codex.get("version") == VERSION, f"Codex plugin version must be {VERSION}")
+require(claude.get("version") == VERSION, f"Claude plugin version must be {VERSION}")
 require(codex.get("skills") == "./skills/", "Codex skills path is invalid")
 require(
     codex.get("mcpServers") == {

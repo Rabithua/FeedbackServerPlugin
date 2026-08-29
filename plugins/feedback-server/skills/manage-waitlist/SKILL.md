@@ -28,9 +28,10 @@ logs, previews, tool output, or the final response.
 
 An invited signup cannot be permanently deleted until its pending invitation is revoked. Acceptance
 atomically creates the verified-email account, applies the selected grant, creates the OAuth grant
-and authorization code, and changes the signup to `converted`. The Agent shows the short connection
-code and triggers OAuth once; the recipient pastes the code, reviews the recognized invitation, and
-accepts without a second email code. Never ask for a username, display name, or password.
+and authorization code, and changes the signup to `converted`. The Agent retains the short connection
+code and triggers OAuth once. A same-browser handoff loads the invitation automatically; show the code
+only when an isolated browser asks for it. The recipient reviews the recognized invitation and accepts
+without a second email code. Never ask for a username, display name, or password.
 
 Permanent deletion requires confirmation. Show the returned App, platform, and note-count preview,
 wait for explicit approval, then call `execute_confirmation` with the returned ID. Confirmation is
