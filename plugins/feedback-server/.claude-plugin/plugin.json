@@ -1,6 +1,6 @@
 {
   "name": "feedback-server",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Authenticate and manage FeedbackKit products, feedback, waitlists, activity, roadmaps, releases, and notifications through MCP.",
   "author": {
     "name": "Rabithua",

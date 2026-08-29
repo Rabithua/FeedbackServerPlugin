@@ -12,8 +12,8 @@ All other anonymous interaction is limited to MCP protocol discovery. `authentic
 OAuth2-protected and declares an empty scopes list, so its first invocation lets the host establish
 an OAuth connection that is not yet bound to a FeedbackKit account.
 
-After OAuth, call either `authenticate({ method: "email", email })` or
-`authenticate({ method: "invitation", code })`. Email returns `pending_verification`; the user opens
-the one-time email link and the Agent observes completion through `authentication_status`. An
-invitation code binds immediately. Only then call `connection_status` and continue Product and
-notification onboarding.
+After OAuth, call either `authenticate({ method: "email", value: email })` or
+`authenticate({ method: "invitation", value: invitationCode })`. Email returns
+`pending_verification`; the user opens the one-time email link and the Agent observes completion
+through `authentication_status`. An invitation code binds immediately. Only then call
+`connection_status` and continue Product and notification onboarding.

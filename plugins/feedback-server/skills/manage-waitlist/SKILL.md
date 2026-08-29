@@ -24,8 +24,8 @@ pending invite; revocation prevents acceptance but cannot recall mail already ac
 provider. These tools require both the OAuth scope `waitlist:invite` and a current database
 `super_admin` role. The recipient may paste the complete invitation Prompt into the current Agent
 conversation. Pass its invitation code only to
-`authenticate({ method: "invitation", code })`; do not repeat it in chat, commands, logs, previews,
-tool output, or the final response.
+`authenticate({ method: "invitation", value: invitationCode })`; do not repeat it in chat,
+commands, logs, previews, tool output, or the final response.
 
 An invited signup cannot be permanently deleted until its pending invitation is revoked. Acceptance
 uses the setup workflow: host OAuth first creates an unbound connection, then invitation

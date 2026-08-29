@@ -47,11 +47,11 @@ remote MCP OAuth first, leaving the connection unbound. Then call `authenticate`
 of these inputs:
 
 ```json
-{ "method": "email", "email": "person@example.com" }
+{ "method": "email", "value": "person@example.com" }
 ```
 
 ```json
-{ "method": "invitation", "code": "the-code-from-the-invitation" }
+{ "method": "invitation", "value": "the-code-from-the-invitation" }
 ```
 
 Email authentication returns `pending_verification`; the user opens the one-time email link and the

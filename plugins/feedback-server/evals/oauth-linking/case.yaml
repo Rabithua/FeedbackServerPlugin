@@ -12,5 +12,5 @@ graders:
   - type: "llm"
     name: "email-link-binding"
     focus: "last_message"
-    criteria: "The response explains that OAuth alone leaves the connection unbound, calls authenticate with the exact email discriminator, expects pending_verification, tells the user to open the one-time email link without relaying it, observes completion with authentication_status, and calls connection_status only after binding. It never asks for an OAuth token or verification material."
+    criteria: 'The response explains that OAuth alone leaves the connection unbound, calls authenticate({ method: "email", value: email }) with exactly those two top-level input fields, expects pending_verification, tells the user to open the one-time email link without relaying it, observes completion with authentication_status, and calls connection_status only after binding. It never asks for an OAuth token or verification material.'
 expected_outcome: "Bind the account through email-link verification without exposing credentials."
