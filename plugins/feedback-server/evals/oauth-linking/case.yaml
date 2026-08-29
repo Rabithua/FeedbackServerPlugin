@@ -1,9 +1,9 @@
 schema_version: "1.1"
-name: "isolated-invitation-code-oauth-linking"
-description: "Uses the fallback short code only when an isolated OAuth WebView cannot share the invitation cookie."
+name: "invitation-code-oauth-linking"
+description: "Uses the mandatory short code to bind every invitation OAuth browser."
 tags: ["oauth", "setup"]
 execution:
-  prompt: "FeedbackKit OAuth 在隔离 WebView 打开了，但 Agent 已经给我十位短连接码。请说明怎么继续；不要让我再做邮箱验证，也不要索取 Token。"
+  prompt: "FeedbackKit OAuth 已打开，Agent 已经主动给我十位连接码。请说明怎么继续；不要让我再做邮箱验证，也不要索取 Token。"
   max_turns: 4
   timeout_seconds: 180
   allowed_tools: []
@@ -12,5 +12,5 @@ graders:
   - type: "llm"
     name: "pairing-not-second-auth"
     focus: "last_message"
-    criteria: "The response recognizes the isolated WebView as the fallback case, tells the user to paste the short code on the FeedbackKit OAuth page, explains that complete input verifies automatically and only pairs the pending invitation, does not request another email code, and never asks for an OAuth token."
+    criteria: "The response tells the user to paste the short code on the FeedbackKit OAuth page, explains that complete input verifies automatically and only pairs the pending invitation, does not describe a cookie or automatic-bind path, does not request another email code, and never asks for an OAuth token."
 expected_outcome: "Pair the invitation within the single OAuth page without exposing credentials."

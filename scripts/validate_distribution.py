@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PLUGIN = ROOT / "plugins" / "feedback-server"
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 MCP_URL = "https://api.feedkit.cn/mcp"
 
 
