@@ -27,12 +27,12 @@ publishes `health` and `accept_invitation`; the first protected tool starts OAut
 ## Invitation connection
 
 Paste the complete invitation Prompt into a Codex or Claude Code task. The Agent calls anonymous
-`accept_invitation`, keeps the returned ten-minute connection code available as a fallback, then
-immediately retries `connection_status`; the host opens OAuth once.
+`accept_invitation`, immediately shows the returned ten-minute connection code, then retries
+`connection_status`; the host opens OAuth once.
 
-If the browser already carries the invitation handoff, the OAuth page loads the invited email,
-subscription entitlement, and requested scopes automatically. In an isolated WebView or a different
-browser, paste the ten-character code to bind that OAuth request. Click **Accept and connect**; no
+The OAuth page always asks for the ten-character code before it loads the invited email,
+subscription entitlement, and requested scopes. Paste the code to bind that OAuth request, then
+click **Accept and connect**; no
 email entry or second verification message is required. The invitation is consumed only at final
 approval, in the same transaction that creates the account, entitlement, OAuth grant, and
 authorization code.
@@ -51,7 +51,7 @@ plugin files, website storage, or the repository.
 ## Security model
 
 - Invitation tokens are used only by the first anonymous tool call and are never logged or repeated.
-- Handoffs and short codes expire after ten minutes, are stored as hashes, are single-use, and are
+- Pending invitation pairings and short codes expire after ten minutes, are stored as hashes, are single-use, and are
   rate-limited after five failed guesses.
 - Protected tools declare their own OAuth scopes and return the standard MCP authentication
   challenge when linking is required.
@@ -59,6 +59,10 @@ plugin files, website storage, or the repository.
   previews through `execute_confirmation`.
 - Independent REST/PAT authentication remains available, but invitation enrollment is OAuth-only
   and the plugin neither creates nor stores PATs.
+
+After OAuth, `connection_status` returns live onboarding actions. The Agent must continue instead of
+stopping at “connected”: first-Product creation requires an explicit Bark, Product Webhook, or defer
+choice, and an existing Product with an unresolved choice prompts immediately.
 
 See [English onboarding](docs/invited-admin-onboarding.en.md),
 [中文接入说明](docs/invited-admin-onboarding.zh-Hans.md), and

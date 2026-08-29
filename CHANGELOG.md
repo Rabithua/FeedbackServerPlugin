@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1 - 2026-08-30
+
+- Make the ten-character connection code the only invitation-to-OAuth pairing path and require the
+  Agent to show it before opening OAuth; remove automatic same-browser invitation loading.
+- Continue live onboarding immediately after OAuth instead of stopping at “connected,” including an
+  action-required notification choice for unresolved Products.
+- Require Bark, Product Webhook, or deferred notification preference in MCP Product creation so the
+  choice is stored atomically with the Product and cannot be skipped by instruction drift.
+
 ## 1.1.0 - 2026-08-29
 
 - Bind same-browser invitation handoffs directly to the OAuth authorization request and retain the
