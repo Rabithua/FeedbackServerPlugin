@@ -1,16 +1,16 @@
 schema_version: "1.1"
-name: "invitation-code-oauth-linking"
-description: "Uses the mandatory short code to bind every invitation OAuth browser."
+name: "email-authentication-after-oauth"
+description: "Separates host OAuth from email account binding and observes the one-time link result."
 tags: ["oauth", "setup"]
 execution:
-  prompt: "FeedbackKit OAuth 已打开，Agent 已经主动给我十位连接码。请说明怎么继续；不要让我再做邮箱验证，也不要索取 Token。"
+  prompt: "FeedbackKit 的宿主 OAuth 已完成，但 connection_status 说连接还没绑定账号。请用 me@example.com 继续；不要索取 OAuth Token，也不要让我把邮件内容贴回对话。"
   max_turns: 4
   timeout_seconds: 180
   allowed_tools: []
 runs: 1
 graders:
   - type: "llm"
-    name: "pairing-not-second-auth"
+    name: "email-link-binding"
     focus: "last_message"
-    criteria: "The response tells the user to paste the short code on the FeedbackKit OAuth page, explains that complete input verifies automatically and only pairs the pending invitation, does not describe a cookie or automatic-bind path, does not request another email code, and never asks for an OAuth token."
-expected_outcome: "Pair the invitation within the single OAuth page without exposing credentials."
+    criteria: "The response explains that OAuth alone leaves the connection unbound, calls authenticate with the exact email discriminator, expects pending_verification, tells the user to open the one-time email link without relaying it, observes completion with authentication_status, and calls connection_status only after binding. It never asks for an OAuth token or verification material."
+expected_outcome: "Bind the account through email-link verification without exposing credentials."

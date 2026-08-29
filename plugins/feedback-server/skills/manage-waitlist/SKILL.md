@@ -23,15 +23,15 @@ paid plan without a term and never infer one. Show that preview, wait for explic
 pending invite; revocation prevents acceptance but cannot recall mail already accepted by the
 provider. These tools require both the OAuth scope `waitlist:invite` and a current database
 `super_admin` role. The recipient may paste the complete invitation Prompt into the current Agent
-conversation. Use its token only in anonymous `accept_invitation`; do not repeat it in commands,
-logs, previews, tool output, or the final response.
+conversation. Pass its invitation code only to
+`authenticate({ method: "invitation", code })`; do not repeat it in chat, commands, logs, previews,
+tool output, or the final response.
 
 An invited signup cannot be permanently deleted until its pending invitation is revoked. Acceptance
-atomically creates the verified-email account, applies the selected grant, creates the OAuth grant
-and authorization code, and changes the signup to `converted`. The Agent retains the short connection
-code, shows it immediately, and triggers OAuth once. Every browser enters the code before the
-invitation details load. The recipient reviews the recognized invitation and accepts
-without a second email code. Never ask for a username, display name, or password.
+uses the setup workflow: host OAuth first creates an unbound connection, then invitation
+authentication binds it immediately and onboarding continues through `connection_status`. Never ask
+the recipient to enter the invitation code in a browser or complete email verification. Never ask
+for a username, display name, or password.
 
 Permanent deletion requires confirmation. Show the returned App, platform, and note-count preview,
 wait for explicit approval, then call `execute_confirmation` with the returned ID. Confirmation is

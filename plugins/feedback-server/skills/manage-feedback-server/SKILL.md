@@ -1,13 +1,13 @@
 ---
 name: manage-feedback-server
-description: Compatibility router for broad or ambiguous FeedbackServer requests. Use when a request spans several FeedbackServer workflows or does not clearly match setup, feedback triage, waitlist, roadmap/release publishing, notifications, or administration. Do not use for a clearly scoped workflow when its focused FeedbackServer skill applies.
+description: General router for broad or ambiguous FeedbackServer requests. Use when a request spans several FeedbackServer workflows or does not clearly match setup, feedback triage, waitlist, roadmap/release publishing, notifications, or administration. Do not use for a clearly scoped workflow when its focused FeedbackServer skill applies.
 ---
 
 # Route FeedbackServer work
 
 Use the smallest focused skill that covers the request:
 
-- `$setup-feedback-server` for installation, browser OAuth, connection diagnosis, and first-app setup.
+- `$setup-feedback-server` for installation, host OAuth, explicit account authentication, connection diagnosis, and first-app setup.
 - `$triage-feedback` for inspecting, organizing, replying to, or deleting Product feedback and diagnostics.
 - `$manage-waitlist` for owner-scoped signup follow-up and deletion.
 - `$publish-roadmap-releases` for Activity posts, public roadmap content, Releases, translations, or App Store changelog import.

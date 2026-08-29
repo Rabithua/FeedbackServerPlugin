@@ -6,7 +6,7 @@ FeedbackKit is a hosted Streamable HTTP MCP server:
 https://api.feedkit.cn/mcp
 ```
 
-Do not configure a local command, Bun runtime, PAT, API token, or environment credential. The client
+Do not configure a local command, Bun runtime, API token, or environment credential. The client
 must support remote HTTP MCP plus OAuth authorization-code flow with PKCE and dynamic client
 registration.
 
@@ -41,6 +41,20 @@ Start from [`examples/opencode.json`](../examples/opencode.json):
 }
 ```
 
-After configuration, call `health`, then `connection_status`. The protected call should open the
-client's OAuth linking UI. If the client cannot complete remote MCP OAuth, it is not supported by
-this distribution; do not fall back to putting a PAT in a JSON file.
+Anonymous access is limited to MCP discovery and `health`. To connect an account, invoke the
+OAuth2-protected `authenticate` tool, whose declared scopes list is empty. The client completes
+remote MCP OAuth first, leaving the connection unbound. Then call `authenticate` with exactly one
+of these inputs:
+
+```json
+{ "method": "email", "email": "person@example.com" }
+```
+
+```json
+{ "method": "invitation", "code": "the-code-from-the-invitation" }
+```
+
+Email authentication returns `pending_verification`; the user opens the one-time email link and the
+Agent checks `authentication_status`. Invitation authentication binds immediately. Call
+`connection_status` only after binding succeeds. A client that cannot complete remote MCP OAuth is
+not supported by this distribution.

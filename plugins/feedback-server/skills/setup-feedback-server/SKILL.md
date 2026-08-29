@@ -1,51 +1,52 @@
 ---
 name: setup-feedback-server
-description: Install, upgrade, accept a FeedbackKit invitation, connect an Agent with browser OAuth, create the first Product, integrate the Apple SDK, or diagnose setup. Use for first-use onboarding, connection failures, or setup status; not routine feedback triage.
+description: Install or upgrade FeedbackKit, establish host OAuth, authenticate an account by email or invitation, create the first Product, integrate the Apple SDK, or diagnose setup. Use for first-use onboarding, unbound connections, connection failures, or setup status; not routine feedback triage.
 ---
 
 # Set up FeedbackKit
 
 FeedbackKit uses the hosted `https://api.feedkit.cn/mcp` connector. Do not look for or run a local
-MCP process, Bun runtime, CLI, native keyring, Profile, PAT, or token file. OAuth credentials belong
-to the host and must never be requested, displayed, copied, or written by the Agent.
+MCP process, Bun runtime, CLI, local authentication store, or credential file. OAuth credentials
+belong to the host and must never be requested, displayed, copied, or written by the Agent.
 
-## Invitation flow
+## OAuth connection and account binding
 
-When the user supplies an invitation Prompt:
+Anonymous access is limited to MCP discovery and `health`. The `authenticate` tool is
+OAuth2-protected with an empty scopes list. Its first invocation lets the host complete OAuth, but
+OAuth success leaves the connection unbound and grants no FeedbackKit account access.
 
-1. Install or upgrade the trusted `feedback-server` plugin. Authentication is deferred until a
-   protected tool is used, so do not start ordinary email login first.
-2. Read `invitation_token` from the Prompt and call the anonymous `accept_invitation` tool once for
-   the current handoff. Do not call it again while that handoff remains active. Never repeat the
-   token in chat, logs, commands, previews, or the final response.
-3. Immediately show the returned ten-character connection code to the user and explain that the
-   OAuth page will require it. Then retry protected `connection_status`; its OAuth challenge lets the host open the
-   authorization flow once. Do not show or ask the user to open a separate continuation link.
-4. Have the user paste the connection code on the OAuth page. Complete input binds this OAuth
-   request and then reveals the invited email, subscription entitlement, client, and scopes. The
-   code is not another identity check and is not an OAuth credential.
-5. Tell the user to click **Accept and connect** after reviewing the loaded identity and scopes.
-   Never request a second email verification code for an invitation.
-6. Retry `connection_status` after approval. Continue only when it reports an authenticated OAuth
-   connection. If the handoff expired, call `accept_invitation` again; the invitation remains usable
-   until final approval or its own expiry; this expiry recovery is the exception to the one-call
-   rule for the previous handoff.
+Install or upgrade the trusted `feedback-server` plugin, then select exactly one authentication
+method from explicit user input. Do not guess between methods.
 
-Do not route an invited user through email verification. Every invitation browser uses the short
-connection code; there is no cookie-based automatic invitation bind.
+### Email
 
-## Existing-account connection
+1. Call `authenticate({ method: "email", email })` with the user's exact email. The protected call
+   causes the host to complete OAuth when needed; once OAuth returns, call the same method to bind
+   the account.
+2. Expect `pending_verification`. Tell the user to click the one-time link in the email. Never ask
+   the user to paste the link or any verification material into the conversation.
+3. Observe completion with `authentication_status`, respecting any returned retry timing. Continue
+   only when the status reports that the account is bound.
 
-For a normal installation without an invitation, call protected `connection_status` immediately.
-The host opens FeedbackKit OAuth; the user switches to **Email code**, enters the existing account
-email and six-digit code on `feedkit.cn/connect`, reviews scopes, and approves. The email and code
-stay in the browser flow, not the Agent conversation. Retry `connection_status` after approval, then
-continue its onboarding actions rather than stopping at “connected.”
+### Invitation
+
+1. Read the invitation code from the user-supplied invitation Prompt and call
+   `authenticate({ method: "invitation", code })`. Pass the code only as the tool input; do not
+   repeat it in chat, logs, commands, previews, or the final response.
+2. The protected call causes the host to complete OAuth when needed; once OAuth returns, call the
+   same method to bind the account.
+3. Successful invitation authentication binds immediately. Do not ask the user to enter anything
+   in the OAuth browser or complete email verification.
+
+After either method binds the account, call `connection_status`. If it still reports an unbound
+connection, return to `authenticate` or `authentication_status` as directed; do not enter Product
+onboarding early.
 
 ## First Product and SDK setup
 
-Immediately after connection, call `get_onboarding_status`; never finish a turn by reporting only
-that OAuth connected. If there is no Product, completely re-ask for App name, platform (`iOS`,
+Immediately after bound `connection_status`, call `get_onboarding_status`; never finish a turn by
+reporting only that OAuth connected or that account binding succeeded. If there is no Product,
+completely re-ask for App name, platform (`iOS`,
 `iPadOS`, `macOS`, Android, or Web), default user language, the target when several Apps exist, and
 an explicit notification preference: Bark, Product Webhook, or defer. Do not reuse waitlist details
 or infer defer from silence. Generate a slug, show it for confirmation, and pass the saved
@@ -67,8 +68,3 @@ but automatic SDK integration is not available in this release.
 Use the returned onboarding status for remaining server-side steps. With several Products, ask for
 an explicit Product selection. Treat build or configuration failures as blockers and warnings as
 review items. Run a live feedback roundtrip only when explicitly asked.
-
-Before email changes or listing/revoking other Agent connections, call
-`request_email_reauthentication`, ask the user for the six digits, and call
-`complete_email_reauthentication`. OAuth recent-auth state is held by the server and no token is
-returned. Never revoke the currently active connection through `revoke_agent_credential`.
