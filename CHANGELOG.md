@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0 - 2026-09-03
+
+- Treat explicit Feedback status, visibility, and reply requests as the authorization for that
+  write instead of asking for the same action a second time.
+- Keep destructive, account-access, key, and external-delivery operations on the existing protected
+  confirmation flow.
+
 ## 1.2.1 - 2026-08-30
 
 - Correct the only supported `authenticate` input to `{ method, value }` for both email and

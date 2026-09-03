@@ -1,4 +1,4 @@
-# FeedbackKit Agent Plugin 1.2
+# FeedbackKit Agent Plugin 1.3
 
 FeedbackKit connects Codex and Claude Code directly to the hosted FeedbackServer MCP for Product
 setup, user-feedback triage, roadmaps, releases, waitlist invitations, notifications, and audit
@@ -62,8 +62,9 @@ and notification onboarding instead of stopping at “OAuth connected.”
   immediately.
 - Protected tools declare their own OAuth scopes and return the standard MCP authentication
   challenge when additional authorization is required.
-- Destructive, public, and external effects retain encrypted ten-minute, single-use confirmation
-  previews through `execute_confirmation`.
+- Explicit Feedback status, visibility, and reply requests run without asking for the same approval
+  again. Destructive, account-access, key, and external-delivery effects retain encrypted,
+  single-use confirmation previews through `execute_confirmation`.
 
 After binding, `connection_status` returns live onboarding actions. First-Product creation requires
 an explicit Bark, Product Webhook, or defer choice, and an existing Product with an unresolved

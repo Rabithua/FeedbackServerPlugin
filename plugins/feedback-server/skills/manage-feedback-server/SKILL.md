@@ -19,7 +19,9 @@ Never use direct SQL, production shell access, or
 undocumented HTTP routes. Resolve explicit IDs instead of guessing. Do not mutate for requests that
 only ask to inspect, draft, preview, plan, or summarize.
 
-When a protected tool returns `confirmation_required`, show its redacted preview and wait for an
-explicit approval. Then call `execute_confirmation` with only the returned `confirmationId`. The ID
-is single-use, expires after ten minutes, and becomes invalid when the active connection, account,
-endpoint, payload, or precondition changes.
+An explicit user request to change Feedback status or visibility, or to send a Feedback reply,
+authorizes that exact tool call without a second confirmation. Read-only review, drafting, and
+planning do not authorize a write. When another protected tool returns `confirmation_required`, show
+its redacted preview and wait for explicit approval. Then call `execute_confirmation` with only the
+returned `confirmationId`; it remains single-use and bound to the connection, account, endpoint,
+payload, and precondition.

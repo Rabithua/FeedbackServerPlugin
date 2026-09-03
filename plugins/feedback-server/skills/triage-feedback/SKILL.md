@@ -18,11 +18,11 @@ corresponding tool. Drafting, reviewing, planning, previewing, or summarizing do
 write. Public Feedback exposes the body, attachments, author display code, and non-internal
 conversation as one unit; diagnostics and internal notes remain private.
 
-Protected changes return `confirmation_required`. Show the Product, entity, visible text or status,
-and public/deletion effect from the redacted preview. After explicit approval call
-`execute_confirmation({ confirmationId })`; never reconstruct the original parameters. If the ID
-expires, is replayed, or the precondition is stale, reread current state and prepare a new preview.
-Never automatically retry a write. Public replies must be shown in full before sending.
+For an explicitly requested status change, publication or unpublication, or reply, call the matching
+tool once; do not ask the user to approve the same action again. Resolve the exact Feedback first and
+state the public effect in the completion summary. If a separate destructive tool returns
+`confirmation_required`, show its redacted preview, wait for approval, and pass only the returned ID
+to `execute_confirmation`.
 
 Preserve error status, code, message, request ID, retry guidance, and remediation. On 401 route to
 `$setup-feedback-server`; on 403 report the missing access and stop. Never ask for a token in chat.

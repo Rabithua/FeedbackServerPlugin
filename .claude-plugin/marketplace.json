@@ -10,7 +10,7 @@
       "name": "feedback-server",
       "source": "./plugins/feedback-server",
       "description": "Connect and authenticate FeedbackKit, then manage your app's Feedback service through Claude Code.",
-      "version": "1.2.1",
+      "version": "1.3.0",
       "author": {
         "name": "Rabithua"
       },
