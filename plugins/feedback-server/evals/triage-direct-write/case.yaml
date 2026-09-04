@@ -1,0 +1,16 @@
+schema_version: "1.1"
+name: "v2-triage-explicit-write-authorization"
+description: "Keeps explicit ordinary FeedbackServer 2.0 writes out of the duplicate-confirmation path."
+tags: ["v2", "triage", "confirmation"]
+execution:
+  prompt: "只解释 FeedbackServer 2.0 协议，不调用工具：用户已明确指定某条 Feedback，并要求把状态改为 resolved、改变可见性，或发送给出的回复时，Agent 是否还要再问一次？删除等高风险操作又如何处理？"
+  max_turns: 4
+  timeout_seconds: 180
+  allowed_tools: []
+runs: 1
+graders:
+  - type: "llm"
+    name: "ordinary-write-without-duplicate-confirmation"
+    focus: "last_message"
+    criteria: "The answer says an explicit status, visibility, or specified reply request authorizes the exact update_feedback or reply_to_feedback call without a second chat confirmation. It keeps destructive and other tool-marked risky operations on MCP elicitation or an identical retry with confirm: true after approval."
+expected_outcome: "Distinguish direct ordinary Feedback writes from protected v2 operations."

@@ -1,70 +1,62 @@
 ---
 name: setup-feedback-server
-description: Install or upgrade FeedbackKit, establish host OAuth, authenticate an account by email or invitation, create the first Product, integrate the Apple SDK, or diagnose setup. Use for first-use onboarding, unbound connections, connection failures, or setup status; not routine feedback triage.
+description: Install or upgrade FeedbackKit, complete FeedbackServer 2.0 browser OAuth and magic-link sign-in, verify the account, create the first Product, integrate the Apple SDK, or diagnose setup. Use for first-use onboarding and connection failures; not routine feedback triage.
 ---
 
-# Set up FeedbackKit
+# Set up FeedbackKit 2.0
 
-FeedbackKit uses the hosted `https://api.feedkit.cn/mcp` connector. Do not look for or run a local
-MCP process, Bun runtime, CLI, local authentication store, or credential file. OAuth credentials
-belong to the host and must never be requested, displayed, copied, or written by the Agent.
+FeedbackKit uses the remote Streamable HTTP MCP at `https://api.feedkit.cn/mcp`. Do not run a local
+MCP process, install a runtime, configure an API token, or create a credential file. OAuth tokens,
+browser sessions, and emailed magic links belong to the host and user; never request, display, copy,
+or persist them.
 
-## OAuth connection and account binding
+## Connect and sign in
 
-Anonymous access is limited to MCP discovery and `health`. The `authenticate` tool is
-OAuth2-protected with an empty scopes list. Its first invocation lets the host complete OAuth, but
-OAuth success leaves the connection unbound and grants no FeedbackKit account access.
+For an ordinary existing account, connect the trusted `feedback-server` plugin to the hosted MCP.
+For invitation onboarding, read only `mcp_server` and `account_email` from the supplied invitation
+instructions, connect to that server, and use that email in the browser. Do not look for any other
+invitation credential.
 
-Install or upgrade the trusted `feedback-server` plugin, then select exactly one authentication
-method from explicit user input. Do not guess between methods.
+Call `whoami` as the first protected MCP tool. When the host needs a connection, that call starts
+Better Auth OAuth 2.1 in the browser. Tell the user to:
 
-### Email
+1. Enter the intended account email on the FeedbackKit login page.
+2. Open the one-time magic link sent to that inbox without pasting it into the conversation.
+3. Return to the browser flow and approve the requested scopes.
 
-1. Call `authenticate({ method: "email", value: email })` with the user's exact email as `value`.
-   The protected call causes the host to complete OAuth when needed; once OAuth returns, call the
-   same method to bind the account.
-2. Expect `pending_verification`. Tell the user to click the one-time link in the email. Never ask
-   the user to paste the link or any verification material into the conversation.
-3. Observe completion with `authentication_status`, respecting any returned retry timing. Continue
-   only when the status reports that the account is bound.
+When the host reports a successful connection, call `whoami`. For an invitation, require its returned
+email to match `account_email`; on a mismatch, stop Product work and reconnect with the correct
+account. Do not treat the browser redirect alone as proof of the active identity.
 
-### Invitation
+## Create or select a Product
 
-1. Read the invitation code from the user-supplied invitation Prompt and call
-   `authenticate({ method: "invitation", value: invitationCode })`. Pass the code only as `value`;
-   do not repeat it in chat, logs, commands, previews, or the final response.
-2. The protected call causes the host to complete OAuth when needed; once OAuth returns, call the
-   same method to bind the account.
-3. Successful invitation authentication binds immediately. Do not ask the user to enter anything
-   in the OAuth browser or complete email verification.
+Call `list_products` immediately after `whoami`:
 
-After either method binds the account, call `connection_status`. If it still reports an unbound
-connection, return to `authenticate` or `authentication_status` as directed; do not enter Product
-onboarding early.
+- With no Products, ask for the App name, platform (`iOS`, `iPadOS`, `macOS`, Android, or Web),
+  default locale, and one explicit notification preference: `bark`, `webhook`, or `deferred`. Do not
+  infer a choice from silence or reuse waitlist metadata. Derive and show a readable slug, then call
+  `create_product` with `name`, `slug`, `defaultLocale`, and `notificationSetupPreference`. Leave
+  status active, feedback private, and diagnostics disabled unless the user requested otherwise.
+- With one Product, read its current settings and verify that it is the requested App. With several,
+  ask the user to select one and never guess an ID.
+- If the selected Product still reports `notificationSetupPreference: "unresolved"`, collect the
+  missing choice and persist it with `set_notification_setup_preference` before declaring server-side
+  setup complete.
 
-## First Product and SDK setup
+For Bark or webhook, continue with `$configure-notifications`. A risky notification call uses native
+MCP elicitation when available. If the tool instead returns `confirmation_required`, show the exact
+redacted effect, wait for approval, and repeat the same operation with identical arguments plus
+`confirm: true`. Never use a confirmation identifier.
 
-Immediately after bound `connection_status`, call `get_onboarding_status`; never finish a turn by
-reporting only that OAuth connected or that account binding succeeded. If there is no Product,
-completely re-ask for App name, platform (`iOS`,
-`iPadOS`, `macOS`, Android, or Web), default user language, the target when several Apps exist, and
-an explicit notification preference: Bark, Product Webhook, or defer. Do not reuse waitlist details
-or infer defer from silence. Generate a slug, show it for confirmation, and pass the saved
-`notificationSetupPreference` in `create_product`; defaults remain active, private feedback, and
-diagnostics off.
+## Integrate the App
 
-For an existing selected Product whose onboarding action requires a notification choice, ask
-immediately and persist it with `set_notification_setup_preference` before App integration. For Bark
-or Webhook, follow `$configure-notifications`, including its protected preview and confirmation. A
-saved Bark or Webhook choice remains action-required until its channel is configured; an explicit
-defer resolves the step. Do not claim setup is complete while a notification action is unresolved.
+Before modifying an Apple project, identify the target project, target, and files and obtain explicit
+approval. Then integrate the FeedbackKit SDK, place the Product's publishable key in the intended
+configuration without leaking unrelated credentials, build the smallest relevant target, and verify
+endpoint, key placement, locale behavior, and SDK initialization. Android and Web setup can complete
+the account and Product work, but this plugin does not automate their SDK integration.
 
-Before modifying an Apple project, identify the target project and files and obtain explicit
-approval. Then integrate the FeedbackKit SDK, write the Product publishable key without echoing it,
-build the smallest relevant target, and verify endpoint, key placement, language behavior, and SDK
-initialization directly in the project. Android and Web may complete account and Product creation,
-but automatic SDK integration is not available in this release.
-
-Use the returned onboarding status for remaining server-side steps. With several Products, ask for
-an explicit Product selection. Treat build or configuration failures as blockers and warnings as
-review items. Run a live feedback roundtrip only when explicitly asked.
+Use `whoami`, Product records, `get_subscription`, and notification configuration as the setup source
+of truth. With a 401, restart host OAuth; with a 403, report the missing scope, role, or subscription
+access. Never ask the user for a bearer token. Run a live feedback roundtrip only when explicitly
+requested.

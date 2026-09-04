@@ -1,28 +1,32 @@
 ---
 name: triage-feedback
-description: Inspect, summarize, organize, reply to, publish, or delete FeedbackServer Product feedback, conversations, internal notes, attachments, and diagnostic bundles. Use for inbox triage and feedback follow-up. Do not use for waitlist signups, roadmap releases, or initial account setup.
+description: Inspect, summarize, organize, reply to, publish, or delete FeedbackServer 2.0 Product feedback, conversations, internal notes, attachments, and diagnostic bundles. Use for inbox triage and feedback follow-up. Do not use for waitlist signups, roadmap Releases, or initial setup.
 ---
 
-# Triage FeedbackServer feedback
+# Triage FeedbackServer 2.0 feedback
 
-Identify the Product first. If none is named, list Products; auto-select only one unambiguous result,
-otherwise ask. Pass explicit Product and entity IDs to later tools. Follow `nextCursor` until the
-requested range is complete.
+Verify the connected account with `whoami` when needed. Resolve the Product with `list_products` and
+the record with `list_feedback` or `get_feedback`; auto-select only one unambiguous result. Otherwise
+ask. Pass explicit Product and entity IDs to later tools and follow `nextCursor` until the requested
+range is complete.
 
-Keep internal notes, client context, Visitor credentials, and diagnostic data private. Generate an
-attachment URL only when explicitly asked to open or download it. Diagnostic bundles are more
-sensitive: call `get_diagnostic_bundle_url` only for an explicit inspection or download request.
+Keep internal notes, client context, visitor credentials, waitlist data, and diagnostics private.
+Call `get_attachment_url` only when the task requires an attachment, and call
+`get_diagnostic_bundle_url` only for an explicit diagnostic inspection or download request.
 
-Explicit requests to reply, add an internal note, link, update, publish, or delete authorize the
-corresponding tool. Drafting, reviewing, planning, previewing, or summarizing do not authorize a
-write. Public Feedback exposes the body, attachments, author display code, and non-internal
-conversation as one unit; diagnostics and internal notes remain private.
+An explicit request to change a specific Feedback record's status or visibility authorizes the exact
+`update_feedback` call. An explicit request to send specified reply text authorizes the exact
+`reply_to_feedback` call. Execute either ordinary write once without asking the user to approve the
+same action again. Explicit requests for an internal note or Item link similarly authorize the
+matching direct tool. Drafting, reviewing, planning, previewing, or summarizing does not authorize a
+write. Public Feedback exposes its body, attachments, author display code, and non-internal thread as
+one unit; diagnostics and internal notes remain private.
 
-Protected changes return `confirmation_required`. Show the Product, entity, visible text or status,
-and public/deletion effect from the redacted preview. After explicit approval call
-`execute_confirmation({ confirmationId })`; never reconstruct the original parameters. If the ID
-expires, is replayed, or the precondition is stale, reread current state and prepare a new preview.
-Never automatically retry a write. Public replies must be shown in full before sending.
+Deletion and any other tool marked risky prefer native MCP elicitation. If elicitation is unavailable
+and a call returns `confirmation_required`, show the exact Product, entity, visible or destructive
+effect, and full public text when relevant. After explicit approval, repeat the same tool with
+identical arguments plus `confirm: true`. Never use a confirmation identifier or alter the approved
+payload. If state changed, reread it and seek fresh approval; never retry a write automatically.
 
 Preserve error status, code, message, request ID, retry guidance, and remediation. On 401 route to
-`$setup-feedback-server`; on 403 report the missing access and stop. Never ask for a token in chat.
+`$setup-feedback-server`; on 403 report the missing scope or access and stop. Never ask for a token.

@@ -1,16 +1,19 @@
 schema_version: "1.1"
-name: "invitation-authentication-onboarding"
-description: "Establishes host OAuth, binds with the invitation discriminator, and continues onboarding."
-tags: ["setup"]
+name: "v2-invitation-product-onboarding"
+description: "Uses the two-field FeedbackServer 2.0 invitation and continues through Product setup."
+tags: ["v2", "setup", "invitation"]
 execution:
-  prompt: "我把包含邀请短码的 FeedbackKit 邀请 Prompt 发给你了。请安装插件，在当前任务完成账号绑定和首个 App 接入；不要在回复中复述短码。"
+  prompt: |-
+    请按 FeedbackServer 2.0 协议说明如何完成邀请接入和首个 App 设置，不调用工具，也不要索取任何额外邀请凭据：
+    mcp_server: https://api.feedkit.cn/mcp
+    account_email: invited@example.com
   max_turns: 5
   timeout_seconds: 180
   allowed_tools: []
 runs: 1
 graders:
   - type: "llm"
-    name: "discriminated-invitation-binding"
+    name: "two-field-invitation-onboarding"
     focus: "last_message"
-    criteria: 'The response invokes the OAuth2-protected authenticate tool whose scopes list is empty, recognizes that OAuth success leaves the connection unbound, calls authenticate({ method: "invitation", value: invitationCode }) with exactly those two top-level input fields without repeating the code, treats success as immediate binding, and only then calls connection_status. It continues onboarding, re-asks App details and an explicit Bark, Product Webhook, or defer choice before Product creation, and requires approval before Apple project edits. It does not move invitation input or email verification into the browser.'
-expected_outcome: "Bind an invited account immediately after host OAuth and complete guided onboarding."
+    criteria: "The response uses only mcp_server and account_email, connects the remote MCP, completes browser magic-link sign-in as that email, calls whoami and verifies the email, then calls list_products. With no Product it asks for App name, platform, default locale, and an explicit Bark, webhook, or deferred choice before create_product; it obtains approval before App project edits."
+expected_outcome: "Complete the v2 invited-user sign-in and guided first-Product workflow without another invitation credential."

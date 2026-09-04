@@ -1,9 +1,9 @@
-# FeedbackKit Agent Plugin 1.2
+# FeedbackKit Agent Plugin 2.0
 
-FeedbackKit connects Codex and Claude Code directly to the hosted FeedbackServer MCP for Product
-setup, user-feedback triage, roadmaps, releases, waitlist invitations, notifications, and audit
-history. Version 1.2 uses host-managed OAuth and ships no local MCP runtime, CLI, Bun dependency, or
-JavaScript bundle.
+FeedbackKit connects Codex and Claude Code to the hosted FeedbackServer 2.0 MCP for Product setup,
+feedback triage, waitlists, roadmaps, Releases, notifications, analytics, and account administration.
+This is a 2.0-only, runtime-free plugin: it ships Skills and remote MCP metadata, not a local server,
+CLI, Bun dependency, token store, or JavaScript bundle.
 
 ## Install
 
@@ -21,68 +21,93 @@ claude plugin marketplace add Rabithua/FeedbackServerPlugin
 claude plugin install feedback-server@feedback-server --scope user
 ```
 
-Installation does not force sign-in. The only anonymous MCP surface at
-`https://api.feedkit.cn/mcp` is protocol discovery and `health`.
+Both hosts connect to `https://api.feedkit.cn/mcp` over Streamable HTTP. Business tools require an
+OAuth access token; only the OAuth discovery metadata and browser sign-in surface are public.
 
-## OAuth and account authentication
+## Browser OAuth and magic-link sign-in
 
-The `authenticate` tool is OAuth2-protected with an empty scopes list. Its first invocation lets the
-host complete OAuth without granting FeedbackKit account access. OAuth success creates an unbound
-connection; it does not select or create an account.
+Call `whoami` as the first protected tool. If the host is not connected, that call starts its OAuth
+2.1 authorization-code flow and FeedbackServer uses Better Auth to open the FeedbackKit login page.
+Enter the account email in that browser, open the
+one-time sign-in link delivered to the same inbox, return to the browser flow, and approve the
+requested access. Never paste the emailed link or an OAuth token into the Agent conversation.
 
-After OAuth, the Agent calls `authenticate` with exactly one discriminated input:
+An invitation gives the Agent only these setup values:
 
-```json
-{ "method": "email", "value": "person@example.com" }
+```text
+mcp_server: https://api.feedkit.cn/mcp
+account_email: person@example.com
 ```
 
-or:
+The Agent connects to `mcp_server`; the user signs in as `account_email` in the browser. A live
+invitation for that address is applied during first sign-in. There is no separate Agent-side account
+linking step. When the host reports that OAuth completed, the Agent calls `whoami` and verifies the
+returned email before doing any Product work.
 
-```json
-{ "method": "invitation", "value": "the-code-from-the-invitation" }
-```
+## Product setup
 
-Email authentication returns `pending_verification`. The user clicks the one-time link in the
-email; the link is never copied back to the Agent. The Agent observes completion with
-`authentication_status`. An invitation code binds the connection immediately, without a separate
-browser step.
+After `whoami`, the Agent calls `list_products`:
 
-Only after account binding succeeds does the Agent call `connection_status`, then continue Product
-and notification onboarding instead of stopping at “OAuth connected.”
+- If there are no Products, it asks for the App name, platform, default locale, and an explicit
+  notification choice (`bark`, `webhook`, or `deferred`), derives a readable slug, and calls
+  `create_product` with that choice in `notificationSetupPreference`.
+- If there is one Product, it confirms that Product is the requested target and reads its current
+  settings. If there are several, it asks the user to select one and never guesses an ID.
+- If a Product still has `notificationSetupPreference: "unresolved"`, it collects the missing choice
+  and saves it with `set_notification_setup_preference` before claiming onboarding is complete.
+- Bark and webhook choices continue through the matching notification tools. Apple project changes
+  require an explicit project/file target and approval before the Agent edits the App, then a focused
+  build verifies the SDK integration.
+
+The plugin does not use a separate onboarding-status tool. Current identity, Product records,
+subscription limits, and notification configuration are the source of truth.
+
+## Confirmation contract
+
+An explicit request to change a Feedback record's status or visibility, or to send a specified
+Feedback reply, authorizes that exact `update_feedback` or `reply_to_feedback` call without another
+chat confirmation. Read-only review, drafting, planning, and previewing do not authorize a write.
+
+Other tools marked as risky use the FeedbackServer 2.0 contract:
+
+1. Prefer the MCP client's native elicitation prompt.
+2. If the client cannot elicit, the first call returns `confirmation_required`. Show the exact target,
+   visible or external effect, and any redacted secret handling, then wait for explicit approval.
+3. Repeat the same tool with the same arguments plus `confirm: true`. Never substitute another tool
+   or change the payload during the confirmed retry.
+
+Do not use confirmation tickets or identifiers. Do not retry a declined, failed, or stale mutation
+automatically; reread current state and obtain fresh approval when the proposed effect changes.
 
 ## Security model
 
-- Anonymous access is limited to MCP discovery and health.
-- OAuth credentials remain in the host and never enter Agent output, plugin files, or the repository.
-- OAuth completion and FeedbackKit account binding are separate states; an unbound connection has
-  no account access.
-- Email verification uses a one-time link that is opened by the user and observed through
-  `authentication_status`.
-- Invitation codes are passed as `value` only to the `invitation` branch of `authenticate` and bind
-  immediately.
-- Protected tools declare their own OAuth scopes and return the standard MCP authentication
-  challenge when additional authorization is required.
-- Destructive, public, and external effects retain encrypted ten-minute, single-use confirmation
-  previews through `execute_confirmation`.
+- OAuth credentials, magic links, sessions, API keys, Bark device keys, and webhook signing secrets
+  never belong in Agent output, repository files, commands, logs, or summaries.
+- Resolve Product and entity IDs with list/get tools before mutation. Never infer ownership or
+  subscription access.
+- Private feedback context, internal notes, diagnostic artifacts, and waitlist email addresses remain
+  private unless the user's task specifically requires them.
+- Other tool-marked public-content, destructive, account-access, key, and external-delivery
+  operations follow the v2 confirmation contract above.
 
-After binding, `connection_status` returns live onboarding actions. First-Product creation requires
-an explicit Bark, Product Webhook, or defer choice, and an existing Product with an unresolved
-choice prompts immediately.
-
-See [English onboarding](docs/invited-admin-onboarding.en.md),
-[中文接入说明](docs/invited-admin-onboarding.zh-Hans.md), and
+See [English invitation onboarding](docs/invited-admin-onboarding.en.md),
+[中文邀请接入说明](docs/invited-admin-onboarding.zh-Hans.md), and
 [generic remote MCP configuration](docs/generic-mcp.md).
 
 ## Validate
 
-No package installation or Bun environment is required:
+No package installation or local runtime is required:
 
 ```bash
-python3 scripts/validate_distribution.py
-python3 scripts/check_sensitive_content.py
+npm run check
 python3 /path/to/plugin-creator/scripts/validate_plugin.py plugins/feedback-server
+python3 /path/to/skill-creator/scripts/quick_validate.py plugins/feedback-server/skills/setup-feedback-server
+claude plugin validate --strict .
 ```
 
-The Codex `.app.json` is added only after OpenAI assigns the production connector ID. Until that
-registration step, Codex and Claude Code both use the checked remote HTTP MCP descriptor; no fake
-connector identifier is committed.
+The distribution validator checks every manifest version, every skill and eval, the v2 setup and
+confirmation vocabulary, and the absence of retired setup/tool guidance. The sensitive-content scan
+also rejects committed personal access tokens, browser sessions, bearer JWTs, and live magic links.
+
+The Codex `.app.json` will be added only after OpenAI assigns a production connector ID. Until then,
+Codex and Claude Code use the checked remote HTTP MCP descriptor.

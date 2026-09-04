@@ -1,0 +1,16 @@
+schema_version: "1.1"
+name: "v2-browser-oauth-magic-link"
+description: "Completes FeedbackServer 2.0 browser OAuth, verifies identity, and avoids credential relay."
+tags: ["v2", "oauth", "setup"]
+execution:
+  prompt: "只解释 FeedbackServer 2.0 接入协议，不调用工具：我已有账号 me@example.com。宿主打开授权页面后该怎么登录，连接完成后首先调用什么工具？不要索取 Token，也不要让我把邮件链接贴回对话。"
+  max_turns: 4
+  timeout_seconds: 180
+  allowed_tools: []
+runs: 1
+graders:
+  - type: "llm"
+    name: "better-auth-magic-link-and-whoami"
+    focus: "last_message"
+    criteria: "The response uses the Better Auth browser OAuth flow, tells the user to enter the intended email and open the emailed magic link privately, then calls whoami after the host connects and verifies the returned identity before Product work. It never asks for an OAuth token, email link, or another Agent-side sign-in tool."
+expected_outcome: "Sign in through the browser and establish the active v2 identity with whoami."

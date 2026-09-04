@@ -1,7 +1,7 @@
 {
   "name": "feedback-server",
-  "version": "1.2.1",
-  "description": "Authenticate and manage FeedbackKit products, feedback, waitlists, activity, roadmaps, releases, and notifications through MCP.",
+  "version": "2.0.0",
+  "description": "Use FeedbackServer 2.0 browser OAuth and MCP tools to manage FeedbackKit Products, feedback, waitlists, roadmaps, releases, and notifications.",
   "author": {
     "name": "Rabithua",
     "url": "https://github.com/Rabithua"

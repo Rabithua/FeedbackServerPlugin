@@ -1,19 +1,18 @@
-# FeedbackKit remote plugin
+# FeedbackKit remote plugin 2.0
 
-This installable plugin contains only Skills and remote MCP metadata. Codex and Claude Code connect
-to `https://api.feedkit.cn/mcp` over HTTP and use host-managed OAuth. There is no local executable,
-Bun dependency, CLI, package install, or runtime JavaScript distribution.
+This bundle contains only FeedbackServer 2.0 Skills and remote MCP metadata. Codex and Claude Code
+connect to `https://api.feedkit.cn/mcp` over Streamable HTTP. There is no local executable, package
+install, credential file, Bun dependency, or bundled runtime.
 
-Anonymous tools:
+The host completes Better Auth OAuth 2.1 in the browser. The user enters their account email, opens
+the magic link delivered to that inbox, and approves access. The Agent never handles the link or
+OAuth token. After the host reconnects, call `whoami`, verify the email, then use `list_products` and
+the v2 Product tools.
 
-- `health`
+Invitation setup consumes only `mcp_server` and `account_email`: connect to the former and sign in as
+the latter in the browser. First sign-in applies the live invitation for that email.
 
-All other anonymous interaction is limited to MCP protocol discovery. `authenticate` is
-OAuth2-protected and declares an empty scopes list, so its first invocation lets the host establish
-an OAuth connection that is not yet bound to a FeedbackKit account.
-
-After OAuth, call either `authenticate({ method: "email", value: email })` or
-`authenticate({ method: "invitation", value: invitationCode })`. Email returns
-`pending_verification`; the user opens the one-time email link and the Agent observes completion
-through `authentication_status`. An invitation code binds immediately. Only then call
-`connection_status` and continue Product and notification onboarding.
+Risky tools prefer native MCP elicitation. Without elicitation, describe the exact effect, obtain
+explicit approval, and repeat the same operation with unchanged arguments plus `confirm: true`.
+Never use a confirmation identifier. Explicit Feedback status/visibility changes and specified
+Feedback replies are ordinary direct writes and do not need a duplicate chat approval.

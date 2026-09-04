@@ -1,39 +1,31 @@
 ---
 name: manage-waitlist
-description: List, inspect, search, annotate, update, archive, convert, or permanently delete the connected FeedbackServer administrator's waitlist signups. Use for waitlist and early-access follow-up. Do not select a Product or use this for Product feedback.
+description: List, inspect, search, annotate, update, invite, archive, convert, or permanently delete the connected FeedbackServer 2.0 administrator's waitlist signups. Use for waitlist and early-access follow-up. Do not select a Product or use this for Product feedback.
 ---
 
-# Manage the FeedbackServer waitlist
+# Manage the FeedbackServer 2.0 waitlist
 
 Waitlist entries belong to the connected administrator and are not Product-scoped. Do not ask for a
-Product. Use status, platform, and search filters; archived entries are hidden unless explicitly
-requested. Follow `nextCursor` for the requested range. Treat email as private contact data and
-include it only when the task needs it.
+Product. Use `list_waitlist_entries` and `get_waitlist_entry`, apply status, platform, and search
+filters, and follow `nextCursor`. Archived entries are hidden unless explicitly requested. Treat
+email as private contact data and include it only when the task needs it.
 
 `update_waitlist_status` and `add_waitlist_note` are direct internal writes after resolving the exact
-entry. Valid status values are `new`, `contacted`, `invited`, `converted`, and `archived`. Do not
-substitute archive for a requested permanent deletion or vice versa.
+entry. Valid statuses are `new`, `contacted`, `invited`, `converted`, and `archived`. Do not substitute
+archive for a requested permanent deletion or vice versa.
 
-Invitation email is a protected external effect. Use `invite_waitlist_entry` to preview the exact
-recipient, language, App, subscription grant, invitation expiry, and email summary. The default is
-Free. Solo and Studio require an explicit month, year, or perpetual term; ask when the user names a
-paid plan without a term and never infer one. Show that preview, wait for explicit approval, then call
-`execute_confirmation` with the returned ID. Apply the same confirmation gate to
-`retry_waitlist_invitation_email`. Use `revoke_waitlist_invitation` when the user asks to cancel a
-pending invite; revocation prevents acceptance but cannot recall mail already accepted by the
-provider. These tools require both the OAuth scope `waitlist:invite` and a current database
-`super_admin` role. The recipient may paste the complete invitation Prompt into the current Agent
-conversation. Pass its invitation code only to
-`authenticate({ method: "invitation", value: invitationCode })`; do not repeat it in chat,
-commands, logs, previews, tool output, or the final response.
+Invitation email is a protected external effect. `invite_waitlist_entry` requires an exact recipient,
+language, App, subscription grant, and expiry. Free needs no term; Solo and Studio require an explicit
+month, year, or perpetual term. Never infer one. Use the same protection for
+`retry_invitation_email`; use `revoke_invitation` to cancel a pending invitation before deleting a
+blocked signup. Revocation cannot recall mail already accepted by the provider.
 
-An invited signup cannot be permanently deleted until its pending invitation is revoked. Acceptance
-uses the setup workflow: host OAuth first creates an unbound connection, then invitation
-authentication binds it immediately and onboarding continues through `connection_status`. Never ask
-the recipient to enter the invitation code in a browser or complete email verification. Never ask
-for a username, display name, or password.
+The invitation recipient's Agent workflow consumes only `mcp_server` and `account_email`. The user
+signs in as that email through the browser magic-link flow, then the Agent verifies the account with
+`whoami`. Do not ask for a username, display name, password, emailed link, or any additional
+invitation credential.
 
-Permanent deletion requires confirmation. Show the returned App, platform, and note-count preview,
-wait for explicit approval, then call `execute_confirmation` with the returned ID. Confirmation is
-single-use and expires after ten minutes. For stale state, reread and prepare a new preview; never
-retry writes automatically.
+For invitations, retries, revocation, and `delete_waitlist_entry`, prefer native MCP elicitation. If
+the client cannot elicit and the tool returns `confirmation_required`, show the exact redacted effect,
+wait for approval, then repeat the same tool with identical arguments plus `confirm: true`. Never use
+a confirmation identifier. Reread state after a conflict and never retry a mutation automatically.

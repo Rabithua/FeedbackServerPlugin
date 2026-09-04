@@ -1,21 +1,15 @@
 # Changelog
 
-## 1.2.1 - 2026-08-30
+## 2.0.0 - 2026-09-04
 
-- Correct the only supported `authenticate` input to `{ method, value }` for both email and
-  invitation authentication.
-- Update skills, documentation, and evals to reject method-specific top-level input fields.
-- Add distribution validation that prevents the invalid field shapes from returning.
+- Adopt FeedbackServer 2.0 browser OAuth through Better Auth, with magic-link sign-in and `whoami`
+  as the connected-account check.
+- Make invitation onboarding depend only on the supplied `mcp_server` and `account_email` values.
+- Replace ticket-based confirmations with native MCP elicitation or an identical operation repeated
+  with `confirm: true` after explicit approval.
+- Keep explicitly requested Feedback status, visibility, and reply writes direct, while other
+  tool-marked destructive, public-content, account-access, key, and external-delivery operations
+  remain protected.
+- Rewrite every skill, document, validator, and eval for the v2 Product and tool workflow.
 
-## 1.2.0 - 2026-08-30
-
-- Limit anonymous access to MCP discovery and health; the account authentication tool now starts
-  host-managed OAuth with an empty scopes list.
-- Separate OAuth transport connection from FeedbackKit account binding and require the Agent to use
-  an explicit email or invitation discriminator.
-- Make email authentication complete through a user-opened one-time link observed with
-  `authentication_status`, while invitation codes bind immediately.
-- Enter `connection_status`, Product creation, and notification onboarding only after account
-  binding succeeds.
-
-Earlier release notes remain available in the GitHub Releases history.
+Release history before the 2.0 breaking cutover remains available in the GitHub Releases page.
