@@ -1,5 +1,12 @@
 # FeedbackKit Agent Plugin 2.0
 
+> [!IMPORTANT]
+> This Plugin repository is retired and read-only. FeedbackKit is now distributed as a Skill plus
+> its hosted MCP server. Install the Skill from
+> `https://api.feedkit.cn/skills/feedback-server.tar.gz` and connect the host to
+> `https://api.feedkit.cn/mcp`. New invitation emails contain both values. Existing Plugin caches
+> are not removed automatically, but they no longer receive updates from this repository.
+
 FeedbackKit connects Codex and Claude Code to the hosted FeedbackServer 2.0 MCP for Product setup,
 feedback triage, waitlists, roadmaps, Releases, notifications, analytics, and account administration.
 This is a 2.0-only, runtime-free plugin: it ships Skills and remote MCP metadata, not a local server,
