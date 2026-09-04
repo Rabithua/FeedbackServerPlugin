@@ -1,20 +1,24 @@
-# Join FeedbackKit with your Agent
+# Join FeedbackKit 2.0 with your Agent
 
-1. Paste the complete FeedbackKit invitation Prompt into Codex or Claude Code.
-2. The Agent installs or upgrades the trusted `Rabithua/FeedbackServerPlugin` plugin.
-3. The Agent invokes the OAuth2-protected `authenticate` tool. Its empty scopes list lets the host
-   establish the OAuth connection without granting account access.
-4. OAuth completes with the connection still unbound. The Agent calls
-   `authenticate({ method: "invitation", value: invitationCode })`, passing the invitation code
-   only as `value`.
-5. The invitation code binds the connection immediately. There is no separate browser input or
-   email verification step.
-6. The Agent calls `connection_status`, asks for the
-   App details and an explicit Bark, Product Webhook, or defer choice, creates the Product with that
-   preference, and continues SDK setup after approval.
+1. Give the Agent the trusted FeedbackKit invitation instructions. The setup data contains only:
 
-For email authentication, the Agent instead calls
-`authenticate({ method: "email", value: email })` after host OAuth. The result is
-`pending_verification`. Open the one-time link in the email; do not copy the link back into the
-conversation. The Agent observes completion with `authentication_status` before calling
-`connection_status`. OAuth tokens remain in the host and are never shown to the Agent.
+   ```text
+   mcp_server: https://api.feedkit.cn/mcp
+   account_email: person@example.com
+   ```
+
+2. The Agent installs or upgrades `feedback-server@feedback-server` from
+   `Rabithua/FeedbackServerPlugin`, connects to `mcp_server`, and calls `whoami` to start protected
+   access.
+3. When the OAuth browser opens, sign in as `account_email`. FeedbackKit emails a one-time magic
+   link to that inbox. Open the link yourself; never paste it into the Agent conversation.
+4. Return to the browser flow and approve the requested access. The live invitation for the email is
+   applied during first sign-in.
+5. The Agent calls `whoami` and verifies the returned email, then calls `list_products`.
+6. If no Product exists, provide the App name, platform, default locale, and an explicit Bark,
+   webhook, or deferred notification choice. The Agent creates the Product and continues the SDK
+   workflow only after resolving the target App project and obtaining approval for project edits.
+
+Risky tools use native MCP elicitation when available. On clients without elicitation, the Agent
+shows the exact effect, waits for approval, and repeats the same operation with the same arguments
+plus `confirm: true`.

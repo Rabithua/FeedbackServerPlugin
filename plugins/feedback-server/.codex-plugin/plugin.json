@@ -1,7 +1,7 @@
 {
   "name": "feedback-server",
-  "version": "1.2.1",
-  "description": "Agent-first authentication and management for FeedbackKit products, feedback, waitlists, activity, roadmaps, releases, and notifications.",
+  "version": "2.0.0",
+  "description": "FeedbackServer 2.0 browser OAuth and Product management for FeedbackKit feedback, waitlists, roadmaps, releases, and notifications.",
   "author": {
     "name": "Rabithua",
     "url": "https://github.com/Rabithua"
@@ -14,7 +14,7 @@
   "interface": {
     "displayName": "FeedbackKit",
     "shortDescription": "Onboard and manage app feedback with your Agent.",
-    "longDescription": "Connect Codex over remote OAuth, explicitly authenticate a FeedbackKit account, and continue guided app setup, feedback management, waitlist invitations, and risk-based confirmations.",
+    "longDescription": "Connect Codex to FeedbackServer 2.0, sign in by browser magic link, verify the account with whoami, and manage Products with native MCP confirmations for risky changes.",
     "developerName": "Rabithua",
     "category": "Productivity",
     "capabilities": ["Read", "Write", "Interactive"],

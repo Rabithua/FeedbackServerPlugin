@@ -9,8 +9,8 @@
     {
       "name": "feedback-server",
       "source": "./plugins/feedback-server",
-      "description": "Connect and authenticate FeedbackKit, then manage your app's Feedback service through Claude Code.",
-      "version": "1.2.1",
+      "description": "Sign in to FeedbackKit with browser OAuth and manage Products through the FeedbackServer 2.0 MCP.",
+      "version": "2.0.0",
       "author": {
         "name": "Rabithua"
       },

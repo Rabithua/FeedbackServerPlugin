@@ -1,7 +1,7 @@
 interface:
   display_name: "Set Up FeedbackServer"
-  short_description: "Connect OAuth, authenticate an account, and continue setup"
-  default_prompt: "Use $setup-feedback-server to authenticate my FeedbackKit account and continue the next setup step."
+  short_description: "Connect browser OAuth and set up a FeedbackServer 2.0 Product"
+  default_prompt: "Use $setup-feedback-server to sign in to FeedbackKit by magic link, verify whoami, and continue Product setup."
 dependencies:
   tools:
     - type: "mcp"

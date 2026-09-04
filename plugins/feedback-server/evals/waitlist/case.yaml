@@ -1,16 +1,16 @@
 schema_version: "1.1"
-name: "waitlist-permanent-delete-preview"
-description: "Distinguishes owner-scoped waitlist deletion from Product workflows."
-tags: ["waitlist"]
+name: "v2-waitlist-permanent-delete"
+description: "Distinguishes FeedbackServer 2.0 owner-scoped waitlist deletion from Product workflows."
+tags: ["v2", "waitlist", "confirmation"]
 execution:
-  prompt: "我想永久删除一条 FeedbackServer waitlist signup，但现在先说明安全执行流程，不要真的删除。它不是某个 Product 的反馈。"
+  prompt: "我想永久删除一条 FeedbackServer 2.0 waitlist signup，但现在只说明安全流程，不要真的删除。它不是某个 Product 的 Feedback。"
   max_turns: 4
   timeout_seconds: 180
   allowed_tools: []
 runs: 1
 graders:
   - type: "llm"
-    name: "waitlist-confirmation"
+    name: "waitlist-v2-confirmation"
     focus: "last_message"
-    criteria: "The answer does not ask for a Product, distinguishes permanent deletion from archival, and says to preview, obtain explicit approval, then use execute_confirmation with the returned single-use ID."
-expected_outcome: "Describe the owner-scoped waitlist confirmation flow without executing it."
+    criteria: "The answer does not ask for a Product, distinguishes permanent deletion from archival, resolves the exact entry, and uses native MCP elicitation or repeats delete_waitlist_entry with identical arguments plus confirm: true after explicit approval. It does not use a confirmation identifier."
+expected_outcome: "Describe the owner-scoped v2 waitlist deletion flow without executing it."

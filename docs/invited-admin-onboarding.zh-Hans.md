@@ -1,16 +1,20 @@
-# 把 FeedbackKit 交给 Agent 接入
+# 通过 Agent 接入 FeedbackKit 2.0
 
-1. 将完整的 FeedbackKit 邀请 Prompt 发给 Codex 或 Claude Code。
-2. Agent 安装或升级可信来源 `Rabithua/FeedbackServerPlugin`。
-3. Agent 调用由 OAuth2 保护的 `authenticate`；该工具声明空 scopes，宿主先建立 OAuth 连接，
-   不授予 FeedbackKit 账号访问权。
-4. OAuth 完成时连接仍未绑定账号。Agent 调用
-   `authenticate({ method: "invitation", value: invitationCode })`，只把邀请短码作为 `value`。
-5. 邀请短码立即绑定连接，不需要在浏览器中另行输入，也没有邮箱验证步骤。
-6. Agent 调用 `connection_status`，重新询问 App 信息，并要求明确选择 Bark、Product
-   Webhook 或暂不配置；Agent 将该选择随 Product 一起保存，再在获批后继续 SDK 接入。
+1. 把可信的 FeedbackKit 邀请说明交给 Agent。接入数据只有：
 
-邮箱认证时，宿主完成 OAuth 后，Agent 改为调用
-`authenticate({ method: "email", value: email })`，结果为 `pending_verification`。用户点击
-邮件中的一次性链接，不把链接复制回对话；Agent 通过 `authentication_status` 观察完成，然后
-才调用 `connection_status`。OAuth Token 只由宿主保存，不返回 Agent。
+   ```text
+   mcp_server: https://api.feedkit.cn/mcp
+   account_email: person@example.com
+   ```
+
+2. Agent 从 `Rabithua/FeedbackServerPlugin` 安装或升级
+   `feedback-server@feedback-server`，连接 `mcp_server`，并调用 `whoami` 以启动受保护访问。
+3. OAuth 浏览器打开后，使用 `account_email` 登录。FeedbackKit 会向该邮箱发送一次性 Magic
+   Link；请自行打开，不要把链接粘贴到 Agent 对话中。
+4. 回到浏览器授权流程并批准所需权限。该邮箱对应的有效邀请会在首次登录时自动应用。
+5. Agent 调用 `whoami` 核对返回的邮箱，再调用 `list_products`。
+6. 如果还没有 Product，请提供 App 名称、平台、默认语言，以及明确的 Bark、Webhook 或
+   延后配置通知选择。Agent 创建 Product；修改 App 工程前，还会先确定目标工程和文件并征得批准。
+
+高风险工具优先使用 MCP 原生 elicitation。客户端不支持时，Agent 会展示准确影响、等待明确批准，
+然后以完全相同的参数重新调用同一工具，只额外加入 `confirm: true`。

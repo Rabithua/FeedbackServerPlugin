@@ -1,9 +1,9 @@
 schema_version: "1.1"
-name: "release-publication-review"
-description: "Routes release publication requests through draft review and generic confirmation."
-tags: ["publishing"]
+name: "v2-release-publication-review"
+description: "Reviews a FeedbackServer 2.0 Release without publishing and states the v2 risk flow."
+tags: ["v2", "publishing", "confirmation"]
 execution:
-  prompt: "请审阅 FeedbackServer 中 2.0 的 Release 发布流程。现在只做发布前检查，不要发布；说明 locale、Item 关联和最终确认该怎么处理。"
+  prompt: "请审阅 FeedbackServer 2.0 的 Release 发布流程。现在只做发布前检查，不要发布；说明 locale、Item 关联，以及以后真正发布时的 MCP 确认方式。"
   max_turns: 4
   timeout_seconds: 180
   allowed_tools: []
@@ -12,5 +12,5 @@ graders:
   - type: "llm"
     name: "release-review-only"
     focus: "last_message"
-    criteria: "The response treats the request as review-only, resolves Product/Release/Item IDs, explains Release body localization, and reserves execute_confirmation for a later explicit publication approval."
-expected_outcome: "Review the Release workflow without publishing."
+    criteria: "The response stays read-only, resolves Product, Release, and Item IDs, explains localized Release body text and Item archival on publication, and says a future risky publication uses MCP elicitation or the identical operation repeated with confirm: true after approval."
+expected_outcome: "Review the v2 Release workflow without publishing or inventing a confirmation ticket."
